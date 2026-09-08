@@ -78,3 +78,7 @@ cargo run --release -p ghostcloak-eval -- targets --headless
 | TouchEvent / ontouchstart | present |
 | navigator.platform | "Linux aarch64" |
 | viewport | identity screen class (e.g. 384x815 portrait, dpr 3) |
+
+> Note on the sannysoft "failed" row: it is `Chrome (New): missing` — the panel
+> probing for Chrome-specific plugin features on a Firefox persona. Expected
+> behavior, not a detection. All actual detection rows pass.
