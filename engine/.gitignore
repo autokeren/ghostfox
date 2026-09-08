@@ -1,0 +1,82 @@
+# Local builds
+/camoufox-*
+/firefox-*
+/mozilla-unified
+dist/
+bin/
+launch
+launch.exe
+
+
+# Internal testing
+/extra-docs
+pythonlib/test*
+!pythonlib/tests/
+jsonvv/test*
+/.vscode
+/bundle/fonts/extra
+pythonlib/*.png
+scripts/*.png
+scripts/test*
+.vscode
+.idea
+/tests/*.disabled
+k8s/
+camoufox-*.*.*/
+
+# Old data
+_old/
+_old_*/
+*.old
+
+# Logs
+wget-log
+*.kate-swp
+*.log
+
+# Python interface
+venv/
+venv[0-9]*/
+__pycache__/
+*.pyc
+*.mmdb
+pythonlib-dev/
+run-pw-dev.py
+
+# Closed source patches
+private
+.passwd
+closedsrc
+
+.venv
+*.pem
+.DS_Store
+
+# Build outputs
+*.so
+/camoufox
+/omni.ja
+/precomplete
+/dependentlibs.list
+/application.ini
+/platform.ini
+/camoufox.cfg
+/camoucfg.jvv
+/chrome.css
+/properties.json
+/removed-files
+/nul
+/browser/
+/defaults/
+/distribution/
+/fontconfigs/
+/fonts/
+/gmp-clearkey/
+/windows-build/
+_bisect_extract/
+node_modules/
+
+node_modules/
+proxies.txt
+checks-bundle.js
+.env

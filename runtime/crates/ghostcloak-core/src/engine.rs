@@ -1,0 +1,92 @@
+//! The engine abstraction: every browser backend (Chromium/CDP, patched
+//! Firefox, Servo, ...) implements this one trait.
+
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
+
+use crate::error::Result;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum EngineKind {
+    Chromium,
+    Firefox,
+    Servo,
+}
+
+impl EngineKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            EngineKind::Chromium => "chromium",
+            EngineKind::Firefox => "firefox",
+            EngineKind::Servo => "servo",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LaunchOptions {
+    /// Persistent profile directory (empty = ephemeral).
+    pub profile_dir: Option<String>,
+    /// Proxy URL, e.g. `socks5://user:pass@host:port`.
+    pub proxy: Option<String>,
+    /// Extra command-line switches passed to the engine binary.
+    pub extra_args: Vec<String>,
+    /// Run headless.
+    pub headless: bool,
+    /// Engine binary override; autodetected when absent.
+    pub executable: Option<String>,
+}
+
+impl Default for LaunchOptions {
+    fn default() -> Self {
+        Self {
+            profile_dir: None,
+            proxy: None,
+            extra_args: vec![],
+            headless: false,
+            executable: None,
+        }
+    }
+}
+
+/// A captured page state, cheap to hand to an LLM.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PageSnapshot {
+    pub url: String,
+    pub title: Option<String>,
+    /// Accessibility-tree derived text, token-friendly.
+    pub content: String,
+    pub captured_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// A live handle to one page (tab) inside an engine instance.
+#[async_trait]
+pub trait PageHandle: Send + Sync {
+    async fn navigate(&self, url: &str) -> Result<()>;
+    async fn snapshot(&self) -> Result<PageSnapshot>;
+    async fn click(&self, selector: &str) -> Result<()>;
+    async fn type_text(&self, selector: &str, text: &str) -> Result<()>;
+    async fn evaluate(&self, expression: &str) -> Result<serde_json::Value>;
+    async fn url(&self) -> Result<String>;
+    async fn close(&self) -> Result<()>;
+    /// Press a named key (Enter, Tab, Escape, arrows...). Engines without
+    /// keyboard-event support return an error naming the limitation.
+    async fn press_key(&self, key: &str) -> Result<()> {
+        let _ = key;
+        Err(crate::error::GhostError::PageOp(
+            "press_key not supported by this engine".into(),
+        ))
+    }
+}
+
+/// A running engine process managing pages.
+#[async_trait]
+pub trait Engine: Send + Sync {
+    fn kind(&self) -> EngineKind;
+    async fn new_page(&self, opts: &HashMap<String, serde_json::Value>) -> Result<Arc<dyn PageHandle>>;
+    async fn pages(&self) -> Result<Vec<String>>;
+    async fn shutdown(&self) -> Result<()>;
+}

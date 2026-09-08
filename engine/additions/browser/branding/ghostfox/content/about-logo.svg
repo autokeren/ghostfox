@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6366f1"/>
+      <stop offset="1" stop-color="#a855f7"/>
+    </linearGradient>
+  </defs>
+  <!-- Ghostfox mark: spectral fox head with ghost-wisp tail -->
+  <path fill="url(#g)" d="M82 31 L119 133 Q110 214 51 215 Q35 317 87 399 Q116 440 164 399 Q196 430 256 430 Q316 430 348 399 Q396 440 425 399 Q477 317 461 215 Q402 214 393 133 L430 31 Q368 92 338 133 Q256 102 174 133 Q144 92 82 31 Z"/>
+  <polygon fill="#22d3ee" points="150,256 205,231 218,262 172,281"/>
+  <polygon fill="#22d3ee" points="362,256 307,231 294,262 340,281"/>
+  <polygon fill="#312e81" points="239,348 273,348 256,374"/>
+</svg>

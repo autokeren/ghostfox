@@ -1,0 +1,15 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "com.autokeren/ghostfox",
+  "description": "Self-hosted stealth browser for AI agents: fingerprint-coherent engine + Rust MCP runtime. Navigate, click, type and extract the web without getting detected.",
+  "repository": {
+    "url": "https://github.com/autokeren/ghostfox",
+    "source": "github"
+  },
+  "websiteUrl": "https://github.com/autokeren/ghostfox",
+  "version": "0.1.0",
+  "packages": [],
+  "transport": {
+    "type": "stdio"
+  }
+}

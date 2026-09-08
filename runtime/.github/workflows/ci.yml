@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-and-eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --workspace
+
+      - name: Identity eval (T0)
+        # The referee: every identity the generator can produce must be
+        # coherent. Regressions here block the merge.
+        run: cargo run -p ghostcloak-eval -- identity --count 200
+
+      - name: Clippy
+        run: cargo clippy --workspace -- -D warnings
+
+      - name: Format
+        run: cargo fmt --all -- --check

@@ -1,0 +1,32 @@
+[package]
+name = "ghostcloak-mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "MCP server exposing ghostcloak browser sessions to AI agents"
+
+[[bin]]
+name = "ghostcloak-mcp"
+path = "src/main.rs"
+
+[lib]
+name = "ghostcloak_mcp"
+path = "src/lib.rs"
+
+[dependencies]
+ghostcloak-core = { path = "../ghostcloak-core" }
+ghostcloak-fingerprint = { path = "../ghostcloak-fingerprint" }
+ghostcloak-chromium = { path = "../ghostcloak-engines/ghostcloak-chromium" }
+ghostcloak-camoufox = { path = "../ghostcloak-engines/ghostcloak-camoufox" }
+rmcp.workspace = true
+schemars = "1"
+toml.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap.workspace = true
+async-trait.workspace = true

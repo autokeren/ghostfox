@@ -1,0 +1,21 @@
+[package]
+name = "ghostcloak-chromium"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Chromium engine adapter for ghostcloak: CDP launch, stealth init scripts, fingerprint application"
+
+[dependencies]
+ghostcloak-core = { path = "../../ghostcloak-core" }
+ghostcloak-fingerprint = { path = "../../ghostcloak-fingerprint" }
+chromiumoxide.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+futures.workspace = true
+async-trait.workspace = true
+tracing.workspace = true
+chrono.workspace = true

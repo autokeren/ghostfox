@@ -1,0 +1,42 @@
+name: Publish to pypi
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pythonlib
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install publishing tools
+        run: pip install vermin build twine
+
+      - name: Check Python compatibility
+        run: vermin . --eval-annotations --target=3.8 --violations camoufox/ || exit 1
+
+      - name: Build package
+        run: python -m build
+
+      - name: Check distribution
+        run: twine check dist/*
+
+      - name: Publish to PyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.TWINE_PASSWORD }}
+          TWINE_NON_INTERACTIVE: "1"
+        run: twine upload dist/*

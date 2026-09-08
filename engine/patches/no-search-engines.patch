@@ -1,0 +1,39 @@
+diff --git a/browser/components/urlbar/UrlbarProviderInterventions.sys.mjs b/browser/components/urlbar/UrlbarProviderInterventions.sys.mjs
+index e5bda9f62c..f8988a4430 100644
+--- a/browser/components/urlbar/UrlbarProviderInterventions.sys.mjs
++++ b/browser/components/urlbar/UrlbarProviderInterventions.sys.mjs
+@@ -482,7 +482,7 @@ export class UrlbarProviderInterventions extends UrlbarProvider {
+    * @param {UrlbarQueryContext} queryContext The query context object
+    */
+   async isActive(queryContext) {
+-    if (
++    if (true ||
+       !queryContext.searchString ||
+       queryContext.searchString.length > UrlbarUtils.MAX_TEXT_LENGTH ||
+       lazy.UrlUtils.REGEXP_LIKE_PROTOCOL.test(queryContext.searchString) ||
+diff --git a/toolkit/components/search/SearchEngineSelector.sys.mjs b/toolkit/components/search/SearchEngineSelector.sys.mjs
+index 85c9d83282..15cfeac054 100644
+--- a/toolkit/components/search/SearchEngineSelector.sys.mjs
++++ b/toolkit/components/search/SearchEngineSelector.sys.mjs
+@@ -331,6 +331,21 @@ export class SearchEngineSelector {
+    *   could be obtained.
+    */
+   async #getConfiguration(firstTime = true) {
++    if (true) {
++      return [
++        {
++          "appliesTo": [{
++            "default": "yes",
++            "included": {
++              "everywhere": true
++            },
++            "webExtension": {
++              "id": "none@mozilla.org"
++            }
++          }],
++        },
++      ];
++    }
+     let result = [];
+     let failed = false;
+     try {
