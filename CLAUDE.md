@@ -21,3 +21,12 @@ The runtime locates the engine via `GHOSTFOX_HOME` (fallback:
   conventional commits.
 - Never edit generated trees (`engine/camoufox-*/`) — persist engine changes
   as patches (`make edits`).
+
+## Upstream sync (engine)
+
+The `upstream` remote points at daijro/camoufox. To pull their patches:
+
+```sh
+git fetch upstream
+git subtree pull --prefix=engine upstream main   # resolve conflicts, re-apply rebrand
+```
