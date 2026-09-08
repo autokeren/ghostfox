@@ -82,8 +82,12 @@ cargo build --release
 ```
 
 Then the agent can: `session_create` → `page_open` → `page_snapshot` →
-`page_click` / `page_type` / `page_fill` / `page_press`, plus
-`identity_generate` / `identity_audit` / `session_evidence`.
+`page_click` / `page_type` / `page_fill` / `page_press` / `page_eval` / `page_screenshot`, plus
+`identity_generate` / `identity_audit` / `session_evidence` / `captcha_solve`.
+
+Every mutation returns a **receipt** — `page_fill` reports `landed_chars`, so a
+silent page swap can't eat a fill unnoticed. And sessions can run **headful**
+(`{"headful": true}`) when humans want to watch the agent work.
 
 **Every run records evidence.** Each session writes an append-only event log
 (`events.jsonl`), full page snapshots and the identity it used under
