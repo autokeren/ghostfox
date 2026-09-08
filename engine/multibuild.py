@@ -92,7 +92,7 @@ class BSYS:
     @property
     def assets(self) -> List[str]:
         """Get the list of assets"""
-        package_pattern = f'camoufox-*-{self.target[:3]}.{self.arch}.zip'
+        package_pattern = f'ghostfox-*-{self.target[:3]}.{self.arch}.zip'
         return glob.glob(package_pattern)
 
     @staticmethod

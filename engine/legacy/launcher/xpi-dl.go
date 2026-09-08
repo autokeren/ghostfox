@@ -26,7 +26,7 @@ func addDefaultAddons(excludeList []string, addonsList *[]string) {
 // Downloads and extracts the addon
 func downloadAndExtract(url, extractPath string) error {
 	// Create a temporary file to store the downloaded zip
-	tempFile, err := os.CreateTemp("", "camoufox-addon-*.zip")
+	tempFile, err := os.CreateTemp("", "ghostfox-addon-*.zip")
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}

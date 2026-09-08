@@ -141,7 +141,7 @@ def main():
         run('./mach package')
         # Find package files
         search_path = os.path.abspath(
-            f'obj-{moz_target}/dist/camoufox-{args.version}-{args.release}.*.{file_ext}'
+            f'obj-{moz_target}/dist/ghostfox-{args.version}-{args.release}.*.{file_ext}'
         )
 
     # Copy package files
@@ -158,7 +158,7 @@ def main():
         sys.exit(1)
 
     # Find the package file
-    package_pattern = f'camoufox-{args.version}-{args.release}.en-US.*.{file_ext}'
+    package_pattern = f'ghostfox-{args.version}-{args.release}.en-US.*.{file_ext}'
     package_files = glob.glob(package_pattern)
     if not package_files:
         print(f"Error: No package file found matching pattern: {package_pattern}")
