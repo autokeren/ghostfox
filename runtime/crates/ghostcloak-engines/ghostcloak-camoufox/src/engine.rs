@@ -136,6 +136,19 @@ impl CamoufoxEngine {
         let pid = child.id();
         let conn = JugglerConnection::spawn_std(child, pid, cmd_tx, resp_rx)?;
 
+        // Mobile personas: enable the engine's touch override for the default
+        // context — (pointer: coarse) media queries + touch event dispatch,
+        // the same mechanism Playwright's `hasTouch` uses. maxTouchPoints
+        // is handled through CAMOU_CONFIG by the engine patch.
+        if identity.platform == ghostcloak_fingerprint::identity::Platform::Android {
+            let _ = conn
+                .request(
+                    "Browser.setTouchOverride",
+                    serde_json::json!({ "hasTouch": true }),
+                )
+                .await;
+        }
+
         Ok(Arc::new(Self {
             conn,
             identity,
@@ -786,6 +799,56 @@ impl PageHandle for CamoufoxPage {
                 .await?;
         }
         Ok(())
+    }
+
+    async fn screenshot(&self, full_page: bool) -> Result<Vec<u8>> {
+        use base64::Engine as _;
+        let sid = self.session_id().await?;
+
+        // The Juggler screenshot takes an explicit clip: viewport shots use
+        // the window size, full-page shots measure the scrollable document.
+        let dims_expr = if full_page {
+            "JSON.stringify([Math.max(document.documentElement.scrollWidth, document.body ? document.body.scrollWidth : 0), Math.max(document.documentElement.scrollHeight, document.body ? document.body.scrollHeight : 0)])"
+        } else {
+            "JSON.stringify([window.innerWidth, window.innerHeight])"
+        };
+        let dims = self.evaluate(dims_expr).await?;
+        let (w, h) = dims
+            .as_str()
+            .and_then(|s| {
+                let inner = s.trim_matches('"');
+                let parts: Vec<u32> = inner
+                    .trim_matches(|c| c == '[' || c == ']')
+                    .split(',')
+                    .filter_map(|p| p.trim().parse().ok())
+                    .collect();
+                if parts.len() == 2 { Some((parts[0], parts[1])) } else { None }
+            })
+            .unwrap_or((1280, 800));
+        // Engine canvas caps: 32767px per side.
+        let cap = 32767u32;
+        let (w, h) = (w.min(cap), h.min(cap));
+
+        let result = self
+            .conn
+            .request_session(
+                "Page.screenshot",
+                serde_json::json!({
+                    "mimeType": "image/png",
+                    "clip": { "x": 0, "y": 0, "width": w, "height": h },
+                    // 1:1 pixels regardless of the identity's spoofed DPR.
+                    "omitDeviceScaleFactor": true,
+                }),
+                Some(&sid),
+            )
+            .await?;
+        let b64 = result
+            .get("data")
+            .and_then(|d| d.as_str())
+            .ok_or_else(|| GhostError::Protocol("Page.screenshot returned no data".into()))?;
+        base64::engine::general_purpose::STANDARD
+            .decode(b64)
+            .map_err(|e| GhostError::Protocol(format!("screenshot base64: {e}")))
     }
 
     async fn evaluate(&self, expression: &str) -> Result<serde_json::Value> {

@@ -4,6 +4,8 @@ use rmcp::service::serve_server;
 use rmcp::transport::stdio;
 use rmcp::ServerHandler;
 
+mod captcha;
+mod liveview;
 mod recording;
 mod server;
 

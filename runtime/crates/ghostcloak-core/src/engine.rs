@@ -80,6 +80,15 @@ pub trait PageHandle: Send + Sync {
             "press_key not supported by this engine".into(),
         ))
     }
+    /// Capture the current viewport (full_page=false) or the whole scrollable
+    /// document as PNG bytes. Engines without screenshot support return an
+    /// error naming the limitation.
+    async fn screenshot(&self, full_page: bool) -> Result<Vec<u8>> {
+        let _ = full_page;
+        Err(crate::error::GhostError::PageOp(
+            "screenshot not supported by this engine".into(),
+        ))
+    }
 }
 
 /// A running engine process managing pages.

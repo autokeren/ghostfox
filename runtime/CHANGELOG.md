@@ -38,7 +38,7 @@ First public release. Rust-native agent browser runtime with a patched-Firefox e
 
 - **Evidence recording** — every session writes an append-only `events.jsonl`
   plus full page snapshots and `identity.toml` under
-  `~/.ghostcloak/recordings/<session>/`; new `session_evidence` MCP tool
+  `~/.ghostfox/recordings/<session>/`; new `session_evidence` MCP tool
   returns the log, files and persona (evidence primitive for run audit and
   replay).
 - **Android personas** — new `Platform::Android`: portrait screens with

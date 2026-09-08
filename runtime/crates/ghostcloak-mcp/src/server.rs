@@ -35,6 +35,29 @@ struct SessionEvidenceParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+struct PageScreenshotParams {
+    session_id: String,
+    page_id: String,
+    /// Capture the whole scrollable document instead of the viewport (optional).
+    #[serde(default)]
+    full_page: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct CaptchaSolveParams {
+    session_id: String,
+    /// Turnstile/hcaptcha-style: the site's sitekey.
+    #[serde(default)]
+    sitekey: Option<String>,
+    /// Turnstile/hcaptcha-style: the page URL the challenge lives on.
+    #[serde(default)]
+    pageurl: Option<String>,
+    /// Image captcha: the challenge image as base64 PNG.
+    #[serde(default)]
+    image_base64: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct PageOpenParams {
     session_id: String,
     url: String,
@@ -92,8 +115,8 @@ pub struct GhostcloakServer {
 }
 
 #[derive(Default)]
-struct ServerState {
-    sessions: HashMap<String, Arc<Session>>,
+pub(crate) struct ServerState {
+    pub(crate) sessions: HashMap<String, Arc<Session>>,
 }
 
 impl GhostcloakServer {
@@ -185,6 +208,9 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
             .await
             .sessions
             .insert(id.clone(), Arc::new(session));
+        // Live view (opt-in via GHOSTFOX_LIVE_VIEW_PORT): starts once, on the
+        // first session.
+        crate::liveview::start_if_configured(self.state.clone());
         Ok(text_result(id))
     }
 
@@ -239,7 +265,7 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
         ))
     }
 
-    #[tool(description = "Get recorded evidence for a session: event log, snapshot files, identity used. Recordings live under ~/.ghostcloak/recordings/.")]
+    #[tool(description = "Get recorded evidence for a session: event log, snapshot files, identity used. Recordings live under ~/.ghostfox/recordings/.")]
     async fn session_evidence(
         &self,
         Parameters(SessionEvidenceParams { session_id }): Parameters<SessionEvidenceParams>,
@@ -250,6 +276,80 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
                 format!("no evidence for session `{session_id}`: {e}"),
                 None,
             )),
+        }
+    }
+
+    #[tool(description = "Capture a PNG screenshot of a page (viewport by default, full page with full_page=true). Saved under the session recordings dir; returns the file path. Feeds the live view when enabled.")]
+    async fn page_screenshot(
+        &self,
+        Parameters(PageScreenshotParams { session_id, page_id, full_page }): Parameters<PageScreenshotParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let page = session
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let png = page
+            .screenshot(full_page.unwrap_or(false))
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let path = self
+            .recorder
+            .record_screenshot(&session_id, &page_id, &png)
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let url = page.url().await.unwrap_or_default();
+        crate::liveview::update(&session_id, &page_id, &url, png);
+        Ok(text_result(
+            serde_json::to_string_pretty(&serde_json::json!({
+                "file": path.to_string_lossy(),
+                "bytes": std::path::Path::new(&path).metadata().map(|m| m.len()).unwrap_or_default(),
+            }))
+            .unwrap_or_default(),
+        ))
+    }
+
+    #[tool(description = "Solve a CAPTCHA through the configured provider (env GHOSTFOX_CAPTCHA_PROVIDER=2captcha + GHOSTFOX_CAPTCHA_KEY). Turnstile/hcaptcha: pass sitekey + pageurl; image captchas: pass image_base64. Stealth-first: prefer not being challenged at all.")]
+    async fn captcha_solve(
+        &self,
+        Parameters(CaptchaSolveParams { session_id, sitekey, pageurl, image_base64 }): Parameters<CaptchaSolveParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let _ = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let started = std::time::Instant::now();
+        let result = if let Some(b64) = image_base64 {
+            crate::captcha::solve_image(&b64).await
+        } else if let (Some(sitekey), Some(pageurl)) = (sitekey, pageurl) {
+            crate::captcha::solve_turnstile(&sitekey, &pageurl).await
+        } else {
+            return Err(rmcp::model::ErrorData::invalid_params(
+                "pass image_base64, or sitekey + pageurl".to_string(),
+                None,
+            ));
+        };
+        match result {
+            Ok(token) => {
+                let _ = self.recorder.record(
+                    &session_id,
+                    "captcha_solve",
+                    None,
+                    serde_json::json!({ "ok": true, "seconds": started.elapsed().as_secs() }),
+                );
+                Ok(text_result(token))
+            }
+            Err(e) => {
+                let _ = self.recorder.record(
+                    &session_id,
+                    "captcha_solve",
+                    None,
+                    serde_json::json!({ "ok": false, "error": e }),
+                );
+                Err(rmcp::model::ErrorData::internal_error(e, None))
+            }
         }
     }
 

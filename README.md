@@ -83,7 +83,7 @@ Then the agent can: `session_create` → `page_open` → `page_snapshot` →
 
 **Every run records evidence.** Each session writes an append-only event log
 (`events.jsonl`), full page snapshots and the identity it used under
-`~/.ghostcloak/recordings/` — fetch it any time with `session_evidence`.
+`~/.ghostfox/recordings/` — fetch it any time with `session_evidence`.
 
 **Or install in one command** (Linux x86_64):
 

@@ -101,5 +101,5 @@ Add to your MCP client (e.g. ~/.claude.json, .mcp.json, Cursor config):
   }
 }
 
-Evidence of every session is recorded under ~/.ghostcloak/recordings/.
+Evidence of every session is recorded under ~/.ghostfox/recordings/.
 EOF

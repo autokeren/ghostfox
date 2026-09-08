@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ghostfox"
+version = "0.2.0"
+description = "Ghostfox — the agent-native stealth browser you can own. Python client + engine installer for the Ghostfox MCP runtime."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT OR Apache-2.0" }
+authors = [{ name = "autokeren" }]
+keywords = ["browser", "stealth", "anti-detect", "mcp", "ai-agents", "scraping"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: Internet :: WWW/HTTP :: Browsers",
+]
+
+[project.urls]
+Repository = "https://github.com/autokeren/ghostfox"
+
+[tool.setuptools.packages.find]
+include = ["ghostfox*"]

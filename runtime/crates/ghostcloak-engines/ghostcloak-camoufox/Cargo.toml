@@ -20,3 +20,4 @@ rand.workspace = true
 command-fds.workspace = true
 os_pipe.workspace = true
 libc.workspace = true
+base64.workspace = true

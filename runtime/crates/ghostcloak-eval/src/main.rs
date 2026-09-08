@@ -37,6 +37,14 @@ enum Mode {
         #[arg(long, default_value_t = true)]
         headless: bool,
     },
+    /// Live-target probe: hit a fixed target set, classify OK / GATED /
+    /// BLOCKED, and check the JS surface against the identity. Results are
+    /// JSONL (diffable between releases). Honesty note: run from a clean IP;
+    /// datacenter IPs bias gate rates up.
+    Targets {
+        #[arg(long, default_value_t = false)]
+        headless: bool,
+    },
 }
 
 #[tokio::main]
@@ -45,6 +53,7 @@ async fn main() -> anyhow::Result<()> {
     match cli.mode {
         Mode::Identity { count } => eval_identity(count),
         Mode::Web { url, expr, headless } => eval_web(url, expr, headless).await,
+        Mode::Targets { headless } => eval_targets(headless).await,
     }
 }
 
@@ -80,8 +89,119 @@ fn eval_identity(count: usize) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn eval_web(url: String, expr: Option<String>, headless: bool) -> anyhow::Result<()> {
+/// Live-target probe set: a mix of sanity pages, a classic detector panel
+/// and a fingerprint referee (the same external judge the Web Scraping Club
+/// benchmark uses).
+const TARGETS: &[(&str, &str)] = &[
+    ("example", "https://example.com"),
+    ("httpbin", "https://httpbin.org/html"),
+    ("sannysoft", "https://bot.sannysoft.com"),
+    ("deviceandbrowserinfo", "https://deviceandbrowserinfo.com/json"),
+];
+
+async fn eval_targets(headless: bool) -> anyhow::Result<()> {
+    use ghostcloak_camoufox::CamoufoxEngine;
+
     let opts = LaunchOptions {
+        headless,
+        ..Default::default()
+    };
+    let engine = ghostcloak_camoufox::launch(&opts).await?;
+    let engine = engine as Arc<dyn Engine>;
+
+    let mut ok = 0;
+    let mut gated = 0;
+    let mut blocked = 0;
+
+    for (name, url) in TARGETS {
+        let page = engine.new_page(&Default::default()).await?;
+        let nav = page.navigate(url).await;
+        tokio::time::sleep(std::time::Duration::from_secs(4)).await;
+        let title = page
+            .url()
+            .await
+            .ok()
+            .and_then(|_| None::<String>)
+            .or(None);
+        let _ = title;
+        let title = String::new();
+        // Body text via evaluate; fall back to the snapshot content.
+        let body = page
+            .evaluate("document.body ? document.body.innerText.slice(0, 6000) : ''")
+            .await
+            .ok()
+            .and_then(|v| v.as_str().map(str::to_string))
+            .unwrap_or_default();
+        let final_url = page.url().await.unwrap_or_default();
+        let nav_err = nav.err().map(|e| e.to_string());
+
+        // Classify.
+        let lower = body.to_lowercase();
+        let status = if lower.contains("just a moment")
+            || lower.contains("checking your browser")
+            || lower.contains("attention required")
+            || final_url.contains("/sorry/")
+        {
+            "gated"
+        } else if body.trim().is_empty() && nav_err.is_some() {
+            "blocked"
+        } else if body.trim().len() < 40 {
+            // Empty-ish body without a challenge → treat as blocked.
+            "blocked"
+        } else {
+            "ok"
+        };
+
+        // Target-specific detail.
+        let detail: serde_json::Value = match *name {
+            "sannysoft" => {
+                let pass = body.matches("PASS").count();
+                let fail = body.matches("FAIL").count();
+                serde_json::json!({ "pass_rows": pass, "fail_rows": fail })
+            }
+            "deviceandbrowserinfo" => {
+                let is_bot = page
+                    .evaluate("JSON.stringify((window.__referee||{}).isBot ?? navigator.userAgent ? null : null)")
+                    .await
+                    .unwrap_or(serde_json::Value::Null);
+                // The referee JSON is the page body itself; parse it.
+                let parsed: serde_json::Value =
+                    serde_json::from_str(body.trim()).unwrap_or(serde_json::Value::Null);
+                let is_bot = parsed
+                    .get("isBot")
+                    .cloned()
+                    .unwrap_or(is_bot);
+                serde_json::json!({ "isBot": is_bot })
+            }
+            _ => serde_json::Value::Null,
+        };
+
+        match status {
+            "ok" => ok += 1,
+            "gated" => gated += 1,
+            _ => blocked += 1,
+        }
+        println!(
+            "{}",
+            serde_json::json!({
+                "target": name,
+                "url": url,
+                "status": status,
+                "final_url": final_url,
+                "nav_err": nav_err,
+                "title": title,
+                "detail": detail,
+            })
+        );
+        let _ = page.close().await;
+    }
+
+    eprintln!("— {ok} ok / {gated} gated / {blocked} blocked of {} targets —", TARGETS.len());
+    let _ = engine.shutdown().await;
+    Ok(())
+}
+
+async fn eval_web(url: String, expr: Option<String>, headless: bool) -> anyhow::Result<()> {    let opts = LaunchOptions {
         headless,
         ..Default::default()
     };

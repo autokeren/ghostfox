@@ -43,7 +43,7 @@ impl Recorder {
             .map(PathBuf::from)
             .unwrap_or_else(|| {
                 let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-                Path::new(&home).join(".ghostcloak").join("recordings")
+                Path::new(&home).join(".ghostfox").join("recordings")
             })
     }
 
@@ -124,6 +124,27 @@ impl Recorder {
                 "url": snapshot.url,
                 "file": path.to_string_lossy(),
             }),
+        )?;
+        Ok(path)
+    }
+
+    /// Save a screenshot PNG and log its file path.
+    pub fn record_screenshot(
+        &self,
+        session_id: &str,
+        page_id: &str,
+        png: &[u8],
+    ) -> std::io::Result<PathBuf> {
+        let dir = self.session_dir(session_id).join("screenshots");
+        std::fs::create_dir_all(&dir)?;
+        let n = std::fs::read_dir(&dir).map(|d| d.count()).unwrap_or(0) + 1;
+        let path = dir.join(format!("{:04}-{}.png", n, sanitize(page_id)));
+        std::fs::write(&path, png)?;
+        self.record(
+            session_id,
+            "page_screenshot",
+            Some(page_id),
+            serde_json::json!({ "file": path.to_string_lossy(), "bytes": png.len() }),
         )?;
         Ok(path)
     }

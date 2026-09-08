@@ -1,0 +1,9 @@
+README.md
+pyproject.toml
+ghostfox/__init__.py
+ghostfox/engine.py
+ghostfox/mcp.py
+ghostfox.egg-info/PKG-INFO
+ghostfox.egg-info/SOURCES.txt
+ghostfox.egg-info/dependency_links.txt
+ghostfox.egg-info/top_level.txt

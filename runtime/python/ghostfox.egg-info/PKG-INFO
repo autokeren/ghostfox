@@ -1,0 +1,35 @@
+Metadata-Version: 2.4
+Name: ghostfox
+Version: 0.2.0
+Summary: Ghostfox — the agent-native stealth browser you can own. Python client + engine installer for the Ghostfox MCP runtime.
+Author: autokeren
+License: MIT OR Apache-2.0
+Project-URL: Repository, https://github.com/autokeren/ghostfox
+Keywords: browser,stealth,anti-detect,mcp,ai-agents,scraping
+Classifier: Programming Language :: Python :: 3
+Classifier: Topic :: Internet :: WWW/HTTP :: Browsers
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+
+# ghostfox (Python)
+
+Python surface for the [Ghostfox](https://github.com/autokeren/ghostfox)
+agent-native stealth browser.
+
+```python
+import ghostfox
+
+# one-time: download the prebuilt engine + runtime (Linux x86_64)
+ghostfox.install_engine()
+ghostfox.install_runtime()
+
+fox = ghostfox.GhostfoxMCP()
+sid  = fox.session_create(platform="android")   # coherent mobile persona
+page = fox.page_open(sid, "https://example.com")
+print(fox.page_snapshot(sid, page)["content"])
+fox.page_screenshot(sid, page)                   # evidence + live view
+fox.close()
+```
+
+Zero Python dependencies — it drives the Rust MCP runtime over stdio, the
+same server AI agents use.
