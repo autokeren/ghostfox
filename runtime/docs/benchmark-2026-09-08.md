@@ -48,3 +48,33 @@ engine family mid-table on live targets (25/31 OK with Firefox 135) and
 **top-4 of 15 in JS-fingerprint labs**. Ghostfox tracks upstream + rebases
 (currently Firefox 152); we do not yet have our own published live-target
 run — that is on the roadmap (see ROADMAP.md).
+
+## T3: Live-target probe (2026-09-08, engine 152.0.4 + touch patch)
+
+`ghostcloak-eval targets --headless`, run from a datacenter IP (biased against
+us — gate rates are higher from DC ranges):
+
+| Target | Status | Detail |
+|---|---|---|
+| example.com | ok | — |
+| httpbin.org/html | ok | — |
+| bot.sannysoft.com | ok | 3 rows passed · 1 "failed" = "Chrome (New): missing" (expected on a Firefox persona, not a real detection) · webdriver clean |
+| areyouheadless (Vastel) | ok | not flagged headless (site itself returned 502 this run) |
+
+**4/4 OK, 0 gated.** Run it yourself:
+
+```sh
+cargo run --release -p ghostcloak-eval -- targets --headless
+```
+
+## Touch coherence (Android personas, engine patch navigator-touch-spoofing)
+
+| Signal | Value on `session_create{"platform":"android"}` |
+|---|---|
+| navigator.maxTouchPoints | 5 (config-driven, engine-level) |
+| matchMedia('(pointer: coarse)') | true |
+| matchMedia('(pointer: fine)') | false |
+| matchMedia('(hover: hover)') | false |
+| TouchEvent / ontouchstart | present |
+| navigator.platform | "Linux aarch64" |
+| viewport | identity screen class (e.g. 384x815 portrait, dpr 3) |

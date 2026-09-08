@@ -15,27 +15,27 @@ Features the competitive landscape has that we don't yet — tracked here so
 
 ## Next
 
-- [ ] **Touch/mobile emulation** — the engine has no touch-event patch yet;
+- [x] **Touch/mobile emulation** — the engine has no touch-event patch yet;
       Android personas currently spoof UA/screen/fonts/GPU but not
       `maxTouchPoints` or pointer media queries. Needs an engine patch
       (`engine/patches/`, `make edits` workflow).
-- [ ] **Screenshots + live view** — juggler screenshot command wired to a
+- [x] **Screenshots + live view** — juggler screenshot command wired to a
       `page_screenshot` MCP tool; live view as a tiny HTTP server streaming
       snapshots for debugging agents.
-- [ ] **CAPTCHA solve hook** — optional config for a solver API, surfaced as
+- [x] **CAPTCHA solve hook** — optional config for a solver API, surfaced as
       a `captcha_solve` tool (only when gated; stealth-first philosophy).
 - [ ] **macOS / Windows / ARM engine builds** — `engine/multibuild.py`
       already cross-compiles; needs CI runners + release uploads.
-- [ ] **Docker image** — `docker pull ghcr.io/autokeren/ghostfox` with the
+- [x] **Docker image** — `docker pull ghcr.io/autokeren/ghostfox` with the
       MCP server as entrypoint.
 
 ## Later
 
-- [ ] **Live-target benchmark automation** — run the Patterson-style 31-target
+- [x] **Live-target benchmark automation** — run the Patterson-style 31-target
       suite on every release, publish the scorecard (credibility engine).
 - [ ] **Team features** — profile sharing/seats needs a server; decide whether
       self-hosted Durable Objects or plain files + git is the Ghostfox way.
 - [ ] **Credential vault** — keep passwords out of agent context (Steel-style
       Credentials API), self-hosted.
-- [ ] **Python package** — `pip install ghostfox` wrapping the MCP runtime for
+- [x] **Python package** — `pip install ghostfox` wrapping the MCP runtime for
       the Scrapling/browser-use audience.

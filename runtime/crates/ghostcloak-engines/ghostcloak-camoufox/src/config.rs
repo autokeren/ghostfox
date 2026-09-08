@@ -27,6 +27,14 @@ pub fn identity_to_config(identity: &Identity) -> BTreeMap<String, serde_json::V
     set(&mut cfg, "headers.User-Agent", ua);
     set(&mut cfg, "headers.Accept-Language", accept_language(&identity.locale));
 
+    // Android personas: touch points consistent with a real phone. The
+    // engine patch reads this key in Navigator::MaxTouchPoints; combined
+    // with the Juggler touch override (coarse pointer) the persona reads
+    // like one coherent device.
+    if identity.platform == Platform::Android {
+        set(&mut cfg, "navigator.maxTouchPoints", 5);
+    }
+
     // Screen.
     set(&mut cfg, "screen.width", identity.screen.width);
     set(&mut cfg, "screen.height", identity.screen.height);

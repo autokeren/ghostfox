@@ -189,6 +189,9 @@ pub struct CamoufoxPage {
     /// Juggler session for this target; all Page/Runtime commands must be
     /// routed through it, not the root session.
     session_id: Mutex<Option<String>>,
+    /// The page's MAIN frame. Only this frame's contexts and navigations are
+    /// tracked for evaluate(); iframe contexts must never hijack them.
+    main_frame_id: Mutex<Option<String>>,
     frame_id: Mutex<Option<String>>,
     execution_context_id: Mutex<Option<String>>,
 }
@@ -201,6 +204,7 @@ impl CamoufoxPage {
             conn,
             target_id,
             session_id: Mutex::new(None),
+            main_frame_id: Mutex::new(None),
             frame_id: Mutex::new(None),
             execution_context_id: Mutex::new(None),
         })
@@ -347,16 +351,44 @@ impl Engine for CamoufoxEngine {
                     }
                     if method == Some("Runtime.executionContextCreated") {
                         if let Some(cx) = msg.pointer("/params/executionContextId").and_then(|v| v.as_str()) {
-                            *handle.execution_context_id.lock().await = Some(cx.to_string());
+                            let fid = msg
+                                .pointer("/params/auxData/frameId")
+                                .and_then(|v| v.as_str())
+                                .map(str::to_string);
+                            let mut main = handle.main_frame_id.lock().await;
+                            let is_main = match (main.clone(), fid.as_deref()) {
+                                (Some(m), Some(f)) => m == f,
+                                (None, Some(f)) => {
+                                    // First frame we ever see is the main one:
+                                    // a page cannot host an iframe before its
+                                    // main frame exists.
+                                    *main = Some(f.to_string());
+                                    true
+                                }
+                                _ => false,
+                            };
+                            drop(main);
+                            if is_main {
+                                *handle.frame_id.lock().await = fid;
+                                *handle.execution_context_id.lock().await = Some(cx.to_string());
+                            }
                         }
                     }
-                    if method == Some("Page.frameAttached") || method == Some("Page.navigationCommitted") {
-                        if let Some(fid) = msg
-                            .pointer("/params/frame/id")
-                            .or_else(|| msg.pointer("/params/frameId"))
-                            .and_then(|v| v.as_str())
-                        {
-                            *handle.frame_id.lock().await = Some(fid.to_string());
+                    if method == Some("Page.navigationCommitted") {
+                        if let Some(fid) = msg.pointer("/params/frameId").and_then(|v| v.as_str()) {
+                            let mut main = handle.main_frame_id.lock().await;
+                            match main.clone() {
+                                Some(m) if m == fid => {
+                                    drop(main);
+                                    *handle.frame_id.lock().await = Some(fid.to_string());
+                                }
+                                None => {
+                                    *main = Some(fid.to_string());
+                                    drop(main);
+                                    *handle.frame_id.lock().await = Some(fid.to_string());
+                                }
+                                _ => {}
+                            }
                         }
                     }
                     let sid = handle.session_id.lock().await.clone();
@@ -379,11 +411,21 @@ impl Engine for CamoufoxEngine {
         // degenerate size and mouse-event dispatch needs actual bounds.
         {
             let sid = handle.session_id().await?;
+            // Viewport follows the identity's screen class: a phone persona
+            // must present a phone viewport, a desktop a desktop one.
+            // (Height shaved slightly for browser chrome.)
+            let (vw, vh) = match self.identity.platform {
+                ghostcloak_fingerprint::identity::Platform::Android => (
+                    self.identity.screen.width,
+                    self.identity.screen.height.saturating_sub(80),
+                ),
+                _ => (1280, 800),
+            };
             let _ = self
                 .conn
                 .request_session(
                     "Page.setViewportSize",
-                    serde_json::json!({"viewportSize": {"width": 1280, "height": 800}}),
+                    serde_json::json!({"viewportSize": {"width": vw, "height": vh}}),
                     Some(&sid),
                 )
                 .await;
@@ -417,15 +459,29 @@ impl Engine for CamoufoxEngine {
                             match method {
                                 Some("Runtime.executionContextCreated") => {
                                     if let Some(cx) = msg.pointer("/params/executionContextId").and_then(|v| v.as_str()) {
-                                        // Prefer main-world contexts, but accept
-                                        // any when no flag is present — some
-                                        // paths omit auxData.isDefault.
-                                        let is_default = msg
-                                            .pointer("/params/auxData/isDefault")
-                                            .and_then(|v| v.as_bool())
-                                            .unwrap_or(true);
-                                        let current = handle2.execution_context_id.lock().await.clone();
-                                        if is_default || current.is_none() {
+                                        // Only the MAIN frame's context is a
+                                        // valid evaluate target; iframe srcdoc
+                                        // contexts must not hijack it (e.g.
+                                        // bot.sannysoft.com's trailing test
+                                        // iframes).
+                                        let fid = msg
+                                            .pointer("/params/auxData/frameId")
+                                            .and_then(|v| v.as_str())
+                                            .map(str::to_string);
+                                        let mut main = handle2.main_frame_id.lock().await;
+                                        let is_main = match (main.clone(), fid.as_deref()) {
+                                            (Some(m), Some(f)) => m == f,
+                                            (None, Some(f)) => {
+                                                *main = Some(f.to_string());
+                                                true
+                                            }
+                                            _ => false,
+                                        };
+                                        drop(main);
+                                        if is_main {
+                                            if let Some(f) = fid {
+                                                *handle2.frame_id.lock().await = Some(f);
+                                            }
                                             *handle2.execution_context_id.lock().await = Some(cx.to_string());
                                         }
                                     }
@@ -446,13 +502,21 @@ impl Engine for CamoufoxEngine {
                                 }
                                 _ => {}
                             }
-                            if method == Some("Page.frameAttached") || method == Some("Page.navigationCommitted") {
-                                if let Some(fid) = msg
-                                    .pointer("/params/frame/id")
-                                    .or_else(|| msg.pointer("/params/frameId"))
-                                    .and_then(|v| v.as_str())
-                                {
-                                    *handle2.frame_id.lock().await = Some(fid.to_string());
+                            if method == Some("Page.navigationCommitted") {
+                                if let Some(fid) = msg.pointer("/params/frameId").and_then(|v| v.as_str()) {
+                                    let mut main = handle2.main_frame_id.lock().await;
+                                    match main.clone() {
+                                        Some(m) if m == fid => {
+                                            drop(main);
+                                            *handle2.frame_id.lock().await = Some(fid.to_string());
+                                        }
+                                        None => {
+                                            *main = Some(fid.to_string());
+                                            drop(main);
+                                            *handle2.frame_id.lock().await = Some(fid.to_string());
+                                        }
+                                        _ => {}
+                                    }
                                 }
                             }
                             if method == Some("Browser.attachedToTarget") {

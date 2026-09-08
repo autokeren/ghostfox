@@ -96,7 +96,8 @@ const TARGETS: &[(&str, &str)] = &[
     ("example", "https://example.com"),
     ("httpbin", "https://httpbin.org/html"),
     ("sannysoft", "https://bot.sannysoft.com"),
-    ("deviceandbrowserinfo", "https://deviceandbrowserinfo.com/json"),
+    // Headless-detection referee (Vastel's areyouheadless).
+    ("areyouheadless", "https://arh.antoinevastel.com/bots/areyouheadless"),
 ];
 
 async fn eval_targets(headless: bool) -> anyhow::Result<()> {
@@ -116,18 +117,24 @@ async fn eval_targets(headless: bool) -> anyhow::Result<()> {
     for (name, url) in TARGETS {
         let page = engine.new_page(&Default::default()).await?;
         let nav = page.navigate(url).await;
-        tokio::time::sleep(std::time::Duration::from_secs(4)).await;
-        let title = page
-            .url()
-            .await
-            .ok()
-            .and_then(|_| None::<String>)
-            .or(None);
-        let _ = title;
+        // Detectors and JSON viewers need a beat to render; 4s proved too
+        // tight for bot.sannysoft.com from a datacenter IP.
+        tokio::time::sleep(std::time::Duration::from_secs(9)).await;
         let title = String::new();
-        // Body text via evaluate; fall back to the snapshot content.
+        // Body text: the main document first; iframe unwrapping only when
+        // the main body is nearly empty (some sites render into a srcdoc
+        // wrapper); JSON viewer pages fall back to textContent.
         let body = page
-            .evaluate("document.body ? document.body.innerText.slice(0, 6000) : ''")
+            .evaluate(
+                "(function(){ var t = (document.body && document.body.innerText) || ''; \
+                 if (t.trim().length < 40) { \
+                   var f = document.querySelector('iframe'); \
+                   if (f && f.contentDocument && f.contentDocument.body) \
+                     t = f.contentDocument.body.innerText || ''; \
+                 } \
+                 if (t.trim().length < 40) t = (document.documentElement && document.documentElement.textContent) || ''; \
+                 return t.slice(0, 8000); })()",
+            )
             .await
             .ok()
             .and_then(|v| v.as_str().map(str::to_string))
@@ -155,23 +162,21 @@ async fn eval_targets(headless: bool) -> anyhow::Result<()> {
         // Target-specific detail.
         let detail: serde_json::Value = match *name {
             "sannysoft" => {
-                let pass = body.matches("PASS").count();
-                let fail = body.matches("FAIL").count();
-                serde_json::json!({ "pass_rows": pass, "fail_rows": fail })
+                // Rows read "passed"/"failed"/"missing (passed)"; count both
+                // cases (the site styles cells but innerText is lowercase).
+                let lower = body.to_lowercase();
+                let pass = lower.matches("passed").count();
+                let fail = lower.matches("failed").count();
+                let webdriver_leak = !lower.contains("webdriver") || lower.contains("missing (passed)");
+                serde_json::json!({ "pass_rows": pass, "fail_rows": fail, "webdriver_clean": webdriver_leak })
             }
-            "deviceandbrowserinfo" => {
-                let is_bot = page
-                    .evaluate("JSON.stringify((window.__referee||{}).isBot ?? navigator.userAgent ? null : null)")
-                    .await
-                    .unwrap_or(serde_json::Value::Null);
-                // The referee JSON is the page body itself; parse it.
-                let parsed: serde_json::Value =
-                    serde_json::from_str(body.trim()).unwrap_or(serde_json::Value::Null);
-                let is_bot = parsed
-                    .get("isBot")
-                    .cloned()
-                    .unwrap_or(is_bot);
-                serde_json::json!({ "isBot": is_bot })
+            "areyouheadless" => {
+                let lower = body.to_lowercase();
+                let headless = lower.contains("headless");
+                serde_json::json!({
+                    "says_headless": headless,
+                    "snippet": body.lines().find(|l| !l.trim().is_empty()).unwrap_or_default(),
+                })
             }
             _ => serde_json::Value::Null,
         };

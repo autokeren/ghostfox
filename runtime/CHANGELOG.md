@@ -48,3 +48,35 @@ First public release. Rust-native agent browser runtime with a patched-Firefox e
   `session_create {"platform":"android"}`.
 - Identity benchmark published: 500/500 coherent (Windows 135 · Android 161 ·
   MacOS 103 · Linux 101), see `docs/benchmark-2026-09-08.md`.
+
+## [0.3.0] — 2026-09-08 (same day, second wave)
+
+### Added
+
+- **Touch-coherent Android personas** — `navigator.maxTouchPoints` spoofed at
+  the C++ level (engine patch `navigator-touch-spoofing.patch`), Juggler touch
+  override at launch (coarse pointer + touch events), viewport follows the
+  identity screen class. Verified end-to-end: 5 touch points, pointer:coarse,
+  no hover, portrait viewport, Linux aarch64 platform.
+- **page_screenshot MCP tool** — Juggler `Page.screenshot` (viewport or full
+  page), PNG evidence under `~/.ghostfox/recordings/<session>/screenshots/`.
+- **Live view (opt-in)** — `GHOSTFOX_LIVE_VIEW_PORT` serves per-page latest
+  PNGs + index, with a 5s auto-capture ticker.
+- **captcha_solve MCP tool** — 2captcha hook (Turnstile + image), env-config
+  (GHOSTFOX_CAPTCHA_PROVIDER/GHOSTFOX_CAPTCHA_KEY), attempts recorded in
+  evidence without key material.
+- **eval `targets` mode** — live-target probe (sannysoft detector panel +
+  areyouheadless referee + sanity pages) with JSONL scorecard; first run:
+  4/4 ok, 0 gated from a datacenter IP.
+- **Python package** — `pip install ghostfox` (installer + sync MCP client).
+
+### Fixed
+
+- **iframe context hijack (major)** — the execution-context pump tracked the
+  newest context, so pages with iframes (most real sites, bot.sannysoft.com's
+  srcdoc test frames) made snapshots/clicks/typing evaluate inside an iframe.
+  The pump now tracks the page's main frame only (via auxData.frameId).
+- Android viewport now portrait-sized from the identity (was hardcoded
+  1280x800).
+- maxTouchPoints config check ordered before the RDM-pane branch (a juggler
+  viewport request sets inRDMPane, which masked the config).

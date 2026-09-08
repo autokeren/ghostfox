@@ -1,0 +1,30 @@
+diff --git a/dom/base/Navigator.cpp b/dom/base/Navigator.cpp
+--- a/dom/base/Navigator.cpp
++++ b/dom/base/Navigator.cpp
+@@ -982,11 +982,20 @@ uint32_t Navigator::MaxTouchPoints(CallerType aCallerType) {
+   nsIDocShell* docshell = GetDocShell();
+   BrowsingContext* bc = docshell ? docshell->GetBrowsingContext() : nullptr;
+
+-  // Responsive Design Mode overrides the maxTouchPoints property when
+-  // touch simulation is enabled.
+-  if (bc && bc->Top()->InRDMPane()) {
+-    return bc->Top()->GetMaxTouchPointsOverride();
+-  }
++  // Ghostfox: config-driven touch points for coherent mobile personas —
++  // pairs with the Juggler touch override (coarse pointer). Checked before
++  // the RDM pane: RDM is the automation viewport, and an explicit persona
++  // config must win over it (the juggler sets inRDMPane when a viewport is
++  // requested, which would otherwise mask the config).
++  if (auto value = MaskConfig::GetUint32("navigator.maxTouchPoints")) {
++    return value.value();
++  }
++
++  // Responsive Design Mode overrides the maxTouchPoints property when
++  // touch simulation is enabled.
++  if (bc && bc->Top()->InRDMPane()) {
++    return bc->Top()->GetMaxTouchPointsOverride();
++  }
+
+   // The maxTouchPoints is going to reveal the detail of users' hardware. So,
+   // we will spoof it into 0 if fingerprinting resistance is on.
+   if (aCallerType != CallerType::System &&
