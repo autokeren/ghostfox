@@ -18,7 +18,7 @@ use ghostcloak_core::session::Session;
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct SessionCreateParams {
-    /// Restrict identity platform: "windows" | "macos" | "linux" (optional).
+    /// Restrict identity platform: "windows" | "macos" | "linux" | "android" (optional).
     #[serde(default)]
     platform: Option<String>,
     /// Reuse a persistent profile directory (optional).
@@ -27,6 +27,11 @@ struct SessionCreateParams {
     /// Proxy URL, e.g. socks5://user:pass@host:port (optional).
     #[serde(default)]
     proxy: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct SessionEvidenceParams {
+    session_id: String,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -83,6 +88,7 @@ struct IdentityAuditParams {
 #[derive(Clone, Default)]
 pub struct GhostcloakServer {
     state: Arc<tokio::sync::RwLock<ServerState>>,
+    recorder: crate::recording::Recorder,
 }
 
 #[derive(Default)]
@@ -121,6 +127,7 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
                 Some("windows") => Some(ghostcloak_fingerprint::Platform::Windows),
                 Some("macos") => Some(ghostcloak_fingerprint::Platform::MacOS),
                 Some("linux") => Some(ghostcloak_fingerprint::Platform::Linux),
+                Some("android") => Some(ghostcloak_fingerprint::Platform::Android),
                 _ => None,
             },
             webrtc: None,
@@ -160,6 +167,19 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
             engine,
         );
         let id = session.id.clone();
+        // Evidence: record the persona this run uses, plus the launch facts.
+        {
+            let ev = serde_json::json!({
+                "label": identity.label,
+                "platform": format!("{:?}", identity.platform),
+                "identity_hash": identity.fingerprint_hash(),
+                "profile_dir": launch.profile_dir,
+                "proxy": launch.proxy.is_some(),
+                "engine": "ghostfox",
+            });
+            let _ = self.recorder.record_identity(&id, &identity.to_toml().unwrap_or_default());
+            let _ = self.recorder.record(&id, "session_create", None, ev);
+        }
         self.state
             .write()
             .await
@@ -189,6 +209,9 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
             .into_iter()
             .find(|id| !page_ids_before.contains(id))
             .unwrap_or_default();
+        let _ = self
+            .recorder
+            .record(&session_id, "page_open", Some(&new_id), serde_json::json!({ "url": url }));
         Ok(text_result(new_id))
     }
 
@@ -209,9 +232,25 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
             .snapshot()
             .await
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        // Evidence: persist the full snapshot for replay/audit.
+        let _ = self.recorder.record_snapshot(&session_id, &page_id, &snap);
         Ok(text_result(
             serde_json::to_string_pretty(&snap).unwrap_or_default(),
         ))
+    }
+
+    #[tool(description = "Get recorded evidence for a session: event log, snapshot files, identity used. Recordings live under ~/.ghostcloak/recordings/.")]
+    async fn session_evidence(
+        &self,
+        Parameters(SessionEvidenceParams { session_id }): Parameters<SessionEvidenceParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        match self.recorder.evidence(&session_id) {
+            Ok(ev) => Ok(text_result(serde_json::to_string_pretty(&ev).unwrap_or_default())),
+            Err(e) => Err(rmcp::model::ErrorData::internal_error(
+                format!("no evidence for session `{session_id}`: {e}"),
+                None,
+            )),
+        }
     }
 
     #[tool(description = "Click an element by CSS selector.")]
@@ -230,6 +269,7 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
         page.click(&selector)
             .await
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let _ = self.recorder.record(&session_id, "page_click", Some(&page_id), serde_json::json!({ "selector": selector }));
         Ok(text_result("ok"))
     }
 
@@ -249,6 +289,7 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
         page.type_text(&selector, &text)
             .await
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let _ = self.recorder.record(&session_id, "page_type", Some(&page_id), serde_json::json!({ "selector": selector, "chars": text.chars().count() }));
         Ok(text_result("ok"))
     }
 
@@ -278,6 +319,7 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
             .await
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
         if res.as_str() == Some("OK") {
+            let _ = self.recorder.record(&session_id, "page_fill", Some(&page_id), serde_json::json!({ "selector": selector, "chars": text.chars().count() }));
             Ok(text_result("ok"))
         } else {
             Err(rmcp::model::ErrorData::internal_error(
@@ -302,11 +344,10 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
             .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
         // The core PageHandle trait has no press; the camoufox page does.
         // Downcast through the engine-specific handle.
-        let pressed = page
-            .press_key(&key)
+        page.press_key(&key)
             .await
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
-        let _ = pressed;
+        let _ = self.recorder.record(&session_id, "page_press", Some(&page_id), serde_json::json!({ "key": key }));
         Ok(text_result("ok"))
     }
 

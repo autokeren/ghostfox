@@ -31,3 +31,20 @@ First public release. Rust-native agent browser runtime with a patched-Firefox e
 
 - Heavy fingerprint-test sites (CreepJS) crash the engine's content channel — upstream engine bug, tracked.
 - Google may serve `/sorry/` challenge pages on datacenter IPs following a homepage→search pattern; pass a `proxy` to `session_create` or navigate directly to search URLs.
+
+## [0.2.0] — 2026-09-08
+
+### Added
+
+- **Evidence recording** — every session writes an append-only `events.jsonl`
+  plus full page snapshots and `identity.toml` under
+  `~/.ghostcloak/recordings/<session>/`; new `session_evidence` MCP tool
+  returns the log, files and persona (evidence primitive for run audit and
+  replay).
+- **Android personas** — new `Platform::Android`: portrait screens with
+  dpr ≥ 2, Adreno/Mali GPU strings, Android font stacks, Firefox-on-Android
+  UAs (Android version tracked from the identity), `navigator.platform`
+  `Linux aarch64`, auditor rules for portrait/dpr/GPU coherence.
+  `session_create {"platform":"android"}`.
+- Identity benchmark published: 500/500 coherent (Windows 135 · Android 161 ·
+  MacOS 103 · Linux 101), see `docs/benchmark-2026-09-08.md`.

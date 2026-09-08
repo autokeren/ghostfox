@@ -39,6 +39,11 @@ Firefox (MPL-2.0)
 | Coherent identities + auditor | **✓** | ✗ | ✗ | partial |
 | Runtime language | **Rust** | — | Node | — |
 
+**Android personas too** — `session_create {"platform": "android"}` gives
+portrait screens, Adreno/Mali GPUs, Android font stacks and Firefox-on-Android
+UAs, all audited like desktop identities (500/500 coherent, see
+[runtime/docs](runtime/docs/benchmark-2026-09-08.md)).
+
 **One identity, no contradictions.** Identities are generated from coherent
 device presets (platform, screen, GPU, fonts that actually ship together),
 injected at the engine level, and audited before use — a spoofed browser's
@@ -74,7 +79,17 @@ cargo build --release
 
 Then the agent can: `session_create` → `page_open` → `page_snapshot` →
 `page_click` / `page_type` / `page_fill` / `page_press`, plus
-`identity_generate` / `identity_audit`.
+`identity_generate` / `identity_audit` / `session_evidence`.
+
+**Every run records evidence.** Each session writes an append-only event log
+(`events.jsonl`), full page snapshots and the identity it used under
+`~/.ghostcloak/recordings/` — fetch it any time with `session_evidence`.
+
+**Or install in one command** (Linux x86_64):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/autokeren/ghostfox/main/install.sh | bash
+```
 
 From source end-to-end (build the engine yourself):
 see [engine/README.md](engine/README.md) — `make dir && make build`.

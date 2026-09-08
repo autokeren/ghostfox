@@ -91,6 +91,21 @@ pub fn firefox_ua(identity: &Identity) -> String {
         Platform::Linux => format!(
             "Mozilla/5.0 (X11; Linux x86_64; rv:{ff_ver}.0) Gecko/20100101 Firefox/{ff_ver}.0"
         ),
+        // The Android version tracks the desktop Firefox version in the
+        // identity's UA; keep the engine's version in sync via
+        // `firefox_major` so UA and `navigator.buildID`-adjacent signals agree.
+        Platform::Android => {
+            let android_ver = identity
+                .user_agent
+                .split("Android ")
+                .nth(1)
+                .and_then(|rest| rest.split(';').next())
+                .and_then(|v| v.trim().parse::<u32>().ok())
+                .unwrap_or(14);
+            format!(
+                "Mozilla/5.0 (Android {android_ver}; Mobile; rv:{ff_ver}.0) Gecko/{ff_ver}.0 Firefox/{ff_ver}.0"
+            )
+        }
     }
 }
 
@@ -113,6 +128,8 @@ pub fn platform_str(platform: Platform) -> &'static str {
         Platform::Windows => "Win32",
         Platform::MacOS => "MacIntel",
         Platform::Linux => "Linux x86_64",
+        // Firefox on Android reports a Linux ARM platform string.
+        Platform::Android => "Linux aarch64",
     }
 }
 
@@ -174,11 +191,12 @@ pub fn env_for_identity(
         );
     }
 
-    // Platform fontconfig shipped with the binary.
+    // Platform fontconfig shipped with the binary. Android personas reuse the
+    // Linux font stack (the spoofed font list carries the persona).
     let ua_os = match identity.platform {
         Platform::Windows => "win",
         Platform::MacOS => "mac",
-        Platform::Linux => "lin",
+        Platform::Linux | Platform::Android => "lin",
     };
     let fc = camoufox_home.join("fontconfig").join(ua_os);
     env.insert("FONTCONFIG_PATH".to_string(), fc.to_string_lossy().to_string());

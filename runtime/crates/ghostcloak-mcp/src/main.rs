@@ -4,6 +4,7 @@ use rmcp::service::serve_server;
 use rmcp::transport::stdio;
 use rmcp::ServerHandler;
 
+mod recording;
 mod server;
 
 use server::GhostcloakServer;

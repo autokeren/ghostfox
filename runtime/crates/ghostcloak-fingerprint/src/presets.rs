@@ -37,6 +37,15 @@ const LINUX_GBUS: &[&str] = &[
     "ANGLE (AMD, AMD Radeon RX 6700 XT (radeonsi navi22 LLVM 15.0.7), OpenGL 4.6)",
 ];
 
+/// Android GPUs (Firefox on Android reports the raw renderer, no ANGLE).
+const ANDROID_GBUS: &[&str] = &[
+    "Adreno (TM) 740",
+    "Adreno (TM) 750",
+    "Mali-G715-Immortalis MC11",
+    "Mali-G615",
+    "Adreno (TM) 730",
+];
+
 pub const WIN_FONTS: &[&str] = &[
     "Arial", "Arial Black", "Calibri", "Cambria", "Candara", "Comic Sans MS", "Consolas",
     "Constantia", "Corbel", "Courier New", "Ebrima", "Franklin Gothic Medium", "Gabriola",
@@ -69,6 +78,12 @@ pub const LINUX_FONTS: &[&str] = &[
     "Ubuntu", "Ubuntu Mono", "Ubuntu Condensed", "Cantarell", "Cousine", "Tinos", "Arimo",
 ];
 
+pub const ANDROID_FONTS: &[&str] = &[
+    "Roboto", "Roboto Condensed", "Roboto Mono", "Noto Sans", "Noto Sans Arabic",
+    "Noto Sans Bengali", "Noto Sans CJK", "Noto Sans Devanagari", "Noto Sans Thai",
+    "Noto Serif", "Noto Color Emoji", "Droid Sans Mono", "Coming Soon", "Carrois Gothic SC",
+];
+
 impl DevicePreset {
     pub fn hardware(&self) -> Hardware {
         Hardware {
@@ -92,6 +107,7 @@ impl DevicePreset {
             Platform::Windows => WIN_FONTS,
             Platform::MacOS => MAC_FONTS,
             Platform::Linux => LINUX_FONTS,
+            Platform::Android => ANDROID_FONTS,
         }
     }
 }
@@ -110,4 +126,11 @@ pub const PRESETS: &[DevicePreset] = &[
     DevicePreset { platform: Platform::Linux, ua: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36", screen: (1920, 1080, 1.0), cores: 8, memory_gb: 8, gpu: LINUX_GBUS[0] },
     DevicePreset { platform: Platform::Linux, ua: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36", screen: (1366, 768, 1.0), cores: 4, memory_gb: 8, gpu: LINUX_GBUS[1] },
     DevicePreset { platform: Platform::Linux, ua: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36", screen: (2560, 1440, 1.0), cores: 16, memory_gb: 8, gpu: LINUX_GBUS[2] },
+    // Android phones — Firefox on Android personas. Screens are CSS pixels,
+    // portrait (h > w), dpr >= 2.
+    DevicePreset { platform: Platform::Android, ua: "Mozilla/5.0 (Android 15; Mobile; rv:141.0) Gecko/141.0 Firefox/141.0", screen: (412, 915, 2.625), cores: 8, memory_gb: 8, gpu: ANDROID_GBUS[0] },
+    DevicePreset { platform: Platform::Android, ua: "Mozilla/5.0 (Android 14; Mobile; rv:141.0) Gecko/141.0 Firefox/141.0", screen: (384, 832, 3.0), cores: 8, memory_gb: 8, gpu: ANDROID_GBUS[1] },
+    DevicePreset { platform: Platform::Android, ua: "Mozilla/5.0 (Android 15; Mobile; rv:140.0) Gecko/140.0 Firefox/140.0", screen: (393, 873, 2.75), cores: 8, memory_gb: 8, gpu: ANDROID_GBUS[2] },
+    DevicePreset { platform: Platform::Android, ua: "Mozilla/5.0 (Android 14; Mobile; rv:140.0) Gecko/140.0 Firefox/140.0", screen: (360, 800, 2.8), cores: 8, memory_gb: 8, gpu: ANDROID_GBUS[3] },
+    DevicePreset { platform: Platform::Android, ua: "Mozilla/5.0 (Android 13; Mobile; rv:141.0) Gecko/141.0 Firefox/141.0", screen: (412, 892, 2.625), cores: 8, memory_gb: 8, gpu: ANDROID_GBUS[4] },
 ];

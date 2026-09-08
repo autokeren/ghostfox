@@ -198,6 +198,7 @@ fn platform_str(identity: &Identity) -> String {
         ghostcloak_fingerprint::identity::Platform::Windows => "Win32".into(),
         ghostcloak_fingerprint::identity::Platform::MacOS => "MacIntel".into(),
         ghostcloak_fingerprint::identity::Platform::Linux => "Linux x86_64".into(),
+        ghostcloak_fingerprint::identity::Platform::Android => "Linux aarch64".into(),
     }
 }
 

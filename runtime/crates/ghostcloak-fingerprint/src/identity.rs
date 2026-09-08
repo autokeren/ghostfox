@@ -41,6 +41,9 @@ pub enum Platform {
     Windows,
     MacOS,
     Linux,
+    /// Android phones (Firefox on Android personas: portrait screens,
+    /// ARM GPUs, mobile UAs, Android font stacks).
+    Android,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]

@@ -27,6 +27,8 @@ pub fn audit(identity: &Identity) -> Vec<Violation> {
         Some(Platform::Windows)
     } else if ua.contains("Macintosh") {
         Some(Platform::MacOS)
+    } else if ua.contains("Android") {
+        Some(Platform::Android)
     } else if ua.contains("X11; Linux") || ua.contains("Linux x86_64") {
         Some(Platform::Linux)
     } else {
@@ -72,13 +74,32 @@ pub fn audit(identity: &Identity) -> Vec<Violation> {
             reason: "modern MacBooks report dpr >= 2.0".into(),
         });
     }
+    if identity.platform == Platform::Android && dpr < 2.0 {
+        v.push(Violation {
+            field: "screen.dpr",
+            reason: "Android phones report dpr >= 2.0".into(),
+        });
+    }
     if identity.platform == Platform::Windows && w == 1920 && dpr != 1.0 && dpr != 1.25 {
         v.push(Violation {
             field: "screen.dpr",
             reason: "1080p Windows desktops are overwhelmingly dpr 1.0 or 1.25".into(),
         });
     }
-    if w == 0 || h == 0 || h >= w {
+    if w == 0 || h == 0 {
+        v.push(Violation {
+            field: "screen",
+            reason: "screen dimensions must be nonzero".into(),
+        });
+    } else if identity.platform == Platform::Android {
+        // Phones are portrait.
+        if h <= w {
+            v.push(Violation {
+                field: "screen",
+                reason: "Android personas must be portrait (h > w)".into(),
+            });
+        }
+    } else if h >= w {
         v.push(Violation {
             field: "screen",
             reason: "landscape screens only; w must exceed h and both be nonzero".into(),
@@ -90,6 +111,7 @@ pub fn audit(identity: &Identity) -> Vec<Violation> {
         Platform::Windows => identity.hardware.gpu_renderer.contains("Direct3D11") || identity.hardware.gpu_renderer.contains("D3D11"),
         Platform::MacOS => identity.hardware.gpu_renderer.contains("Metal") || identity.hardware.gpu_renderer.contains("ANGLE (Apple"),
         Platform::Linux => identity.hardware.gpu_renderer.contains("OpenGL") || identity.hardware.gpu_renderer.contains("Mesa") || identity.hardware.gpu_renderer.contains("ANGLE ("),
+        Platform::Android => identity.hardware.gpu_renderer.contains("Adreno") || identity.hardware.gpu_renderer.contains("Mali") || identity.hardware.gpu_renderer.contains("PowerVR"),
     };
     if !gpu_ok {
         v.push(Violation {

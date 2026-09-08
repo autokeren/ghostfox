@@ -53,10 +53,16 @@ pub fn generate(opts: &GenerateOptions) -> Identity {
     let (locale, tz, lat, lon) = LOCALE_ZONES.choose(&mut rng).copied().unwrap();
 
     let mut screen: Screen = preset.screen();
-    // Taskbar/dock/multi-monitor variation: shrink the *available* viewport a
-    // bit without touching the panel resolution class.
-    let height_delta = rng.random_range(0..=40);
-    screen.height = screen.height.saturating_sub(height_delta);
+    if preset.platform == Platform::Android {
+        // Mobile: system bars shave a few CSS pixels; never flip portrait.
+        let height_delta = rng.random_range(0..=24);
+        screen.height = screen.height.saturating_sub(height_delta);
+    } else {
+        // Taskbar/dock/multi-monitor variation: shrink the *available* viewport a
+        // bit without touching the panel resolution class.
+        let height_delta = rng.random_range(0..=40);
+        screen.height = screen.height.saturating_sub(height_delta);
+    }
 
     let hardware: Hardware = preset.hardware();
 
@@ -90,6 +96,7 @@ fn preset_label(platform: Platform) -> String {
         Platform::Windows => "win-desktop",
         Platform::MacOS => "macbook",
         Platform::Linux => "linux-desktop",
+        Platform::Android => "android-phone",
     };
     format!("{}-{}", slug, util::short_id())
 }
