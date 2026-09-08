@@ -1,0 +1,28 @@
+name: Publish npm
+
+# Auto-publish the npm wrapper when a release is published (versions are
+# synced: release vX.Y.Z → npm 0.X.Y-ish; the wrapper's package.json
+# version is the source of truth for what lands on npm).
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: https://registry.npmjs.org
+
+      - name: Publish
+        working-directory: runtime/node
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
