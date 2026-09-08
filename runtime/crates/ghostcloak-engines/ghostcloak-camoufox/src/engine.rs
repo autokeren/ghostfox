@@ -1016,10 +1016,14 @@ impl PageHandle for CamoufoxPage {
     }
 
     async fn close(&self) -> Result<()> {
+        // Juggler's page close is a Page.* method on the target session
+        // (`Target.close` is not implemented by this juggler version).
+        let sid = self.session_id().await?;
         self.conn
-            .request(
-                "Target.close",
-                serde_json::json!({"targetId": self.target_id}),
+            .request_session(
+                "Page.close",
+                serde_json::json!({ "runBeforeUnload": false }),
+                Some(&sid),
             )
             .await?;
         Ok(())

@@ -117,13 +117,29 @@ pub fn firefox_ua(identity: &Identity) -> String {
     }
 }
 
-/// The installed Camoufox's Firefox major, read at launch time by the engine.
-/// Fallback when unknown.
+/// The installed engine's Firefox major, read once from the binary's
+/// `application.ini` (`Version=152.0.4-beta.30` → 152). Fallback when the
+/// engine can't be probed.
 pub const DEFAULT_FIREFOX_MAJOR: u32 = 135;
 
+/// Read the engine's Firefox major from `<home>/application.ini`.
+pub fn firefox_major_from_home(home: &std::path::Path) -> Option<u32> {
+    let raw = std::fs::read_to_string(home.join("application.ini")).ok()?;
+    let version = raw.lines().find(|l| l.starts_with("Version="))?;
+    let major = version.trim_start_matches("Version=").split('.').next()?;
+    major.parse().ok()
+}
+
 fn firefox_major(_identity: &Identity) -> u32 {
-    // The engine adapter overrides this with the binary's real version when
-    // it knows it; identities stay version-agnostic.
+    // Prefer the engine's real version so UA, headers and buildID-adjacent
+    // signals all agree with the binary in GHOSTFOX_HOME.
+    if let Some(home) = std::env::var_os("GHOSTFOX_HOME")
+        .or_else(|| std::env::var_os("CAMOUFOX_HOME"))
+    {
+        if let Some(v) = firefox_major_from_home(std::path::Path::new(&home)) {
+            return v;
+        }
+    }
     DEFAULT_FIREFOX_MAJOR
 }
 
