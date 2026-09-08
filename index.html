@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ghostfox — the agent-native stealth browser you can own</title>
+<meta name="description" content="Self-hosted stealth browser for AI agents: fingerprint-coherent Firefox engine + Rust MCP runtime. Stealth when you need it, evidence for everything it does.">
+<style>
+  :root{
+    --bg:#0f0f18; --panel:#161622; --panel2:#1c1c2b; --fg:#ebebf5;
+    --dim:#9a9aac; --violet:#a78bfa; --cyan:#67e8f9; --line:#2a2a3d;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:980px;margin:0 auto;padding:0 20px}
+  header{padding:72px 0 40px;text-align:center;
+    background:radial-gradient(1200px 500px at 50% -10%, rgba(124,58,237,.25), transparent)}
+  header img{width:110px;height:110px}
+  h1{font-size:2.6rem;margin:.4em 0 .15em;letter-spacing:-.02em}
+  .tag{color:var(--violet);font-size:1.15rem;margin:0 0 14px}
+  .tag2{color:var(--dim);max-width:640px;margin:0 auto 22px}
+  .badges a{margin:0 3px;text-decoration:none}
+  pre{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    padding:14px 18px;overflow:auto;font-size:14px}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.9em;
+    background:var(--panel2);border-radius:5px;padding:2px 6px;color:#dcd6ff}
+  pre code{background:none;padding:0}
+  .install{max-width:560px;margin:18px auto;text-align:left}
+  section{padding:34px 0;border-top:1px solid var(--line)}
+  h2{font-size:1.5rem;margin:0 0 14px;letter-spacing:-.01em}
+  h2 em{color:var(--violet);font-style:normal}
+  table{border-collapse:collapse;width:100%;font-size:.92rem}
+  th,td{border:1px solid var(--line);padding:9px 12px;text-align:left;vertical-align:top}
+  th{background:var(--panel);color:var(--dim);font-weight:600}
+  td.yes{color:#86efac}td.no{color:#fca5a5}td.mid{color:#fde68a}
+  video{width:100%;border:1px solid var(--line);border-radius:12px;background:#000}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:16px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px}
+  .card h3{margin:0 0 8px;font-size:1.02rem}
+  .card p{margin:0;color:var(--dim);font-size:.92rem}
+  .card b{color:var(--cyan);font-weight:600}
+  footer{padding:40px 0 60px;color:var(--dim);font-size:.85rem;text-align:center}
+  a{color:var(--cyan)}
+  .kicker{color:var(--cyan);font-size:.8rem;letter-spacing:.12em;text-transform:uppercase;margin:0 0 8px}
+  ul{margin:8px 0;padding-left:22px}
+  li{margin:4px 0}
+  .muted{color:var(--dim)}
+</style>
+</head>
+<body>
+
+<header class="wrap">
+  <img src="logo.png" alt="Ghostfox">
+  <h1>Ghostfox</h1>
+  <p class="tag">The agent-native stealth browser you can own.</p>
+  <p class="tag2">Self-hosted · open source · MCP-first · engine-level anti-detect —
+    <b style="color:var(--fg)">stealth when you need it, evidence for everything it does.</b></p>
+  <div class="badges">
+    <a href="https://github.com/autokeren/ghostfox"><img src="https://img.shields.io/badge/github-autokeren%2Fghostfox-8b5cf6" alt="GitHub"></a>
+    <a href="https://github.com/autokeren/ghostfox/releases"><img src="https://img.shields.io/badge/release-v0.2.0-22c55e" alt="release"></a>
+    <a href="https://github.com/autokeren/ghostfox/tree/main/engine"><img src="https://img.shields.io/badge/engine-Firefox%20152-f97316" alt="engine"></a>
+    <a href="https://github.com/autokeren/ghostfox/blob/main/LICENSE-MIT"><img src="https://img.shields.io/badge/runtime-MIT%2FApache--2.0-blue" alt="runtime license"></a>
+  </div>
+  <div class="install"><pre><code>curl -fsSL https://raw.githubusercontent.com/autokeren/ghostfox/main/install.sh | bash</code></pre></div>
+  <p class="muted">Linux · Windows · macOS — x86_64 · arm64</p>
+</header>
+
+<div class="wrap">
+
+<section>
+  <p class="kicker">demo — real sessions, real captures</p>
+  <h2>An agent books dinner, <em>passes detection</em>, replays its work</h2>
+  <video controls muted playsinline src="demo.mp4"></video>
+</section>
+
+<section>
+  <p class="kicker">why</p>
+  <h2>Hosted stealth browsers see your cookies. <em>You should see yours.</em></h2>
+  <p>AI agents get blocked (headless Chrome trips Cloudflare on ~20% of the web), and the
+  hosted "stealth browser" platforms route your agent's identities, cookies and sessions
+  through someone else's cloud. Ghostfox is the self-hosted alternative: a complete
+  browser stack you run yourself.</p>
+  <table>
+    <tr><th></th><th>Ghostfox</th><th>Hosted stealth (Browserbase, …)</th><th>playwright-mcp</th><th>Anti-detect suites (Multilogin, …)</th></tr>
+    <tr><td>Self-hosted</td><td class="yes">✓</td><td class="no">✗</td><td class="yes">✓</td><td class="mid">partial</td></tr>
+    <tr><td>Open source</td><td class="yes">✓ (engine + runtime)</td><td class="no">✗</td><td class="yes">✓</td><td class="no">✗</td></tr>
+    <tr><td>MCP-native</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">✗</td></tr>
+    <tr><td>Engine-level anti-detect</td><td class="yes">✓ C++ / Firefox</td><td class="mid">vendor partnerships</td><td class="no">✗</td><td class="yes">✓ (closed)</td></tr>
+    <tr><td>Coherent, audited identities</td><td class="yes">✓ 500/500</td><td class="no">✗</td><td class="no">✗</td><td class="mid">partial</td></tr>
+    <tr><td>Session evidence &amp; replay</td><td class="yes">✓</td><td class="no">✗</td><td class="no">✗</td><td class="no">✗</td></tr>
+    <tr><td>Runtime language</td><td class="yes">Rust</td><td>—</td><td>Node</td><td>—</td></tr>
+  </table>
+</section>
+
+<section>
+  <p class="kicker">architecture</p>
+  <h2>One stack, <em>both halves yours</em></h2>
+<pre><code>Firefox (MPL-2.0)
+  └─ Camoufox (anti-detect patches, by daijro)
+       └─ Ghostfox engine          engine/   — patches, branding, builds
+            └─ Ghostfox runtime    runtime/  — Rust: sessions, identities, MCP</code></pre>
+  <p>The runtime speaks <a href="https://github.com/microsoft/playwright">Juggler</a>
+  natively from Rust — zero Python, zero Node at runtime. The engine is your own fork
+  of the Camoufox build system: rebased when you want, branded your way,
+  <span class="muted">and it survives any upstream licensing change (upstream has
+  signaled partially-closed future patches — forks that don't own their engine inherit that risk).</span></p>
+</section>
+
+<section>
+  <p class="kicker">quickstart</p>
+  <h2>Running in <em>three minutes</em></h2>
+  <pre><code># 1) install (engine + runtime, Linux x86_64)
+curl -fsSL https://raw.githubusercontent.com/autokeren/ghostfox/main/install.sh | bash
+
+# 2) wire into any MCP client
+{
+  "mcpServers": {
+    "ghostcloak": {
+      "command": "~/.ghostfox/mcp/ghostcloak-mcp",
+      "env": { "GHOSTFOX_HOME": "~/.ghostfox/engine" }
+    }
+  }
+}</code></pre>
+  <p>Or Python: <code>pip install ghostfox</code> ·
+     Or Docker: <code>docker run ghcr.io/autokeren/ghostfox</code></p>
+  <div class="grid">
+    <div class="card"><h3>Browse</h3><p><b>session_create · page_open · page_snapshot · page_screenshot · page_click · page_type · page_fill · page_press</b> — narrow, typed tools an agent can't misuse.</p></div>
+    <div class="card"><h3>Personas</h3><p><b>identity_generate · identity_audit</b> — coherent device presets (Windows · macOS · Linux · <b>Android</b>), audited before use. A spoofed browser's worst enemy is itself saying "4 cores on a MacBook".</p></div>
+    <div class="card"><h3>Evidence</h3><p><b>session_evidence</b> — every run writes an append-only <b>events.jsonl</b>, page snapshots, screenshots and the identity used. Replay what your agent did, after the fact.</p></div>
+    <div class="card"><h3>When gated</h3><p><b>captcha_solve</b> — optional hook (2captcha: Turnstile, image). Stealth-first: the goal is not being challenged at all.</p></div>
+  </div>
+</section>
+
+<section>
+  <p class="kicker">signatures</p>
+  <h2>Details competitors <em>don't have</em></h2>
+  <ul>
+    <li><b style="color:var(--cyan)">Touch-coherent Android personas</b> — <code>navigator.maxTouchPoints</code> patched at the C++ level, coarse pointer media queries, touch events, portrait viewports from the identity's screen class. The engine patch (<code>engine/patches/navigator-touch-spoofing.patch</code>) activates a config key that is dead even in upstream Camoufox.</li>
+    <li><b style="color:var(--cyan)">Main-frame discipline</b> — page evaluation is routed to the page's main frame only; iframe contexts (ad frames, srcdoc tricks) can't hijack snapshots or clicks.</li>
+    <li><b style="color:var(--cyan)">Live view</b> — set <code>GHOSTFOX_LIVE_VIEW_PORT</code> and watch your agent work in a browser tab.</li>
+  </ul>
+</section>
+
+<section>
+  <p class="kicker">numbers</p>
+  <h2>Measured, <em>not claimed</em></h2>
+  <table>
+    <tr><th>Check</th><th>Result</th></tr>
+    <tr><td>Identity coherence (500 generated)</td><td class="yes">500/500 pass, 0 violations</td></tr>
+    <tr><td>Live-target probe (4 targets, datacenter IP)</td><td class="yes">4/4 OK, 0 gated</td></tr>
+    <tr><td>bot.sannysoft.com</td><td class="yes">webdriver clean · WebGL=Mozilla · UA coherent</td></tr>
+    <tr><td>MCP round-trip E2E</td><td class="yes">create → open → fill → submit → evidence</td></tr>
+  </table>
+  <p class="muted">Methodology and honest caveats (datacenter IP bias, the expected "Chrome missing" row):
+  <a href="https://github.com/autokeren/ghostfox/blob/main/runtime/docs/benchmark-2026-09-08.md">runtime/docs/benchmark</a>.</p>
+</section>
+
+<section>
+  <p class="kicker">license &amp; credits</p>
+  <h2>Standing on giants, <em>honestly</em></h2>
+  <p><code>engine/</code> is MPL-2.0 (Firefox → <a href="https://github.com/daijro/camoufox">Camoufox</a> by daijro → Ghostfox).
+     <code>runtime/</code> is MIT OR Apache-2.0. Plus LibreWolf (patch tooling lineage) and
+     Playwright (the Juggler protocol).</p>
+  <p class="muted">Pre-alpha research tool. Do not use against targets you don't have permission to test.</p>
+</section>
+
+</div>
+<footer class="wrap">
+  ghostfox · <a href="https://github.com/autokeren/ghostfox">github.com/autokeren/ghostfox</a> ·
+  v0.2.0 · MCP registry: io.github.autokeren/ghostfox
+</footer>
+</body>
+</html>

@@ -1,0 +1,12 @@
+# engine build outputs (never commit generated trees)
+engine/camoufox-*/
+engine/firefox-*.tar.*
+engine/dist/
+engine/launch
+engine/bin/
+engine/private/
+.ccache/
+
+# rust
+runtime/target/
+**/target/
