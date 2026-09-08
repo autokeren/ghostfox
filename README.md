@@ -14,6 +14,8 @@ Self-hosted · Open source · MCP-first · Engine-level anti-detect
 
 <img src="docs/demo.gif" width="640" alt="Ghostfox demo: android persona + detection panel" />
 
+[![Watch the full demo](https://img.shields.io/badge/watch-full%20demo%20(video)-a78bfa)](docs/demo.mp4) · [Docs site](https://autokeren.github.io/ghostfox/)
+
 </div>
 
 ---
