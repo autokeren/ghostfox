@@ -695,7 +695,9 @@ impl PageHandle for CamoufoxPage {
         // to strategy 2.
         let expr = format!(
             "(() => {{ const el = document.querySelector({sel}); if (!el) return null; \
-             const r = el.getBoundingClientRect(); return JSON.stringify({{x: r.x + r.width/2, y: r.y + r.height/2}}); }})()",
+             el.scrollIntoView({{block: 'center'}}); \
+             const r = el.getBoundingClientRect(); \
+             return JSON.stringify({{x: r.x + r.width/2, y: r.y + r.height/2, vw: window.innerWidth, vh: window.innerHeight}}); }})()",
             sel = serde_json::to_string(selector).unwrap_or_default()
         );
         let pos = self.evaluate(&expr).await;
@@ -967,7 +969,11 @@ impl PageHandle for CamoufoxPage {
             {
                 Ok(r) => r,
                 Err(e) if attempt < 3 => {
-                    // Stale context (mid-navigation): let the pump catch up.
+                    // Stale context (mid-navigation): clear the cached id so
+                    // the next attempt waits for the pump to report the
+                    // replacement instead of reusing the dead one.
+                    *self.execution_context_id.lock().await = None;
+                    tracing::debug!(target: "ghostcloak::camoufox", "evaluate ctx stale ({e}); cleared cache, retrying");
                     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                     continue;
                 }

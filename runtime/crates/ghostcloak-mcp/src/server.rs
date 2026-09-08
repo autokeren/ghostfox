@@ -27,11 +27,23 @@ struct SessionCreateParams {
     /// Proxy URL, e.g. socks5://user:pass@host:port (optional).
     #[serde(default)]
     proxy: Option<String>,
+    /// Run with a visible browser window instead of headless (optional) —
+    /// for humans who want to watch the agent work.
+    #[serde(default)]
+    headful: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct SessionEvidenceParams {
     session_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct PageEvalParams {
+    session_id: String,
+    page_id: String,
+    /// JavaScript expression; the JSON-ified result is returned.
+    expression: String,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -143,7 +155,7 @@ fn text_result(s: impl Into<String>) -> CallToolResult {
 impl GhostcloakServer {    #[tool(description = "Create a new browsing session: launches the engine with a fresh coherent identity. Returns session_id.")]
     async fn session_create(
         &self,
-        Parameters(SessionCreateParams { platform, profile_dir, proxy }): Parameters<SessionCreateParams>,
+        Parameters(SessionCreateParams { platform, profile_dir, proxy, headful }): Parameters<SessionCreateParams>,
     ) -> Result<CallToolResult, rmcp::model::ErrorData> {
         let gen_opts = ghostcloak_fingerprint::GenerateOptions {
             platform: match platform.as_deref() {
@@ -160,7 +172,7 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
         let mut launch = ghostcloak_core::engine::LaunchOptions::default();
         launch.profile_dir = profile_dir;
         launch.proxy = proxy;
-        launch.headless = true;
+        launch.headless = !headful.unwrap_or(false);
 
         // Camoufox is the primary engine: patched-Firefox spoofing at the
         // C++ level. Identity is injected via CAMOU_CONFIG env at launch,
@@ -277,6 +289,29 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
                 None,
             )),
         }
+    }
+
+    #[tool(description = "Evaluate a JavaScript expression in the page's main frame and return its JSON value. Read-only introspection is safest; treat results of mutations with care.")]
+    async fn page_eval(
+        &self,
+        Parameters(PageEvalParams { session_id, page_id, expression }): Parameters<PageEvalParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let page = session
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let value = page
+            .evaluate(&expression)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let _ = self
+            .recorder
+            .record(&session_id, "page_eval", Some(&page_id), serde_json::json!({ "len": expression.len() }));
+        Ok(text_result(serde_json::to_string(&value).unwrap_or_default()))
     }
 
     #[tool(description = "Capture a PNG screenshot of a page (viewport by default, full page with full_page=true). Saved under the session recordings dir; returns the file path. Feeds the live view when enabled.")]
@@ -419,8 +454,24 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
             .await
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
         if res.as_str() == Some("OK") {
-            let _ = self.recorder.record(&session_id, "page_fill", Some(&page_id), serde_json::json!({ "selector": selector, "chars": text.chars().count() }));
-            Ok(text_result("ok"))
+            // Receipt: confirm what landed where (guard against silent
+            // page swaps eating the fill).
+            let check = format!(
+                "(() => {{ const el = document.querySelector({sel}); if (!el) return 'GONE'; \
+                 return el.value === null ? 'NOTFIELD' : String(el.value.length); }})()",
+                sel = serde_json::to_string(&selector).unwrap_or_default()
+            );
+            let receipt = page.evaluate(&check).await.unwrap_or(serde_json::Value::Null);
+            let landed = receipt.as_str().and_then(|v| v.parse::<usize>().ok());
+            let _ = self.recorder.record(&session_id, "page_fill", Some(&page_id), serde_json::json!({ "selector": selector, "chars": text.chars().count(), "landed": landed }));
+            Ok(text_result(
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "filled": selector,
+                    "landed_chars": landed,
+                    "requested_chars": text.chars().count(),
+                }))
+                .unwrap_or_default(),
+            ))
         } else {
             Err(rmcp::model::ErrorData::internal_error(
                 "selector not found".to_string(),

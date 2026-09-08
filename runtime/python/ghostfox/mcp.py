@@ -109,7 +109,7 @@ class GhostfoxMCP:
 
     # -- the browser surface ---------------------------------------------------
 
-    def session_create(self, platform: str | None = None, profile_dir: str | None = None, proxy: str | None = None) -> str:
+    def session_create(self, platform: str | None = None, profile_dir: str | None = None, proxy: str | None = None, headful: bool = False) -> str:
         args: dict[str, Any] = {}
         if platform:
             args["platform"] = platform
@@ -117,6 +117,8 @@ class GhostfoxMCP:
             args["profile_dir"] = profile_dir
         if proxy:
             args["proxy"] = proxy
+        if headful:
+            args["headful"] = True
         return self._tool("session_create", args)
 
     def page_open(self, session_id: str, url: str) -> str:
@@ -124,6 +126,9 @@ class GhostfoxMCP:
 
     def page_snapshot(self, session_id: str, page_id: str) -> dict:
         return json.loads(self._tool("page_snapshot", {"session_id": session_id, "page_id": page_id}))
+
+    def page_eval(self, session_id: str, page_id: str, expression: str):
+        return json.loads(self._tool("page_eval", {"session_id": session_id, "page_id": page_id, "expression": expression}))
 
     def page_screenshot(self, session_id: str, page_id: str, full_page: bool = False) -> dict:
         return json.loads(self._tool("page_screenshot", {"session_id": session_id, "page_id": page_id, "full_page": full_page}))
@@ -134,8 +139,8 @@ class GhostfoxMCP:
     def page_type(self, session_id: str, page_id: str, selector: str, text: str) -> None:
         self._tool("page_type", {"session_id": session_id, "page_id": page_id, "selector": selector, "text": text})
 
-    def page_fill(self, session_id: str, page_id: str, selector: str, text: str) -> None:
-        self._tool("page_fill", {"session_id": session_id, "page_id": page_id, "selector": selector, "text": text})
+    def page_fill(self, session_id: str, page_id: str, selector: str, text: str):
+        return json.loads(self._tool("page_fill", {"session_id": session_id, "page_id": page_id, "selector": selector, "text": text}))
 
     def page_press(self, session_id: str, page_id: str, key: str) -> None:
         self._tool("page_press", {"session_id": session_id, "page_id": page_id, "key": key})
