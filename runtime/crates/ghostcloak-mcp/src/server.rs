@@ -47,6 +47,35 @@ struct RefParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+struct ReadRefParams {
+    session_id: String,
+    page_id: String,
+    /// Element ref from page_a11y (e.g. "e12").
+    r#ref: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct WaitForParams {
+    session_id: String,
+    page_id: String,
+    /// CSS selector to wait for.
+    selector: String,
+    /// Timeout in milliseconds (default 10000).
+    #[serde(default)]
+    timeout_ms: Option<u64>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct UploadParams {
+    session_id: String,
+    page_id: String,
+    /// CSS selector for the file input (input[type=file]).
+    selector: String,
+    /// Absolute path to the file to upload.
+    file_path: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct TypeRefParams {
     session_id: String,
     page_id: String,
@@ -375,6 +404,101 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
             .recorder
             .record(&session_id, "page_type_ref", Some(&page_id), serde_json::json!({ "ref": r#ref, "chars": text.chars().count() }));
         Ok(text_result("typed"))
+    }
+
+    #[tool(description = "Read the FULL value of an element by its page_a11y ref — no truncation. Use when the snapshot's 200-char preview isn't enough (body text, long input fields).")]
+    async fn page_read_ref(
+        &self,
+        Parameters(ReadRefParams { session_id, page_id, r#ref }): Parameters<ReadRefParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let page = session
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let value = page
+            .read_ref_full(&r#ref)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let _ = self.recorder.record(&session_id, "page_read_ref", Some(&page_id), serde_json::json!({ "ref": r#ref, "chars": value.len() }));
+        Ok(text_result(value))
+    }
+
+    #[tool(description = "Wait until a CSS selector becomes visible on the page (replaces manual sleeps). Returns true if found, false on timeout.")]
+    async fn page_wait_for(
+        &self,
+        Parameters(WaitForParams { session_id, page_id, selector, timeout_ms }): Parameters<WaitForParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let page = session
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let timeout = timeout_ms.unwrap_or(10_000);
+        let found = page
+            .wait_for(&selector, timeout)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let _ = self.recorder.record(&session_id, "page_wait_for", Some(&page_id), serde_json::json!({ "selector": selector, "timeout_ms": timeout, "found": found }));
+        Ok(text_result(if found { "true" } else { "false" }))
+    }
+
+    #[tool(description = "Upload a file to an input[type=file] by CSS selector. The file must exist on the machine running the engine.")]
+    async fn page_upload_file(
+        &self,
+        Parameters(UploadParams { session_id, page_id, selector, file_path }): Parameters<UploadParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let page = session
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        // Verify the file exists, then set it on the input via a DataTransfer.
+        let content = std::fs::read(&file_path)
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(format!("cannot read {file_path}: {e}"), None))?;
+        let b64 = {
+            use base64::Engine as _;
+            base64::engine::general_purpose::STANDARD.encode(&content)
+        };
+        let sel = serde_json::to_string(&selector).unwrap_or_default();
+        let expr = format!(
+            r#"(function() {{
+  var el = document.querySelector({sel});
+  if (!el) return 'NOT-FOUND';
+  if (el.tagName !== 'INPUT' || el.type !== 'file') return 'NOT-FILE-INPUT';
+  var b64 = {b64};
+  var bin = atob(b64);
+  var bytes = new Uint8Array(bin.length);
+  for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  var name = {name}.split('/').pop() || 'upload';
+  var mime = 'application/octet-stream';
+  var file = new File([bytes], name, {{ type: mime }});
+  var dt = new DataTransfer();
+  dt.items.add(file);
+  el.files = dt.files;
+  el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+  el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+  return 'UPLOADED:' + el.files.length;
+}})()"#,
+            sel = sel,
+            b64 = serde_json::to_string(&b64).unwrap_or_default(),
+            name = serde_json::to_string(&file_path).unwrap_or_default(),
+        );
+        let result = page
+            .evaluate(&expr)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let _ = self.recorder.record(&session_id, "page_upload_file", Some(&page_id), serde_json::json!({ "selector": selector, "file": file_path }));
+        Ok(text_result(result.as_str().unwrap_or("unknown")))
     }
 
     #[tool(description = "Evaluate a JavaScript expression in the page's main frame and return its JSON value. Read-only introspection is safest; treat results of mutations with care.")]

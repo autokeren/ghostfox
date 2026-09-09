@@ -879,6 +879,27 @@ impl PageHandle for CamoufoxPage {
         Ok(els)
     }
 
+    async fn read_ref_full(&self, r: &str) -> Result<String> {
+        let out = self.evaluate(&crate::a11y::read_ref_full_js(r)).await?;
+        let s = out.as_str().unwrap_or_default();
+        if s == "STALE-REF" {
+            return Err(GhostError::PageOp(format!("ref {r} is stale — rerun page_a11y")));
+        }
+        Ok(s.to_string())
+    }
+
+    async fn wait_for(&self, selector: &str, timeout_ms: u64) -> Result<bool> {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);
+        let expr = crate::a11y::wait_for_js(selector);
+        while std::time::Instant::now() < deadline {
+            match self.evaluate(&expr).await {
+                Ok(v) if v.as_str() == Some("VISIBLE") => return Ok(true),
+                _ => tokio::time::sleep(std::time::Duration::from_millis(250)).await,
+            }
+        }
+        Ok(false)
+    }
+
     async fn click_ref(&self, r: &str) -> Result<()> {
         let out = self.evaluate(&crate::a11y::click_ref_js(r)).await?;
         match out.as_str() {

@@ -96,3 +96,16 @@ First public release. Rust-native agent browser runtime with a patched-Firefox e
   fire-then-verify receipt (async editors settle before the check).
 - Proven the same day it was born: posted to Reddit end-to-end (3 tool
   calls) on a composer that had defeated selector automation for hours.
+
+## [0.3.1] — 2026-09-09 (gap-closing wave)
+
+### Added
+
+- **`page_read_ref`** — full-value read by ref (no 200-char truncation);
+  use when the a11y snapshot's preview isn't enough
+- **`page_wait_for`** — poll until a CSS selector becomes visible (with
+  timeout); replaces agent-side `sleep 8` guessing
+- **`page_upload_file`** — upload a local file to `input[type=file]` via
+  synthetic DataTransfer (bypasses the native file picker)
+- **a11y walker now pierces same-origin iframes** in addition to shadow
+  roots (cross-origin is blocked by browser security — by design)

@@ -122,6 +122,20 @@ pub trait PageHandle: Send + Sync {
             "click_ref not supported by this engine".into(),
         ))
     }
+    /// Read the FULL value of the element a ref points at (no truncation).
+    async fn read_ref_full(&self, r: &str) -> Result<String> {
+        let _ = r;
+        Err(crate::error::GhostError::PageOp(
+            "read_ref_full not supported by this engine".into(),
+        ))
+    }
+    /// Wait until a CSS selector becomes visible (or timeout). Returns true if visible.
+    async fn wait_for(&self, selector: &str, timeout_ms: u64) -> Result<bool> {
+        let _ = (selector, timeout_ms);
+        Err(crate::error::GhostError::PageOp(
+            "wait_for not supported by this engine".into(),
+        ))
+    }
     /// Type text into the element a ref points at (inputs, editors).
     async fn type_ref(&self, r: &str, text: &str) -> Result<()> {
         let _ = (r, text);

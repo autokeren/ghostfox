@@ -96,6 +96,12 @@ pub(crate) const WALK_JS: &str = r#"(
       root.querySelectorAll('*').forEach(function (el) {
         if (el.shadowRoot) walk(el.shadowRoot);
       });
+      // Pierce same-origin iframes (cross-origin is blocked by browser security — by design).
+      try {
+        root.querySelectorAll('iframe').forEach(function (f) {
+          if (f.contentDocument) walk(f.contentDocument);
+        });
+      } catch (e) {}
     }
 
     walk(document);
@@ -180,5 +186,35 @@ pub(crate) fn read_ref_js(r: &str) -> String {
   return 'LEN:' + String(el.value != null ? el.value.length : 0);
 }})()"#,
         r = serde_json::to_string(r).unwrap_or_default()
+    )
+}
+
+/// Read the FULL value of the element a ref points at (no truncation —
+/// use this when the a11y snapshot's 200-char preview isn't enough).
+pub(crate) fn read_ref_full_js(r: &str) -> String {
+    format!(
+        r#"(function() {{
+  var el = (window.__gfxRefs || new Map()).get({r});
+  if (!el || !el.isConnected) return 'STALE-REF';
+  var v = el.value != null ? String(el.value) : (el.innerText || '');
+  return v;
+}})()"#,
+        r = serde_json::to_string(r).unwrap_or_default()
+    )
+}
+
+
+/// Wait until a CSS selector becomes visible (or timeout).
+pub(crate) fn wait_for_js(selector: &str) -> String {
+    format!(
+        r#"(function() {{
+  var el = document.querySelector({sel});
+  if (!el) return 'NOT-FOUND';
+  var r = el.getBoundingClientRect();
+  var st = getComputedStyle(el);
+  if (r.width > 0 && r.height > 0 && st.visibility !== 'hidden') return 'VISIBLE';
+  return 'NOT-VISIBLE';
+}})()"#,
+        sel = serde_json::to_string(selector).unwrap_or_default()
     )
 }
