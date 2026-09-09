@@ -24,8 +24,9 @@ Features the competitive landscape has that we don't yet — tracked here so
       snapshots for debugging agents.
 - [x] **CAPTCHA solve hook** — optional config for a solver API, surfaced as
       a `captcha_solve` tool (only when gated; stealth-first philosophy).
-- [ ] **macOS / Windows / ARM engine builds** — `engine/multibuild.py`
-      already cross-compiles; needs CI runners + release uploads.
+- [x] **macOS / Windows / ARM engine builds** — prebuilt engine assets for
+      Linux/macOS/Windows x86_64 + arm64 are published to releases; the
+      engine build matrix is in `.github/workflows/engine-build.yml`.
 - [x] **Docker image** — `docker pull ghcr.io/autokeren/ghostfox` with the
       MCP server as entrypoint.
 

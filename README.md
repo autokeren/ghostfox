@@ -11,6 +11,9 @@ Self-hosted · Open source · MCP-first · Engine-level anti-detect
 [![License](https://img.shields.io/badge/engine-MPL--2.0-orange)](engine/LICENSE)
 [![License](https://img.shields.io/badge/runtime-MIT%2FApache--2.0-blue)](runtime/LICENSE-MIT)
 [![Engine](https://img.shields.io/badge/engine-Firefox%20152-red)](engine/README.md)
+[![CI](https://github.com/autokeren/ghostfox/actions/workflows/ci.yml/badge.svg)](https://github.com/autokeren/ghostfox/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/autokeren/ghostfox)](https://github.com/autokeren/ghostfox/releases/latest)
+[![Stars](https://img.shields.io/github/stars/autokeren/ghostfox?style=social)](https://github.com/autokeren/ghostfox)
 
 <img src="docs/demo.gif" width="640" alt="Ghostfox demo: android persona + detection panel" />
 

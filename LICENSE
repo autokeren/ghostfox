@@ -1,0 +1,13 @@
+# Ghostfox License
+
+Ghostfox is a monorepo with two independently licensed components.
+
+## Engine
+`engine/` is licensed under the Mozilla Public License 2.0.
+
+See [`engine/LICENSE`](engine/LICENSE).
+
+## Runtime
+`runtime/` is dual-licensed under MIT OR Apache-2.0.
+
+See [`runtime/LICENSE-MIT`](runtime/LICENSE-MIT) and [`runtime/LICENSE-APACHE`](runtime/LICENSE-APACHE).
