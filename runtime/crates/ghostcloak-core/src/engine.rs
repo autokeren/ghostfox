@@ -52,6 +52,25 @@ impl Default for LaunchOptions {
     }
 }
 
+/// A semantic element from the accessibility walk: what an agent needs to
+/// understand and act on a page without knowing any CSS selector.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct A11yElement {
+    /// Stable handle for click_ref / type_ref ("e12").
+    pub r#ref: String,
+    /// ARIA-ish role: button, link, textbox, heading, combobox...
+    pub role: String,
+    /// Accessible name (label, aria-label, placeholder or text).
+    pub name: String,
+    /// Current value for inputs/editors (reads live form state).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checked: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disabled: Option<bool>,
+}
+
 /// A captured page state, cheap to hand to an LLM.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PageSnapshot {
@@ -87,6 +106,27 @@ pub trait PageHandle: Send + Sync {
         let _ = full_page;
         Err(crate::error::GhostError::PageOp(
             "screenshot not supported by this engine".into(),
+        ))
+    }
+    /// Semantic snapshot: walk the page (including shadow roots), return
+    /// interactive elements with stable refs an agent can act on.
+    async fn a11y_snapshot(&self) -> Result<Vec<A11yElement>> {
+        Err(crate::error::GhostError::PageOp(
+            "a11y_snapshot not supported by this engine".into(),
+        ))
+    }
+    /// Act on an element by its ref from a11y_snapshot.
+    async fn click_ref(&self, r: &str) -> Result<()> {
+        let _ = r;
+        Err(crate::error::GhostError::PageOp(
+            "click_ref not supported by this engine".into(),
+        ))
+    }
+    /// Type text into the element a ref points at (inputs, editors).
+    async fn type_ref(&self, r: &str, text: &str) -> Result<()> {
+        let _ = (r, text);
+        Err(crate::error::GhostError::PageOp(
+            "type_ref not supported by this engine".into(),
         ))
     }
 }

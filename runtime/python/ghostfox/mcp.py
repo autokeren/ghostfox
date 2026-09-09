@@ -127,6 +127,15 @@ class GhostfoxMCP:
     def page_snapshot(self, session_id: str, page_id: str) -> dict:
         return json.loads(self._tool("page_snapshot", {"session_id": session_id, "page_id": page_id}))
 
+    def page_a11y(self, session_id: str, page_id: str) -> list:
+        return json.loads(self._tool("page_a11y", {"session_id": session_id, "page_id": page_id}))
+
+    def page_click_ref(self, session_id: str, page_id: str, ref: str):
+        return self._tool("page_click_ref", {"session_id": session_id, "page_id": page_id, "ref": ref})
+
+    def page_type_ref(self, session_id: str, page_id: str, ref: str, text: str):
+        return self._tool("page_type_ref", {"session_id": session_id, "page_id": page_id, "ref": ref, "text": text})
+
     def page_eval(self, session_id: str, page_id: str, expression: str):
         return json.loads(self._tool("page_eval", {"session_id": session_id, "page_id": page_id, "expression": expression}))
 

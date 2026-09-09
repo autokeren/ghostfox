@@ -43,6 +43,13 @@ Firefox (MPL-2.0)
 | Coherent identities + auditor | **✓** | ✗ | ✗ | partial |
 | Runtime language | **Rust** | — | Node | — |
 
+**Eyes for agents — `page_a11y`.** One call returns every visible interactive
+element with a stable ref, semantic role, accessible name and live value —
+**piercing shadow DOM**, so web-component UIs (Reddit, modern frameworks)
+are fully visible. Agents act by ref (`page_click_ref e38`) instead of
+guessing CSS selectors. Rich editors (Lexical, Draft, ProseMirror) are
+handled via editor-native input paths with fire-then-verify receipts.
+
 **Android personas too** — `session_create {"platform": "android"}` gives
 portrait screens, Adreno/Mali GPUs, Android font stacks and Firefox-on-Android
 UAs, all audited like desktop identities (500/500 coherent, see
@@ -81,8 +88,9 @@ cargo build --release
 }
 ```
 
-Then the agent can: `session_create` → `page_open` → `page_snapshot` →
-`page_click` / `page_type` / `page_fill` / `page_press` / `page_eval` / `page_screenshot`, plus
+Then the agent can: `session_create` → `page_open` → **`page_a11y`** →
+`page_click_ref` / `page_type_ref` (act by ref, no selectors), plus `page_snapshot` /
+`page_click` / `page_type` / `page_fill` / `page_press` / `page_eval` / `page_screenshot`,
 `identity_generate` / `identity_audit` / `session_evidence` / `captcha_solve`.
 
 Every mutation returns a **receipt** — `page_fill` reports `landed_chars`, so a

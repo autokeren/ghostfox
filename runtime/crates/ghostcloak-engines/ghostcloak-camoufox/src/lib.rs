@@ -10,6 +10,7 @@
 //! The spoofing happens inside the engine (C++ level): canvas, WebGL,
 //! fonts, navigator. Nothing is injected from JS, so nothing leaks.
 
+pub mod a11y;
 pub mod config;
 pub mod engine;
 pub mod juggler;

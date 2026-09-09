@@ -80,3 +80,19 @@ First public release. Rust-native agent browser runtime with a patched-Firefox e
   1280x800).
 - maxTouchPoints config check ordered before the RDM-pane branch (a juggler
   viewport request sets inRDMPane, which masked the config).
+
+## [0.3.0] — 2026-09-09
+
+### Added
+
+- **`page_a11y` — eyes for agents.** Semantic snapshot of the page: every
+  visible interactive element with a stable ref, role, accessible name and
+  CURRENT value. Walks shadow DOM (the #1 blind spot of selector-based
+  automation — modern web-component UIs like Reddit's shreddit-* hide
+  fields there). Values are read live, so form state is always visible.
+- **`page_click_ref` / `page_type_ref`** — act by ref, no selectors. Clicks
+  scroll into view first; typing handles plain inputs AND rich editors
+  (Lexical/Draft/ProseMirror) via synthetic-paste + insertText with a
+  fire-then-verify receipt (async editors settle before the check).
+- Proven the same day it was born: posted to Reddit end-to-end (3 tool
+  calls) on a composer that had defeated selector automation for hours.

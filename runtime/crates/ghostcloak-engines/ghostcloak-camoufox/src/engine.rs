@@ -867,8 +867,52 @@ impl PageHandle for CamoufoxPage {
         Ok(())
     }
 
-    async fn screenshot(&self, full_page: bool) -> Result<Vec<u8>> {
-        use base64::Engine as _;
+
+    async fn a11y_snapshot(&self) -> Result<Vec<ghostcloak_core::engine::A11yElement>> {
+        let raw = self.evaluate(crate::a11y::WALK_JS).await?;
+        let json: String = raw
+            .as_str()
+            .ok_or_else(|| GhostError::PageOp("a11y walk returned no data".into()))?
+            .to_string();
+        let els: Vec<ghostcloak_core::engine::A11yElement> =
+            serde_json::from_str(&json).map_err(|e| GhostError::PageOp(format!("a11y parse: {e}")))?;
+        Ok(els)
+    }
+
+    async fn click_ref(&self, r: &str) -> Result<()> {
+        let out = self.evaluate(&crate::a11y::click_ref_js(r)).await?;
+        match out.as_str() {
+            Some("CLICKED") => Ok(()),
+            Some("STALE-REF") => Err(GhostError::PageOp(format!("ref {r} is stale — rerun page_a11y"))),
+            _ => Err(GhostError::PageOp(format!("click_ref({r}) unexpected result"))),
+        }
+    }
+
+    async fn type_ref(&self, r: &str, text: &str) -> Result<()> {
+        // Fire...
+        let out = self.evaluate(&crate::a11y::type_ref_action_js(r, text)).await?;
+        if out.as_str() == Some("STALE-REF") {
+            return Err(GhostError::PageOp(format!("ref {r} is stale — rerun page_a11y")));
+        }
+        // ...let async editors (Lexical and friends) settle...
+        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+        // ...then verify what actually landed.
+        let check = self.evaluate(&crate::a11y::read_ref_js(r)).await?;
+        let s = check.as_str().unwrap_or_default();
+        if s == "STALE-REF" {
+            return Err(GhostError::PageOp(format!("ref {r} went stale mid-type")));
+        }
+        let len: usize = s.strip_prefix("LEN:").and_then(|v| v.parse().ok()).unwrap_or(0);
+        if len < text.chars().count() / 2 {
+            return Err(GhostError::PageOp(format!(
+                "type_ref({r}) landed {len} of {} chars",
+                text.chars().count()
+            )));
+        }
+        Ok(())
+    }
+
+    async fn screenshot(&self, full_page: bool) -> Result<Vec<u8>> {        use base64::Engine as _;
         let sid = self.session_id().await?;
 
         // The Juggler screenshot takes an explicit clip: viewport shots use

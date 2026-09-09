@@ -39,6 +39,23 @@ struct SessionEvidenceParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+struct RefParams {
+    session_id: String,
+    page_id: String,
+    /// Element ref from page_a11y (e.g. "e12").
+    r#ref: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct TypeRefParams {
+    session_id: String,
+    page_id: String,
+    /// Element ref from page_a11y (e.g. "e12").
+    r#ref: String,
+    text: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct PageEvalParams {
     session_id: String,
     page_id: String,
@@ -289,6 +306,75 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
                 None,
             )),
         }
+    }
+
+    #[tool(description = "Semantic snapshot of the page: every visible interactive element with a stable ref, role (button/link/textbox/...), accessible name and CURRENT value — pierces shadow DOM, so web-component UIs (Reddit, modern frameworks) are fully visible. Use this instead of guessing CSS selectors.")]
+    async fn page_a11y(
+        &self,
+        Parameters(PageRefParams { session_id, page_id }): Parameters<PageRefParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let page = session
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let els = page
+            .a11y_snapshot()
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let _ = self
+            .recorder
+            .record(&session_id, "page_a11y", Some(&page_id), serde_json::json!({ "elements": els.len() }));
+        Ok(text_result(
+            serde_json::to_string_pretty(&els).unwrap_or_default(),
+        ))
+    }
+
+    #[tool(description = "Click an element by its ref from page_a11y. Scrolls it into view first. No selectors needed.")]
+    async fn page_click_ref(
+        &self,
+        Parameters(RefParams { session_id, page_id, r#ref }): Parameters<RefParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let page = session
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        page.click_ref(&r#ref)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let _ = self
+            .recorder
+            .record(&session_id, "page_click_ref", Some(&page_id), serde_json::json!({ "ref": r#ref }));
+        Ok(text_result("clicked"))
+    }
+
+    #[tool(description = "Type text into the element a page_a11y ref points at (inputs and rich editors). Returns landed chars as a receipt.")]
+    async fn page_type_ref(
+        &self,
+        Parameters(TypeRefParams { session_id, page_id, r#ref, text }): Parameters<TypeRefParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let page = session
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        page.type_ref(&r#ref, &text)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let _ = self
+            .recorder
+            .record(&session_id, "page_type_ref", Some(&page_id), serde_json::json!({ "ref": r#ref, "chars": text.chars().count() }));
+        Ok(text_result("typed"))
     }
 
     #[tool(description = "Evaluate a JavaScript expression in the page's main frame and return its JSON value. Read-only introspection is safest; treat results of mutations with care.")]
