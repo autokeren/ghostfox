@@ -44,11 +44,17 @@ Firefox (MPL-2.0)
 | Runtime language | **Rust** | — | Node | — |
 
 **Eyes for agents — `page_a11y`.** One call returns every visible interactive
-element with a stable ref, semantic role, accessible name and live value —
-**piercing shadow DOM**, so web-component UIs (Reddit, modern frameworks)
-are fully visible. Agents act by ref (`page_click_ref e38`) instead of
-guessing CSS selectors. Rich editors (Lexical, Draft, ProseMirror) are
-handled via editor-native input paths with fire-then-verify receipts.
+element with a stable ref, semantic role, accessible name, live value —
+**piercing shadow DOM and same-origin iframes**, so web-component UIs
+(Reddit, modern frameworks) are fully visible. The snapshot also reports
+**`login_state`** (logged-in / logged-out / unknown), page URL and title —
+agents check session health before acting, not after failing.
+
+Agents act by ref: `page_click_ref e38`, `page_type_ref e21 "text"` — no CSS
+selectors needed. Rich editors (Lexical, Draft, ProseMirror) are handled via
+editor-native input paths with fire-then-verify receipts. `page_wait_for`
+replaces manual sleeps. `page_read_ref` gives full untruncated values.
+`page_upload_file` bypasses native file pickers.
 
 **Android personas too** — `session_create {"platform": "android"}` gives
 portrait screens, Adreno/Mali GPUs, Android font stacks and Firefox-on-Android
@@ -88,10 +94,22 @@ cargo build --release
 }
 ```
 
-Then the agent can: `session_create` → `page_open` → **`page_a11y`** →
-`page_click_ref` / `page_type_ref` (act by ref, no selectors), plus `page_snapshot` /
-`page_click` / `page_type` / `page_fill` / `page_press` / `page_eval` / `page_screenshot`,
-`identity_generate` / `identity_audit` / `session_evidence` / `captcha_solve`.
+Then the agent can: `session_create` → `page_open` → **`page_a11y`** → act by ref.
+
+**Full tool surface (20 tools):**
+
+| Category | Tools |
+|---|---|
+| **See** | `page_a11y` (semantic + login_state + shadow DOM/iframe) · `page_snapshot` · `page_screenshot` · `page_read_ref` (full value) |
+| **Wait** | `page_wait_for` (poll until visible) |
+| **Act** | `page_click_ref` · `page_type_ref` · `page_click` · `page_type` · `page_fill` · `page_press` · `page_upload_file` |
+| **Inspect** | `page_eval` · `page_open` |
+| **Identity** | `identity_generate` · `identity_audit` |
+| **Evidence** | `session_evidence` · `captcha_solve` |
+
+Every mutation returns a **receipt** — `page_fill` reports `landed_chars`, `type_ref`
+fire-then-verifies for async editors. Sessions can run **headful** (`{"headful": true}`).
+
 
 Every mutation returns a **receipt** — `page_fill` reports `landed_chars`, so a
 silent page swap can't eat a fill unnoticed. And sessions can run **headful**
