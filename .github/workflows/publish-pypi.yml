@@ -20,7 +20,9 @@ jobs:
           python-version: "3.12"
 
       - name: Build
-        run: pip install build run: pipx install build && cd runtime/python && python -m buildrun: pipx install build && cd runtime/python && python -m build cd runtime/python && python -m build
+        run: |
+          pip install build
+          cd runtime/python && python -m build
 
       - name: Publish
         uses: pypa/gh-action-pypi-publish@release/v1
