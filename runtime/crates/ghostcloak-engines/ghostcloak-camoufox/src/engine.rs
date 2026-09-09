@@ -868,15 +868,15 @@ impl PageHandle for CamoufoxPage {
     }
 
 
-    async fn a11y_snapshot(&self) -> Result<Vec<ghostcloak_core::engine::A11yElement>> {
+    async fn a11y_snapshot(&self) -> Result<ghostcloak_core::engine::A11ySnapshot> {
         let raw = self.evaluate(crate::a11y::WALK_JS).await?;
         let json: String = raw
             .as_str()
             .ok_or_else(|| GhostError::PageOp("a11y walk returned no data".into()))?
             .to_string();
-        let els: Vec<ghostcloak_core::engine::A11yElement> =
+        let snap: ghostcloak_core::engine::A11ySnapshot =
             serde_json::from_str(&json).map_err(|e| GhostError::PageOp(format!("a11y parse: {e}")))?;
-        Ok(els)
+        Ok(snap)
     }
 
     async fn read_ref_full(&self, r: &str) -> Result<String> {

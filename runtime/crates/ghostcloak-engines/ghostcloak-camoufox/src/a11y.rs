@@ -105,7 +105,25 @@ pub(crate) const WALK_JS: &str = r#"(
     }
 
     walk(document);
-    return JSON.stringify(out.slice(0, 400));
+
+    // Session health: detect login/logout signals for the agent.
+    var txt = document.body.innerText.toLowerCase();
+    var all = out.map(function (e) { return e.name.toLowerCase() });
+    var hasLoginBtn = all.some(function (n) { return n === 'log in' || n === 'sign in' || n === 'login' || /sign in with/.test(n); });
+    var hasUserMenu = all.some(function (n) {
+      return n.indexOf('user menu') >= 0 || n.indexOf('log out') >= 0 || n.indexOf('logout') >= 0 ||
+             n.indexOf('my profile') >= 0 || n.indexOf('open inbox') >= 0 || n.indexOf('open chat') >= 0 ||
+             n.indexOf('create post') >= 0 || n.indexOf('my account') >= 0;
+    });
+    var loginState = hasLoginBtn && !hasUserMenu ? 'logged-out' :
+                     hasUserMenu ? 'logged-in' : 'unknown';
+
+    return JSON.stringify({
+      elements: out.slice(0, 400),
+      login_state: loginState,
+      page_url: location.href,
+      page_title: document.title,
+    });
   }
 )()"#;
 

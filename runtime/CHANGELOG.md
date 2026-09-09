@@ -109,3 +109,13 @@ First public release. Rust-native agent browser runtime with a patched-Firefox e
   synthetic DataTransfer (bypasses the native file picker)
 - **a11y walker now pierces same-origin iframes** in addition to shadow
   roots (cross-origin is blocked by browser security — by design)
+
+## [0.4.0] — 2026-09-09
+
+### Added
+
+- **`page_a11y` now reports `login_state`** — "logged-in" | "logged-out" |
+  "unknown" — detected from login buttons vs user-menu signals, so agents
+  check session health before acting instead of discovering a dead session
+  the hard way.
+- **`page_a11y` returns page URL + title** alongside elements.

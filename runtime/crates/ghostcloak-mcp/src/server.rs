@@ -350,15 +350,18 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
             .page(&page_id)
             .await
             .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
-        let els = page
+        let snap = page
             .a11y_snapshot()
             .await
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
         let _ = self
             .recorder
-            .record(&session_id, "page_a11y", Some(&page_id), serde_json::json!({ "elements": els.len() }));
+            .record(&session_id, "page_a11y", Some(&page_id), serde_json::json!({
+                "elements": snap.elements.len(),
+                "login_state": snap.login_state,
+            }));
         Ok(text_result(
-            serde_json::to_string_pretty(&els).unwrap_or_default(),
+            serde_json::to_string_pretty(&snap).unwrap_or_default(),
         ))
     }
 

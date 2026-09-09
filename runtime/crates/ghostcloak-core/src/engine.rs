@@ -52,6 +52,17 @@ impl Default for LaunchOptions {
     }
 }
 
+/// The full a11y snapshot result: elements plus page metadata.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct A11ySnapshot {
+    pub elements: Vec<A11yElement>,
+    /// "logged-in" | "logged-out" | "unknown" — detected from login/user-menu
+    /// signals so agents don't act blind on a dead session.
+    pub login_state: String,
+    pub page_url: String,
+    pub page_title: String,
+}
+
 /// A semantic element from the accessibility walk: what an agent needs to
 /// understand and act on a page without knowing any CSS selector.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -110,7 +121,7 @@ pub trait PageHandle: Send + Sync {
     }
     /// Semantic snapshot: walk the page (including shadow roots), return
     /// interactive elements with stable refs an agent can act on.
-    async fn a11y_snapshot(&self) -> Result<Vec<A11yElement>> {
+    async fn a11y_snapshot(&self) -> Result<A11ySnapshot> {
         Err(crate::error::GhostError::PageOp(
             "a11y_snapshot not supported by this engine".into(),
         ))

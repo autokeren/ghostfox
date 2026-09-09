@@ -1,6 +1,6 @@
 {
   "name": "ghostfox",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "The agent-native stealth browser you can own — MCP launcher + installer for Ghostfox (fingerprint-coherent Firefox engine + Rust MCP runtime).",
   "license": "MIT OR Apache-2.0",
   "repository": {
