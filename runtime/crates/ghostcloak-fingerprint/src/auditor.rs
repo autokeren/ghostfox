@@ -37,7 +37,10 @@ pub fn audit(identity: &Identity) -> Vec<Violation> {
     match ua_platform {
         Some(p) if p != identity.platform => v.push(Violation {
             field: "user_agent",
-            reason: format!("UA says {p:?} but identity platform is {:?}", identity.platform),
+            reason: format!(
+                "UA says {p:?} but identity platform is {:?}",
+                identity.platform
+            ),
         }),
         None => v.push(Violation {
             field: "user_agent",
@@ -50,7 +53,10 @@ pub fn audit(identity: &Identity) -> Vec<Violation> {
     if !(2..=24).contains(&identity.hardware.cpu_cores) {
         v.push(Violation {
             field: "hardware.cpu_cores",
-            reason: format!("{} cores is not a plausible consumer machine", identity.hardware.cpu_cores),
+            reason: format!(
+                "{} cores is not a plausible consumer machine",
+                identity.hardware.cpu_cores
+            ),
         });
     }
 
@@ -58,7 +64,8 @@ pub fn audit(identity: &Identity) -> Vec<Violation> {
     if identity.hardware.device_memory_gb > 8 {
         v.push(Violation {
             field: "hardware.device_memory_gb",
-            reason: "Chrome reports deviceMemory capped at 8; higher values are spoofed-looking".into(),
+            reason: "Chrome reports deviceMemory capped at 8; higher values are spoofed-looking"
+                .into(),
         });
     }
 
@@ -108,10 +115,24 @@ pub fn audit(identity: &Identity) -> Vec<Violation> {
 
     // GPU string must mention the platform-appropriate backend.
     let gpu_ok = match identity.platform {
-        Platform::Windows => identity.hardware.gpu_renderer.contains("Direct3D11") || identity.hardware.gpu_renderer.contains("D3D11"),
-        Platform::MacOS => identity.hardware.gpu_renderer.contains("Metal") || identity.hardware.gpu_renderer.contains("ANGLE (Apple"),
-        Platform::Linux => identity.hardware.gpu_renderer.contains("OpenGL") || identity.hardware.gpu_renderer.contains("Mesa") || identity.hardware.gpu_renderer.contains("ANGLE ("),
-        Platform::Android => identity.hardware.gpu_renderer.contains("Adreno") || identity.hardware.gpu_renderer.contains("Mali") || identity.hardware.gpu_renderer.contains("PowerVR"),
+        Platform::Windows => {
+            identity.hardware.gpu_renderer.contains("Direct3D11")
+                || identity.hardware.gpu_renderer.contains("D3D11")
+        }
+        Platform::MacOS => {
+            identity.hardware.gpu_renderer.contains("Metal")
+                || identity.hardware.gpu_renderer.contains("ANGLE (Apple")
+        }
+        Platform::Linux => {
+            identity.hardware.gpu_renderer.contains("OpenGL")
+                || identity.hardware.gpu_renderer.contains("Mesa")
+                || identity.hardware.gpu_renderer.contains("ANGLE (")
+        }
+        Platform::Android => {
+            identity.hardware.gpu_renderer.contains("Adreno")
+                || identity.hardware.gpu_renderer.contains("Mali")
+                || identity.hardware.gpu_renderer.contains("PowerVR")
+        }
     };
     if !gpu_ok {
         v.push(Violation {

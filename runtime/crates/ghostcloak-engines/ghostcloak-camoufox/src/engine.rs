@@ -3,7 +3,10 @@
 //! Juggler pipe.
 
 use std::collections::HashMap;
+#[cfg(unix)]
 use std::os::fd::AsRawFd;
+#[cfg(windows)]
+use std::os::windows::io::AsRawHandle;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -28,8 +31,9 @@ pub struct CamoufoxEngine {
 impl CamoufoxEngine {
     pub async fn launch(opts: &LaunchOptions) -> Result<Arc<Self>> {
         let identity = Identity::load_or_generate(opts.profile_dir.as_deref())?;
-        let (home, bin_name) = autodetect_engine()
-            .ok_or_else(|| GhostError::EngineUnavailable("ghostfox/camoufox binary not found".into()))?;
+        let (home, bin_name) = autodetect_engine().ok_or_else(|| {
+            GhostError::EngineUnavailable("ghostfox/camoufox binary not found".into())
+        })?;
 
         // Ephemeral profiles live under a sweepable root so shutdown can
         // clean them and a crashed run can't strand them all over /tmp.
@@ -68,40 +72,69 @@ impl CamoufoxEngine {
         // fd 3 (browser reads) + fd 4 (browser writes), NOT stdin/stdout.
         // os_pipe::pipe() returns (reader, writer).
         let (cmd_rx, cmd_tx) = os_pipe::pipe().map_err(|e| GhostError::Protocol(e.to_string()))?;
-        let (resp_rx, resp_tx) = os_pipe::pipe().map_err(|e| GhostError::Protocol(e.to_string()))?;
+        let (resp_rx, resp_tx) =
+            os_pipe::pipe().map_err(|e| GhostError::Protocol(e.to_string()))?;
+
         // Child fd 3 <- cmd_rx (we write commands into cmd_tx).
         // Child fd 4 -> resp_tx (we read responses from resp_rx).
-        let cmd_rx_fd = cmd_rx.as_raw_fd();
-        let resp_tx_fd = resp_tx.as_raw_fd();
-        // Leak the child-bound ends: their fds must stay open for the
-        // child's lifetime (this mirrors the proven fd_probe flow).
-        std::mem::forget(cmd_rx);
-        std::mem::forget(resp_tx);
-        unsafe {
-            use std::os::unix::process::CommandExt;
-            cmd.pre_exec(move || {
-                // Own process group: contentprocs must die with the parent.
-                libc::setsid();
-                // dup the pipe ends onto the juggler fds...
-                if libc::dup2(cmd_rx_fd, 3) < 0 {
-                    return Err(std::io::Error::last_os_error());
+        #[cfg(unix)]
+        {
+            let cmd_rx_fd = cmd_rx.as_raw_fd();
+            let resp_tx_fd = resp_tx.as_raw_fd();
+            // Leak the child-bound ends: their fds must stay open for the
+            // child's lifetime (this mirrors the proven fd_probe flow).
+            std::mem::forget(cmd_rx);
+            std::mem::forget(resp_tx);
+            unsafe {
+                use std::os::unix::process::CommandExt;
+                cmd.pre_exec(move || {
+                    // Own process group: contentprocs must die with the parent.
+                    libc::setsid();
+                    // dup the pipe ends onto the juggler fds...
+                    if libc::dup2(cmd_rx_fd, 3) < 0 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    if libc::dup2(resp_tx_fd, 4) < 0 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    // ...and clear O_CLOEXEC: os_pipe creates pipes with
+                    // CLOEXEC set, and dup2 inherits the flag, which would
+                    // close fds 3/4 at exec and kill the juggler channel.
+                    let flags = libc::fcntl(3, libc::F_GETFD);
+                    if flags >= 0 {
+                        libc::fcntl(3, libc::F_SETFD, flags & !libc::FD_CLOEXEC);
+                    }
+                    let flags4 = libc::fcntl(4, libc::F_GETFD);
+                    if flags4 >= 0 {
+                        libc::fcntl(4, libc::F_SETFD, flags4 & !libc::FD_CLOEXEC);
+                    }
+                    Ok(())
+                });
+            }
+        }
+
+        // Windows uses the same Playwright protocol, but handles are passed
+        // through inherited environment values instead of fixed fd numbers.
+        #[cfg(windows)]
+        {
+            let read_handle = cmd_rx.as_raw_handle();
+            let write_handle = resp_tx.as_raw_handle();
+            unsafe {
+                use windows_sys::Win32::Foundation::{SetHandleInformation, HANDLE_FLAG_INHERIT};
+
+                if SetHandleInformation(read_handle, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT) == 0
+                    || SetHandleInformation(write_handle, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT)
+                        == 0
+                {
+                    return Err(GhostError::Protocol(
+                        "camoufox pipe handles cannot be inherited".into(),
+                    ));
                 }
-                if libc::dup2(resp_tx_fd, 4) < 0 {
-                    return Err(std::io::Error::last_os_error());
-                }
-                // ...and clear O_CLOEXEC: os_pipe creates pipes with
-                // CLOEXEC set, and dup2 inherits the flag, which would
-                // close fds 3/4 at exec and kill the juggler channel.
-                let flags = libc::fcntl(3, libc::F_GETFD);
-                if flags >= 0 {
-                    libc::fcntl(3, libc::F_SETFD, flags & !libc::FD_CLOEXEC);
-                }
-                let flags4 = libc::fcntl(4, libc::F_GETFD);
-                if flags4 >= 0 {
-                    libc::fcntl(4, libc::F_SETFD, flags4 & !libc::FD_CLOEXEC);
-                }
-                Ok(())
-            });
+            }
+            cmd.env("PW_PIPE_READ", format!("{}", read_handle as isize));
+            cmd.env("PW_PIPE_WRITE", format!("{}", write_handle as isize));
+            std::mem::forget(cmd_rx);
+            std::mem::forget(resp_tx);
         }
 
         if opts.headless {
@@ -117,7 +150,8 @@ impl CamoufoxEngine {
             } else {
                 ("--proxy-server", proxy.as_str())
             };
-            cmd.arg(format!("{flag}={rest}")).arg("--proxy-bypass-list=<-loopback>");
+            cmd.arg(format!("{flag}={rest}"))
+                .arg("--proxy-bypass-list=<-loopback>");
         }
         for extra in &opts.extra_args {
             cmd.arg(extra);
@@ -128,8 +162,8 @@ impl CamoufoxEngine {
             cmd.env(k, v);
         }
 
-        // Spawn via std::process::Command (command-fds hooks pre_exec on
-        // std). Track the child through tokio's reaper so it doesn't zombie.
+        // Spawn via std::process::Command. The child stays owned by the
+        // Juggler connection so shutdown can terminate it deterministically.
         let child = cmd
             .spawn()
             .map_err(|e| GhostError::Protocol(format!("camoufox spawn: {e}")))?;
@@ -217,13 +251,6 @@ impl CamoufoxPage {
             .ok_or_else(|| GhostError::PageOp("target session not attached".into()))
     }
 
-    async fn frame_id(&self) -> Result<String> {
-        let guard = self.frame_id.lock().await;
-        guard
-            .clone()
-            .ok_or_else(|| GhostError::PageOp("frame not yet attached".into()))
-    }
-
     async fn execution_context(&self) -> Result<String> {
         let guard = self.execution_context_id.lock().await;
         guard
@@ -265,7 +292,10 @@ impl Engine for CamoufoxEngine {
         EngineKind::Firefox
     }
 
-    async fn new_page(&self, _opts: &HashMap<String, serde_json::Value>) -> Result<Arc<dyn PageHandle>> {
+    async fn new_page(
+        &self,
+        _opts: &HashMap<String, serde_json::Value>,
+    ) -> Result<Arc<dyn PageHandle>> {
         // 1. Enable the browser-side dispatcher (required before anything
         //    else; attachToDefaultContext is mandatory, not optional).
         self.conn
@@ -310,12 +340,7 @@ impl Engine for CamoufoxEngine {
             if self.conn.is_closed() {
                 return Err(GhostError::EngineCrashed);
             }
-            match tokio::time::timeout(
-                std::time::Duration::from_secs(2),
-                events.recv(),
-            )
-            .await
-            {
+            match tokio::time::timeout(std::time::Duration::from_secs(2), events.recv()).await {
                 Ok(Ok(msg)) => {
                     let method = msg.get("method").and_then(|m| m.as_str());
                     if method == Some("Browser.attachedToTarget") {
@@ -327,14 +352,17 @@ impl Engine for CamoufoxEngine {
                             .and_then(|v| v.as_str())
                         {
                             if tid == handle.target_id {
-                                if let Some(sid) = msg.pointer("/params/sessionId").and_then(|v| v.as_str()) {
+                                if let Some(sid) =
+                                    msg.pointer("/params/sessionId").and_then(|v| v.as_str())
+                                {
                                     *handle.session_id.lock().await = Some(sid.to_string());
                                 }
                             }
                         }
                     }
                     if method == Some("Browser.detachedFromTarget") {
-                        if let Some(tid) = msg.pointer("/params/targetId").and_then(|v| v.as_str()) {
+                        if let Some(tid) = msg.pointer("/params/targetId").and_then(|v| v.as_str())
+                        {
                             if tid == handle.target_id {
                                 *handle.session_id.lock().await = None;
                                 *handle.execution_context_id.lock().await = None;
@@ -350,7 +378,10 @@ impl Engine for CamoufoxEngine {
                         }
                     }
                     if method == Some("Runtime.executionContextCreated") {
-                        if let Some(cx) = msg.pointer("/params/executionContextId").and_then(|v| v.as_str()) {
+                        if let Some(cx) = msg
+                            .pointer("/params/executionContextId")
+                            .and_then(|v| v.as_str())
+                        {
                             let fid = msg
                                 .pointer("/params/auxData/frameId")
                                 .and_then(|v| v.as_str())
@@ -458,7 +489,10 @@ impl Engine for CamoufoxEngine {
                             }
                             match method {
                                 Some("Runtime.executionContextCreated") => {
-                                    if let Some(cx) = msg.pointer("/params/executionContextId").and_then(|v| v.as_str()) {
+                                    if let Some(cx) = msg
+                                        .pointer("/params/executionContextId")
+                                        .and_then(|v| v.as_str())
+                                    {
                                         // Only the MAIN frame's context is a
                                         // valid evaluate target; iframe srcdoc
                                         // contexts must not hijack it (e.g.
@@ -482,14 +516,17 @@ impl Engine for CamoufoxEngine {
                                             if let Some(f) = fid {
                                                 *handle2.frame_id.lock().await = Some(f);
                                             }
-                                            *handle2.execution_context_id.lock().await = Some(cx.to_string());
+                                            *handle2.execution_context_id.lock().await =
+                                                Some(cx.to_string());
                                         }
                                     }
                                 }
                                 Some("Runtime.executionContextDestroyed") => {
                                     // If the context we hold just died, clear
                                     // it so evaluate waits for the successor.
-                                    let dead = msg.pointer("/params/executionContextId").and_then(|v| v.as_str());
+                                    let dead = msg
+                                        .pointer("/params/executionContextId")
+                                        .and_then(|v| v.as_str());
                                     let mut guard = handle2.execution_context_id.lock().await;
                                     if guard.as_deref() == dead {
                                         *guard = None;
@@ -503,7 +540,9 @@ impl Engine for CamoufoxEngine {
                                 _ => {}
                             }
                             if method == Some("Page.navigationCommitted") {
-                                if let Some(fid) = msg.pointer("/params/frameId").and_then(|v| v.as_str()) {
+                                if let Some(fid) =
+                                    msg.pointer("/params/frameId").and_then(|v| v.as_str())
+                                {
                                     let mut main = handle2.main_frame_id.lock().await;
                                     match main.clone() {
                                         Some(m) if m == fid => {
@@ -520,7 +559,9 @@ impl Engine for CamoufoxEngine {
                                 }
                             }
                             if method == Some("Browser.attachedToTarget") {
-                                if let Some(sid) = msg.pointer("/params/sessionId").and_then(|v| v.as_str()) {
+                                if let Some(sid) =
+                                    msg.pointer("/params/sessionId").and_then(|v| v.as_str())
+                                {
                                     *handle2.session_id.lock().await = Some(sid.to_string());
                                 }
                             }
@@ -558,7 +599,10 @@ impl Engine for CamoufoxEngine {
     }
 
     async fn pages(&self) -> Result<Vec<String>> {
-        let result = self.conn.request("Browser.targets", serde_json::json!({})).await?;
+        let result = self
+            .conn
+            .request("Browser.targets", serde_json::json!({}))
+            .await?;
         let targets = result
             .get("targets")
             .and_then(|t| t.as_array())
@@ -720,7 +764,7 @@ impl PageHandle for CamoufoxPage {
                     loop {
                         match self.session_id().await {
                             Ok(s) => break s,
-                            Err(e) if std::time::Instant::now() < deadline => {
+                            Err(_) if std::time::Instant::now() < deadline => {
                                 tokio::time::sleep(std::time::Duration::from_millis(150)).await;
                                 continue;
                             }
@@ -749,9 +793,8 @@ impl PageHandle for CamoufoxPage {
                     // Click-triggered navigation can kill the channel mid-
                     // response; the click itself landed.
                     Err(_) if ty == "mouseup" => break,
-                    Err(e) => {
+                    Err(_) => {
                         dispatched = false;
-                        let _ = e;
                         break;
                     }
                 }
@@ -770,7 +813,7 @@ impl PageHandle for CamoufoxPage {
         let res = self.evaluate(&js_click).await?;
         match res.as_str() {
             Some("OK") => Ok(()),
-            Some("MISSING") | _ => Err(GhostError::PageOp("selector not found".into())),
+            _ => Err(GhostError::PageOp("selector not found".into())),
         }
     }
 
@@ -867,15 +910,14 @@ impl PageHandle for CamoufoxPage {
         Ok(())
     }
 
-
     async fn a11y_snapshot(&self) -> Result<ghostcloak_core::engine::A11ySnapshot> {
         let raw = self.evaluate(crate::a11y::WALK_JS).await?;
         let json: String = raw
             .as_str()
             .ok_or_else(|| GhostError::PageOp("a11y walk returned no data".into()))?
             .to_string();
-        let snap: ghostcloak_core::engine::A11ySnapshot =
-            serde_json::from_str(&json).map_err(|e| GhostError::PageOp(format!("a11y parse: {e}")))?;
+        let snap: ghostcloak_core::engine::A11ySnapshot = serde_json::from_str(&json)
+            .map_err(|e| GhostError::PageOp(format!("a11y parse: {e}")))?;
         Ok(snap)
     }
 
@@ -883,7 +925,9 @@ impl PageHandle for CamoufoxPage {
         let out = self.evaluate(&crate::a11y::read_ref_full_js(r)).await?;
         let s = out.as_str().unwrap_or_default();
         if s == "STALE-REF" {
-            return Err(GhostError::PageOp(format!("ref {r} is stale — rerun page_a11y")));
+            return Err(GhostError::PageOp(format!(
+                "ref {r} is stale — rerun page_a11y"
+            )));
         }
         Ok(s.to_string())
     }
@@ -904,16 +948,24 @@ impl PageHandle for CamoufoxPage {
         let out = self.evaluate(&crate::a11y::click_ref_js(r)).await?;
         match out.as_str() {
             Some("CLICKED") => Ok(()),
-            Some("STALE-REF") => Err(GhostError::PageOp(format!("ref {r} is stale — rerun page_a11y"))),
-            _ => Err(GhostError::PageOp(format!("click_ref({r}) unexpected result"))),
+            Some("STALE-REF") => Err(GhostError::PageOp(format!(
+                "ref {r} is stale — rerun page_a11y"
+            ))),
+            _ => Err(GhostError::PageOp(format!(
+                "click_ref({r}) unexpected result"
+            ))),
         }
     }
 
     async fn type_ref(&self, r: &str, text: &str) -> Result<()> {
         // Fire...
-        let out = self.evaluate(&crate::a11y::type_ref_action_js(r, text)).await?;
+        let out = self
+            .evaluate(&crate::a11y::type_ref_action_js(r, text))
+            .await?;
         if out.as_str() == Some("STALE-REF") {
-            return Err(GhostError::PageOp(format!("ref {r} is stale — rerun page_a11y")));
+            return Err(GhostError::PageOp(format!(
+                "ref {r} is stale — rerun page_a11y"
+            )));
         }
         // ...let async editors (Lexical and friends) settle...
         tokio::time::sleep(std::time::Duration::from_millis(400)).await;
@@ -923,7 +975,10 @@ impl PageHandle for CamoufoxPage {
         if s == "STALE-REF" {
             return Err(GhostError::PageOp(format!("ref {r} went stale mid-type")));
         }
-        let len: usize = s.strip_prefix("LEN:").and_then(|v| v.parse().ok()).unwrap_or(0);
+        let len: usize = s
+            .strip_prefix("LEN:")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
         if len < text.chars().count() / 2 {
             return Err(GhostError::PageOp(format!(
                 "type_ref({r}) landed {len} of {} chars",
@@ -933,7 +988,8 @@ impl PageHandle for CamoufoxPage {
         Ok(())
     }
 
-    async fn screenshot(&self, full_page: bool) -> Result<Vec<u8>> {        use base64::Engine as _;
+    async fn screenshot(&self, full_page: bool) -> Result<Vec<u8>> {
+        use base64::Engine as _;
         let sid = self.session_id().await?;
 
         // The Juggler screenshot takes an explicit clip: viewport shots use
@@ -953,7 +1009,11 @@ impl PageHandle for CamoufoxPage {
                     .split(',')
                     .filter_map(|p| p.trim().parse().ok())
                     .collect();
-                if parts.len() == 2 { Some((parts[0], parts[1])) } else { None }
+                if parts.len() == 2 {
+                    Some((parts[0], parts[1]))
+                } else {
+                    None
+                }
             })
             .unwrap_or((1280, 800));
         // Engine canvas caps: 32767px per side.
@@ -1033,12 +1093,12 @@ impl PageHandle for CamoufoxPage {
                 .await
             {
                 Ok(r) => r,
-                Err(e) if attempt < 3 => {
+                Err(error) if attempt < 3 => {
                     // Stale context (mid-navigation): clear the cached id so
                     // the next attempt waits for the pump to report the
                     // replacement instead of reusing the dead one.
                     *self.execution_context_id.lock().await = None;
-                    tracing::debug!(target: "ghostcloak::camoufox", "evaluate ctx stale ({e}); cleared cache, retrying");
+                    tracing::debug!(target: "ghostcloak::camoufox", "evaluate ctx stale ({error}); cleared cache, retrying");
                     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                     continue;
                 }
@@ -1074,7 +1134,9 @@ impl PageHandle for CamoufoxPage {
             tracing::debug!(target: "ghostcloak::camoufox", "evaluate done attempt {attempt}: {value:?}");
             return Ok(value);
         }
-        Err(GhostError::PageOp("evaluate: context never became ready".into()))
+        Err(GhostError::PageOp(
+            "evaluate: context never became ready".into(),
+        ))
     }
 
     async fn url(&self) -> Result<String> {
@@ -1109,6 +1171,6 @@ impl Drop for CamoufoxEngine {
         if let Some(dir) = &self.ephemeral_profile {
             let _ = std::fs::remove_dir_all(dir);
         }
-        let _ = self.conn.kill_now();
+        self.conn.kill_now();
     }
 }

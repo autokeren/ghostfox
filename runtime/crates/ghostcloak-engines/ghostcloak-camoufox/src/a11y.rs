@@ -135,6 +135,7 @@ pub(crate) const WALK_JS: &str = r#"(
 )()"#;
 
 /// Resolve a ref to an action. `action` is one of "click" | "focus".
+#[allow(dead_code)]
 pub(crate) fn resolve_js(r: &str) -> String {
     format!(
         r#"(function() {{
@@ -227,7 +228,6 @@ pub(crate) fn read_ref_full_js(r: &str) -> String {
         r = serde_json::to_string(r).unwrap_or_default()
     )
 }
-
 
 /// Wait until a CSS selector becomes visible (or timeout).
 pub(crate) fn wait_for_js(selector: &str) -> String {

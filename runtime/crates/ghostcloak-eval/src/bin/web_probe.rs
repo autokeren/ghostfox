@@ -12,7 +12,9 @@ async fn main() -> anyhow::Result<()> {
         .with_writer(std::io::stderr)
         .init();
 
-    let url = std::env::args().nth(1).unwrap_or_else(|| "https://example.com".into());
+    let url = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| "https://example.com".into());
 
     let opts = LaunchOptions {
         headless: true,
@@ -21,7 +23,14 @@ async fn main() -> anyhow::Result<()> {
     let engine = ghostcloak_camoufox::launch(&opts).await?;
 
     let identity = engine.identity();
-    println!("identity: {} [{}] {:?} {}x{}", identity.label, identity.fingerprint_hash(), identity.platform, identity.screen.width, identity.screen.height);
+    println!(
+        "identity: {} [{}] {:?} {}x{}",
+        identity.label,
+        identity.fingerprint_hash(),
+        identity.platform,
+        identity.screen.width,
+        identity.screen.height
+    );
 
     let page = engine.new_page(&Default::default()).await?;
 
@@ -33,7 +42,9 @@ async fn main() -> anyhow::Result<()> {
 
     // 1. JS surface: what the page can see of us.
     let ua = page.evaluate("navigator.userAgent").await?;
-    let tz = page.evaluate("Intl.DateTimeFormat().resolvedOptions().timeZone").await?;
+    let tz = page
+        .evaluate("Intl.DateTimeFormat().resolvedOptions().timeZone")
+        .await?;
     let cores = page.evaluate("navigator.hardwareConcurrency").await?;
     let lang = page.evaluate("navigator.language").await?;
     let webdriver = page.evaluate("String(navigator.webdriver)").await?;
@@ -45,7 +56,9 @@ async fn main() -> anyhow::Result<()> {
     println!("webdriver: {}", webdriver.as_str().unwrap_or("?"));
 
     // Debug: IIFE + querySelector — the exact shape click() uses.
-    let probe1 = page.evaluate("(function(){ return document.title; })()").await?;
+    let probe1 = page
+        .evaluate("(function(){ return document.title; })()")
+        .await?;
     println!("iife title: {:?}", probe1);
     let probe2 = page.evaluate("(function(){ const el = document.querySelector('input[type=text]'); return el ? 'FOUND' : 'NULL'; })()").await?;
     println!("querySelector input: {:?}", probe2);
@@ -63,7 +76,6 @@ async fn main() -> anyhow::Result<()> {
     let probe4 = page.evaluate(&expr).await?;
     println!("click-expr result: {:?}", probe4);
     // And call the real click() through the trait.
-    use ghostcloak_core::engine::PageHandle;
     match page.click(selector).await {
         Ok(_) => println!("REAL click(): OK"),
         Err(e) => println!("REAL click(): ERR {e}"),
@@ -74,7 +86,10 @@ async fn main() -> anyhow::Result<()> {
     println!("--- snapshot ---");
     println!("url:   {}", snap.url);
     println!("title: {}", snap.title.as_deref().unwrap_or("?"));
-    println!("content[0..300]: {}", snap.content.chars().take(300).collect::<String>());
+    println!(
+        "content[0..300]: {}",
+        snap.content.chars().take(300).collect::<String>()
+    );
 
     engine.shutdown().await?;
     println!("--- clean shutdown ---");

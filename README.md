@@ -68,8 +68,8 @@ worst enemy is itself saying "4 cores on a MacBook".
 
 ## Quickstart
 
-> Requires: Rust toolchain, Linux x86_64. Prebuilt engine binaries: see
-> [Releases](../../releases).
+> Requires: Rust toolchain (Linux, macOS, or Windows). Prebuilt engine binaries:
+> see [Releases](../../releases).
 
 ```bash
 # 1) Get the engine (prebuilt) and unpack it somewhere, e.g. /opt
@@ -96,10 +96,11 @@ cargo build --release
 
 Then the agent can: `session_create` → `page_open` → **`page_a11y`** → act by ref.
 
-**Full tool surface (20 tools):**
+**Full tool surface (19 tools):**
 
 | Category | Tools |
 |---|---|
+| **Session** | `session_create` |
 | **See** | `page_a11y` (semantic + login_state + shadow DOM/iframe) · `page_snapshot` · `page_screenshot` · `page_read_ref` (full value) |
 | **Wait** | `page_wait_for` (poll until visible) |
 | **Act** | `page_click_ref` · `page_type_ref` · `page_click` · `page_type` · `page_fill` · `page_press` · `page_upload_file` |
@@ -107,13 +108,10 @@ Then the agent can: `session_create` → `page_open` → **`page_a11y`** → act
 | **Identity** | `identity_generate` · `identity_audit` |
 | **Evidence** | `session_evidence` · `captcha_solve` |
 
-Every mutation returns a **receipt** — `page_fill` reports `landed_chars`, `type_ref`
-fire-then-verifies for async editors. Sessions can run **headful** (`{"headful": true}`).
-
-
-Every mutation returns a **receipt** — `page_fill` reports `landed_chars`, so a
-silent page swap can't eat a fill unnoticed. And sessions can run **headful**
-(`{"headful": true}`) when humans want to watch the agent work.
+Every mutation returns a **receipt** — `page_fill` reports `landed_chars`, while
+`type_ref` fire-then-verifies async editors, so a silent page swap can't eat an
+edit unnoticed. Sessions can also run **headful** (`{"headful": true}`) when
+humans want to watch the agent work.
 
 **Every run records evidence.** Each session writes an append-only event log
 (`events.jsonl`), full page snapshots and the identity it used under

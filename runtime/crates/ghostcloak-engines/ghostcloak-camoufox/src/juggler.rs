@@ -15,8 +15,7 @@ use std::sync::Arc;
 
 use ghostcloak_core::error::{GhostError, Result};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::Child;
-use tokio::sync::{Mutex, oneshot};
+use tokio::sync::{oneshot, Mutex};
 
 pub struct JugglerConnection {
     child: Mutex<std::process::Child>,
@@ -32,6 +31,32 @@ pub struct JugglerConnection {
     /// Latched mirror of `closed` for synchronous checks.
     dead: std::sync::atomic::AtomicBool,
     _pid: u32,
+}
+
+#[cfg(unix)]
+fn async_pipe_pair(
+    cmd_tx: os_pipe::PipeWriter,
+    resp_rx: os_pipe::PipeReader,
+) -> (tokio::io::BufWriter<tokio::fs::File>, tokio::fs::File) {
+    use std::os::fd::OwnedFd;
+
+    let stdin = tokio::io::BufWriter::new(tokio::fs::File::from(OwnedFd::from(cmd_tx)));
+    let stdout = tokio::fs::File::from(OwnedFd::from(resp_rx));
+    (stdin, stdout)
+}
+
+#[cfg(windows)]
+fn async_pipe_pair(
+    cmd_tx: os_pipe::PipeWriter,
+    resp_rx: os_pipe::PipeReader,
+) -> (tokio::io::BufWriter<tokio::fs::File>, tokio::fs::File) {
+    use std::os::windows::io::{FromRawHandle, IntoRawHandle, OwnedHandle};
+
+    let stdin_file = unsafe { std::fs::File::from_raw_handle(cmd_tx.into_raw_handle()) };
+    let stdout_file = unsafe { std::fs::File::from_raw_handle(resp_rx.into_raw_handle()) };
+    let stdin = tokio::io::BufWriter::new(tokio::fs::File::from(OwnedHandle::from(stdin_file)));
+    let stdout = tokio::fs::File::from(OwnedHandle::from(stdout_file));
+    (stdin, stdout)
 }
 
 impl JugglerConnection {
@@ -56,12 +81,7 @@ impl JugglerConnection {
             });
         }
 
-        // Our ends of the juggler pipes, converted to tokio async IO via
-        // OwnedFd (os_pipe types convert through their raw fds).
-        let stdin = tokio::io::BufWriter::new(tokio::fs::File::from(
-            std::os::fd::OwnedFd::from(cmd_tx),
-        ));
-        let stdout = tokio::fs::File::from(std::os::fd::OwnedFd::from(resp_rx));
+        let (stdin, stdout) = async_pipe_pair(cmd_tx, resp_rx);
 
         let pending: Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>> =
             Arc::new(Mutex::new(HashMap::new()));
@@ -83,7 +103,13 @@ impl JugglerConnection {
         // Wait for the child to exit in the background; fire `closed` then.
         let dead = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let dead_reader = dead.clone();
-        tokio::spawn(reader_task(stdout, pending, events_tx, closed.clone(), dead_reader));
+        tokio::spawn(reader_task(
+            stdout,
+            pending,
+            events_tx,
+            closed.clone(),
+            dead_reader,
+        ));
         // Mirror the reader's latch into the connection (weak updater).
         let conn2 = conn.clone();
         tokio::spawn(async move {
@@ -129,8 +155,8 @@ impl JugglerConnection {
         if let Some(sid) = session_id {
             msg["sessionId"] = serde_json::Value::String(sid.to_string());
         }
-        let mut line = serde_json::to_string(&msg)
-            .map_err(|e| GhostError::Protocol(e.to_string()))?;
+        let mut line =
+            serde_json::to_string(&msg).map_err(|e| GhostError::Protocol(e.to_string()))?;
         line.push('\0');
 
         let (tx, rx) = oneshot::channel();
@@ -167,7 +193,10 @@ impl JugglerConnection {
                 .unwrap_or("unknown juggler error");
             return Err(GhostError::PageOp(msg.to_string()));
         }
-        Ok(resp.get("result").cloned().unwrap_or(serde_json::Value::Null))
+        Ok(resp
+            .get("result")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null))
     }
 
     /// Subscribe to event messages (frames attaching, contexts created...).
@@ -181,6 +210,7 @@ impl JugglerConnection {
     }
 
     /// Synchronous last-resort kill (Drop path): SIGKILL the process group.
+    #[cfg(unix)]
     pub fn kill_now(&self) {
         if let Ok(child) = self.child.try_lock() {
             let pid = child.id() as i32;
@@ -192,25 +222,35 @@ impl JugglerConnection {
         self.dead.store(true, std::sync::atomic::Ordering::SeqCst);
     }
 
+    /// Synchronous last-resort kill (Drop path) on Windows.
+    #[cfg(windows)]
+    pub fn kill_now(&self) {
+        if let Ok(mut child) = self.child.try_lock() {
+            let _ = child.kill();
+        }
+        self.dead.store(true, Ordering::SeqCst);
+    }
+
     pub async fn kill(&self) {
         if let Ok(mut child) = self.child.try_lock() {
-            let pid = child.id() as i32;
-            // The child was spawned with setsid(), so pid == pgid: killing
-            // the negative pid signals the whole tree (contentprocs die too).
-            let _ = tokio::task::spawn_blocking(move || {
-                unsafe {
+            #[cfg(unix)]
+            {
+                let pid = child.id() as i32;
+                // The child was spawned with setsid(), so pid == pgid: killing
+                // the negative pid signals the whole tree (contentprocs die too).
+                let _ = tokio::task::spawn_blocking(move || unsafe {
                     libc::kill(pid, libc::SIGTERM);
                     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
                     loop {
-                        let gone = unsafe { libc::kill(pid, 0) != 0 };
+                        let gone = libc::kill(pid, 0) != 0;
                         if gone || std::time::Instant::now() > deadline {
                             break gone;
                         }
                         std::thread::sleep(std::time::Duration::from_millis(50));
                     }
-                }
-            })
-            .await;
+                })
+                .await;
+            }
             let _ = child.kill();
             let _ = child.wait();
         }

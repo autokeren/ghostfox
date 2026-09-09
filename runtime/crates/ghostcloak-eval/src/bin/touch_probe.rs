@@ -17,10 +17,7 @@ async fn main() -> anyhow::Result<()> {
     // Persist the identity so the engine reads it back via profile dir.
     let profile = std::env::temp_dir().join("ghostfox-touch-probe");
     std::fs::create_dir_all(&profile)?;
-    std::fs::write(
-        profile.join("identity.toml"),
-        identity.to_toml()?,
-    )?;
+    std::fs::write(profile.join("identity.toml"), identity.to_toml()?)?;
 
     let opts = LaunchOptions {
         headless: true,
@@ -28,22 +25,36 @@ async fn main() -> anyhow::Result<()> {
         ..Default::default()
     };
     // Debug: exactly what the engine will receive.
-    let loaded = ghostcloak_fingerprint::Identity::load_or_generate(Some(
-        profile.to_str().unwrap(),
-    ))?;
-    for (k, v) in ghostcloak_camoufox::config::env_for_identity(&loaded, std::path::Path::new(
-        std::env::var("GHOSTFOX_HOME").as_deref().unwrap_or_default(),
-    )) {
+    let loaded =
+        ghostcloak_fingerprint::Identity::load_or_generate(Some(profile.to_str().unwrap()))?;
+    for (k, v) in ghostcloak_camoufox::config::env_for_identity(
+        &loaded,
+        std::path::Path::new(
+            std::env::var("GHOSTFOX_HOME")
+                .as_deref()
+                .unwrap_or_default(),
+        ),
+    ) {
         if k.starts_with("CAMOU_CONFIG") {
             let cfg: serde_json::Value = serde_json::from_str(&v).unwrap_or_default();
-            println!("ENV {k} navigator.maxTouchPoints = {:?}", cfg.get("navigator.maxTouchPoints"));
-            println!("ENV {k} navigator.platform = {:?}", cfg.get("navigator.platform"));
+            println!(
+                "ENV {k} navigator.maxTouchPoints = {:?}",
+                cfg.get("navigator.maxTouchPoints")
+            );
+            println!(
+                "ENV {k} navigator.platform = {:?}",
+                cfg.get("navigator.platform")
+            );
         }
     }
     let engine = ghostcloak_camoufox::launch(&opts).await?;
     println!(
         "identity: {} [{:?}] {}x{} dpr={}",
-        identity.label, identity.platform, identity.screen.width, identity.screen.height, identity.screen.dpr
+        identity.label,
+        identity.platform,
+        identity.screen.width,
+        identity.screen.height,
+        identity.screen.dpr
     );
 
     let page = engine.new_page(&Default::default()).await?;
@@ -55,11 +66,20 @@ async fn main() -> anyhow::Result<()> {
         ("pointer_coarse", "matchMedia('(pointer: coarse)').matches"),
         ("pointer_fine", "matchMedia('(pointer: fine)').matches"),
         ("hover_hover", "matchMedia('(hover: hover)').matches"),
-        ("any_pointer_coarse", "matchMedia('(any-pointer: coarse)').matches"),
-        ("touch_events", "'ontouchstart' in window || typeof TouchEvent !== 'undefined'"),
+        (
+            "any_pointer_coarse",
+            "matchMedia('(any-pointer: coarse)').matches",
+        ),
+        (
+            "touch_events",
+            "'ontouchstart' in window || typeof TouchEvent !== 'undefined'",
+        ),
         ("ua", "navigator.userAgent"),
         ("platform", "navigator.platform"),
-        ("screen", "JSON.stringify([screen.width, screen.height, window.devicePixelRatio])"),
+        (
+            "screen",
+            "JSON.stringify([screen.width, screen.height, window.devicePixelRatio])",
+        ),
     ];
     for (name, expr) in probes {
         let v = page.evaluate(expr).await?;

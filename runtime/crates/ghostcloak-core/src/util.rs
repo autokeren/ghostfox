@@ -4,7 +4,7 @@ use rand::Rng;
 
 /// Short, sortable-ish id.
 pub fn short_id() -> String {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     (0..8)
         .map(|_| {
             let i = rng.random_range(0..36);

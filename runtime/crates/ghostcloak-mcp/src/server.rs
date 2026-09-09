@@ -8,10 +8,10 @@ use std::future::Future;
 use std::sync::Arc;
 
 use rmcp::handler::server::tool::Parameters;
-use rmcp::{tool, tool_router};
 use rmcp::model::CallToolResult;
-use serde::Deserialize;
+use rmcp::{tool, tool_router};
 use schemars::JsonSchema;
+use serde::Deserialize;
 
 use ghostcloak_core::engine::EngineKind;
 use ghostcloak_core::session::Session;
@@ -198,10 +198,18 @@ fn text_result(s: impl Into<String>) -> CallToolResult {
 }
 
 #[tool_router]
-impl GhostcloakServer {    #[tool(description = "Create a new browsing session: launches the engine with a fresh coherent identity. Returns session_id.")]
+impl GhostcloakServer {
+    #[tool(
+        description = "Create a new browsing session: launches the engine with a fresh coherent identity. Returns session_id."
+    )]
     async fn session_create(
         &self,
-        Parameters(SessionCreateParams { platform, profile_dir, proxy, headful }): Parameters<SessionCreateParams>,
+        Parameters(SessionCreateParams {
+            platform,
+            profile_dir,
+            proxy,
+            headful,
+        }): Parameters<SessionCreateParams>,
     ) -> Result<CallToolResult, rmcp::model::ErrorData> {
         let gen_opts = ghostcloak_fingerprint::GenerateOptions {
             platform: match platform.as_deref() {
@@ -215,10 +223,12 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
         };
         let identity = ghostcloak_fingerprint::generate(&gen_opts);
 
-        let mut launch = ghostcloak_core::engine::LaunchOptions::default();
-        launch.profile_dir = profile_dir;
-        launch.proxy = proxy;
-        launch.headless = !headful.unwrap_or(false);
+        let launch = ghostcloak_core::engine::LaunchOptions {
+            profile_dir,
+            proxy,
+            headless: !headful.unwrap_or(false),
+            ..Default::default()
+        };
 
         // Camoufox is the primary engine: patched-Firefox spoofing at the
         // C++ level. Identity is injected via CAMOU_CONFIG env at launch,
@@ -235,7 +245,9 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
                 .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
             let identity_file = dir.join("identity.toml");
             if !identity_file.exists() {
-                let _ = identity.to_toml().map(|t| std::fs::write(&identity_file, t));
+                let _ = identity
+                    .to_toml()
+                    .map(|t| std::fs::write(&identity_file, t));
             }
         }
         let engine = ghostcloak_camoufox::launch(&launch)
@@ -258,7 +270,9 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
                 "proxy": launch.proxy.is_some(),
                 "engine": "ghostfox",
             });
-            let _ = self.recorder.record_identity(&id, &identity.to_toml().unwrap_or_default());
+            let _ = self
+                .recorder
+                .record_identity(&id, &identity.to_toml().unwrap_or_default());
             let _ = self.recorder.record(&id, "session_create", None, ev);
         }
         self.state
@@ -293,16 +307,22 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
             .into_iter()
             .find(|id| !page_ids_before.contains(id))
             .unwrap_or_default();
-        let _ = self
-            .recorder
-            .record(&session_id, "page_open", Some(&new_id), serde_json::json!({ "url": url }));
+        let _ = self.recorder.record(
+            &session_id,
+            "page_open",
+            Some(&new_id),
+            serde_json::json!({ "url": url }),
+        );
         Ok(text_result(new_id))
     }
 
     #[tool(description = "Get a token-friendly snapshot of a page (url, title, extracted text).")]
     async fn page_snapshot(
         &self,
-        Parameters(PageRefParams { session_id, page_id }): Parameters<PageRefParams>,
+        Parameters(PageRefParams {
+            session_id,
+            page_id,
+        }): Parameters<PageRefParams>,
     ) -> Result<CallToolResult, rmcp::model::ErrorData> {
         let session = self
             .session(&session_id)
@@ -323,13 +343,17 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
         ))
     }
 
-    #[tool(description = "Get recorded evidence for a session: event log, snapshot files, identity used. Recordings live under ~/.ghostfox/recordings/.")]
+    #[tool(
+        description = "Get recorded evidence for a session: event log, snapshot files, identity used. Recordings live under ~/.ghostfox/recordings/."
+    )]
     async fn session_evidence(
         &self,
         Parameters(SessionEvidenceParams { session_id }): Parameters<SessionEvidenceParams>,
     ) -> Result<CallToolResult, rmcp::model::ErrorData> {
         match self.recorder.evidence(&session_id) {
-            Ok(ev) => Ok(text_result(serde_json::to_string_pretty(&ev).unwrap_or_default())),
+            Ok(ev) => Ok(text_result(
+                serde_json::to_string_pretty(&ev).unwrap_or_default(),
+            )),
             Err(e) => Err(rmcp::model::ErrorData::internal_error(
                 format!("no evidence for session `{session_id}`: {e}"),
                 None,
@@ -337,10 +361,15 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
         }
     }
 
-    #[tool(description = "Semantic snapshot of the page: every visible interactive element with a stable ref, role (button/link/textbox/...), accessible name and CURRENT value — pierces shadow DOM, so web-component UIs (Reddit, modern frameworks) are fully visible. Use this instead of guessing CSS selectors.")]
+    #[tool(
+        description = "Semantic snapshot of the page: every visible interactive element with a stable ref, role (button/link/textbox/...), accessible name and CURRENT value — pierces shadow DOM, so web-component UIs (Reddit, modern frameworks) are fully visible. Use this instead of guessing CSS selectors."
+    )]
     async fn page_a11y(
         &self,
-        Parameters(PageRefParams { session_id, page_id }): Parameters<PageRefParams>,
+        Parameters(PageRefParams {
+            session_id,
+            page_id,
+        }): Parameters<PageRefParams>,
     ) -> Result<CallToolResult, rmcp::model::ErrorData> {
         let session = self
             .session(&session_id)
@@ -354,21 +383,30 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
             .a11y_snapshot()
             .await
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
-        let _ = self
-            .recorder
-            .record(&session_id, "page_a11y", Some(&page_id), serde_json::json!({
+        let _ = self.recorder.record(
+            &session_id,
+            "page_a11y",
+            Some(&page_id),
+            serde_json::json!({
                 "elements": snap.elements.len(),
                 "login_state": snap.login_state,
-            }));
+            }),
+        );
         Ok(text_result(
             serde_json::to_string_pretty(&snap).unwrap_or_default(),
         ))
     }
 
-    #[tool(description = "Click an element by its ref from page_a11y. Scrolls it into view first. No selectors needed.")]
+    #[tool(
+        description = "Click an element by its ref from page_a11y. Scrolls it into view first. No selectors needed."
+    )]
     async fn page_click_ref(
         &self,
-        Parameters(RefParams { session_id, page_id, r#ref }): Parameters<RefParams>,
+        Parameters(RefParams {
+            session_id,
+            page_id,
+            r#ref,
+        }): Parameters<RefParams>,
     ) -> Result<CallToolResult, rmcp::model::ErrorData> {
         let session = self
             .session(&session_id)
@@ -381,16 +419,26 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
         page.click_ref(&r#ref)
             .await
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
-        let _ = self
-            .recorder
-            .record(&session_id, "page_click_ref", Some(&page_id), serde_json::json!({ "ref": r#ref }));
+        let _ = self.recorder.record(
+            &session_id,
+            "page_click_ref",
+            Some(&page_id),
+            serde_json::json!({ "ref": r#ref }),
+        );
         Ok(text_result("clicked"))
     }
 
-    #[tool(description = "Type text into the element a page_a11y ref points at (inputs and rich editors). Returns landed chars as a receipt.")]
+    #[tool(
+        description = "Type text into the element a page_a11y ref points at (inputs and rich editors). Returns landed chars as a receipt."
+    )]
     async fn page_type_ref(
         &self,
-        Parameters(TypeRefParams { session_id, page_id, r#ref, text }): Parameters<TypeRefParams>,
+        Parameters(TypeRefParams {
+            session_id,
+            page_id,
+            r#ref,
+            text,
+        }): Parameters<TypeRefParams>,
     ) -> Result<CallToolResult, rmcp::model::ErrorData> {
         let session = self
             .session(&session_id)
@@ -403,16 +451,25 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
         page.type_ref(&r#ref, &text)
             .await
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
-        let _ = self
-            .recorder
-            .record(&session_id, "page_type_ref", Some(&page_id), serde_json::json!({ "ref": r#ref, "chars": text.chars().count() }));
+        let _ = self.recorder.record(
+            &session_id,
+            "page_type_ref",
+            Some(&page_id),
+            serde_json::json!({ "ref": r#ref, "chars": text.chars().count() }),
+        );
         Ok(text_result("typed"))
     }
 
-    #[tool(description = "Read the FULL value of an element by its page_a11y ref — no truncation. Use when the snapshot's 200-char preview isn't enough (body text, long input fields).")]
+    #[tool(
+        description = "Read the FULL value of an element by its page_a11y ref — no truncation. Use when the snapshot's 200-char preview isn't enough (body text, long input fields)."
+    )]
     async fn page_read_ref(
         &self,
-        Parameters(ReadRefParams { session_id, page_id, r#ref }): Parameters<ReadRefParams>,
+        Parameters(ReadRefParams {
+            session_id,
+            page_id,
+            r#ref,
+        }): Parameters<ReadRefParams>,
     ) -> Result<CallToolResult, rmcp::model::ErrorData> {
         let session = self
             .session(&session_id)
@@ -426,14 +483,26 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
             .read_ref_full(&r#ref)
             .await
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
-        let _ = self.recorder.record(&session_id, "page_read_ref", Some(&page_id), serde_json::json!({ "ref": r#ref, "chars": value.len() }));
+        let _ = self.recorder.record(
+            &session_id,
+            "page_read_ref",
+            Some(&page_id),
+            serde_json::json!({ "ref": r#ref, "chars": value.len() }),
+        );
         Ok(text_result(value))
     }
 
-    #[tool(description = "Wait until a CSS selector becomes visible on the page (replaces manual sleeps). Returns true if found, false on timeout.")]
+    #[tool(
+        description = "Wait until a CSS selector becomes visible on the page (replaces manual sleeps). Returns true if found, false on timeout."
+    )]
     async fn page_wait_for(
         &self,
-        Parameters(WaitForParams { session_id, page_id, selector, timeout_ms }): Parameters<WaitForParams>,
+        Parameters(WaitForParams {
+            session_id,
+            page_id,
+            selector,
+            timeout_ms,
+        }): Parameters<WaitForParams>,
     ) -> Result<CallToolResult, rmcp::model::ErrorData> {
         let session = self
             .session(&session_id)
@@ -448,14 +517,26 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
             .wait_for(&selector, timeout)
             .await
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
-        let _ = self.recorder.record(&session_id, "page_wait_for", Some(&page_id), serde_json::json!({ "selector": selector, "timeout_ms": timeout, "found": found }));
+        let _ = self.recorder.record(
+            &session_id,
+            "page_wait_for",
+            Some(&page_id),
+            serde_json::json!({ "selector": selector, "timeout_ms": timeout, "found": found }),
+        );
         Ok(text_result(if found { "true" } else { "false" }))
     }
 
-    #[tool(description = "Upload a file to an input[type=file] by CSS selector. The file must exist on the machine running the engine.")]
+    #[tool(
+        description = "Upload a file to an input[type=file] by CSS selector. The file must exist on the machine running the engine."
+    )]
     async fn page_upload_file(
         &self,
-        Parameters(UploadParams { session_id, page_id, selector, file_path }): Parameters<UploadParams>,
+        Parameters(UploadParams {
+            session_id,
+            page_id,
+            selector,
+            file_path,
+        }): Parameters<UploadParams>,
     ) -> Result<CallToolResult, rmcp::model::ErrorData> {
         let session = self
             .session(&session_id)
@@ -466,8 +547,9 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
             .await
             .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
         // Verify the file exists, then set it on the input via a DataTransfer.
-        let content = std::fs::read(&file_path)
-            .map_err(|e| rmcp::model::ErrorData::invalid_params(format!("cannot read {file_path}: {e}"), None))?;
+        let content = std::fs::read(&file_path).map_err(|e| {
+            rmcp::model::ErrorData::invalid_params(format!("cannot read {file_path}: {e}"), None)
+        })?;
         let b64 = {
             use base64::Engine as _;
             base64::engine::general_purpose::STANDARD.encode(&content)
@@ -500,14 +582,25 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
             .evaluate(&expr)
             .await
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
-        let _ = self.recorder.record(&session_id, "page_upload_file", Some(&page_id), serde_json::json!({ "selector": selector, "file": file_path }));
+        let _ = self.recorder.record(
+            &session_id,
+            "page_upload_file",
+            Some(&page_id),
+            serde_json::json!({ "selector": selector, "file": file_path }),
+        );
         Ok(text_result(result.as_str().unwrap_or("unknown")))
     }
 
-    #[tool(description = "Evaluate a JavaScript expression in the page's main frame and return its JSON value. Read-only introspection is safest; treat results of mutations with care.")]
+    #[tool(
+        description = "Evaluate a JavaScript expression in the page's main frame and return its JSON value. Read-only introspection is safest; treat results of mutations with care."
+    )]
     async fn page_eval(
         &self,
-        Parameters(PageEvalParams { session_id, page_id, expression }): Parameters<PageEvalParams>,
+        Parameters(PageEvalParams {
+            session_id,
+            page_id,
+            expression,
+        }): Parameters<PageEvalParams>,
     ) -> Result<CallToolResult, rmcp::model::ErrorData> {
         let session = self
             .session(&session_id)
@@ -521,16 +614,27 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
             .evaluate(&expression)
             .await
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
-        let _ = self
-            .recorder
-            .record(&session_id, "page_eval", Some(&page_id), serde_json::json!({ "len": expression.len() }));
-        Ok(text_result(serde_json::to_string(&value).unwrap_or_default()))
+        let _ = self.recorder.record(
+            &session_id,
+            "page_eval",
+            Some(&page_id),
+            serde_json::json!({ "len": expression.len() }),
+        );
+        Ok(text_result(
+            serde_json::to_string(&value).unwrap_or_default(),
+        ))
     }
 
-    #[tool(description = "Capture a PNG screenshot of a page (viewport by default, full page with full_page=true). Saved under the session recordings dir; returns the file path. Feeds the live view when enabled.")]
+    #[tool(
+        description = "Capture a PNG screenshot of a page (viewport by default, full page with full_page=true). Saved under the session recordings dir; returns the file path. Feeds the live view when enabled."
+    )]
     async fn page_screenshot(
         &self,
-        Parameters(PageScreenshotParams { session_id, page_id, full_page }): Parameters<PageScreenshotParams>,
+        Parameters(PageScreenshotParams {
+            session_id,
+            page_id,
+            full_page,
+        }): Parameters<PageScreenshotParams>,
     ) -> Result<CallToolResult, rmcp::model::ErrorData> {
         let session = self
             .session(&session_id)
@@ -559,10 +663,17 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
         ))
     }
 
-    #[tool(description = "Solve a CAPTCHA through the configured provider (env GHOSTFOX_CAPTCHA_PROVIDER=2captcha + GHOSTFOX_CAPTCHA_KEY). Turnstile/hcaptcha: pass sitekey + pageurl; image captchas: pass image_base64. Stealth-first: prefer not being challenged at all.")]
+    #[tool(
+        description = "Solve a CAPTCHA through the configured provider (env GHOSTFOX_CAPTCHA_PROVIDER=2captcha + GHOSTFOX_CAPTCHA_KEY). Turnstile/hcaptcha: pass sitekey + pageurl; image captchas: pass image_base64. Stealth-first: prefer not being challenged at all."
+    )]
     async fn captcha_solve(
         &self,
-        Parameters(CaptchaSolveParams { session_id, sitekey, pageurl, image_base64 }): Parameters<CaptchaSolveParams>,
+        Parameters(CaptchaSolveParams {
+            session_id,
+            sitekey,
+            pageurl,
+            image_base64,
+        }): Parameters<CaptchaSolveParams>,
     ) -> Result<CallToolResult, rmcp::model::ErrorData> {
         let _ = self
             .session(&session_id)
@@ -604,7 +715,11 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
     #[tool(description = "Click an element by CSS selector.")]
     async fn page_click(
         &self,
-        Parameters(PageClickParams { session_id, page_id, selector }): Parameters<PageClickParams>,
+        Parameters(PageClickParams {
+            session_id,
+            page_id,
+            selector,
+        }): Parameters<PageClickParams>,
     ) -> Result<CallToolResult, rmcp::model::ErrorData> {
         let session = self
             .session(&session_id)
@@ -617,14 +732,24 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
         page.click(&selector)
             .await
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
-        let _ = self.recorder.record(&session_id, "page_click", Some(&page_id), serde_json::json!({ "selector": selector }));
+        let _ = self.recorder.record(
+            &session_id,
+            "page_click",
+            Some(&page_id),
+            serde_json::json!({ "selector": selector }),
+        );
         Ok(text_result("ok"))
     }
 
     #[tool(description = "Type text into an element by CSS selector.")]
     async fn page_type(
         &self,
-        Parameters(PageTypeParams { session_id, page_id, selector, text }): Parameters<PageTypeParams>,
+        Parameters(PageTypeParams {
+            session_id,
+            page_id,
+            selector,
+            text,
+        }): Parameters<PageTypeParams>,
     ) -> Result<CallToolResult, rmcp::model::ErrorData> {
         let session = self
             .session(&session_id)
@@ -637,14 +762,26 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
         page.type_text(&selector, &text)
             .await
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
-        let _ = self.recorder.record(&session_id, "page_type", Some(&page_id), serde_json::json!({ "selector": selector, "chars": text.chars().count() }));
+        let _ = self.recorder.record(
+            &session_id,
+            "page_type",
+            Some(&page_id),
+            serde_json::json!({ "selector": selector, "chars": text.chars().count() }),
+        );
         Ok(text_result("ok"))
     }
 
-    #[tool(description = "Set an input's value directly (form fill). Works where key-event typing hits engine bugs; fires input/change events like real edits.")]
+    #[tool(
+        description = "Set an input's value directly (form fill). Works where key-event typing hits engine bugs; fires input/change events like real edits."
+    )]
     async fn page_fill(
         &self,
-        Parameters(PageFillParams { session_id, page_id, selector, text }): Parameters<PageFillParams>,
+        Parameters(PageFillParams {
+            session_id,
+            page_id,
+            selector,
+            text,
+        }): Parameters<PageFillParams>,
     ) -> Result<CallToolResult, rmcp::model::ErrorData> {
         let session = self
             .session(&session_id)
@@ -674,7 +811,10 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
                  return el.value === null ? 'NOTFIELD' : String(el.value.length); }})()",
                 sel = serde_json::to_string(&selector).unwrap_or_default()
             );
-            let receipt = page.evaluate(&check).await.unwrap_or(serde_json::Value::Null);
+            let receipt = page
+                .evaluate(&check)
+                .await
+                .unwrap_or(serde_json::Value::Null);
             let landed = receipt.as_str().and_then(|v| v.parse::<usize>().ok());
             let _ = self.recorder.record(&session_id, "page_fill", Some(&page_id), serde_json::json!({ "selector": selector, "chars": text.chars().count(), "landed": landed }));
             Ok(text_result(
@@ -693,10 +833,16 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
         }
     }
 
-    #[tool(description = "Press a named key (Enter, Tab, Escape, ArrowDown, ...) — e.g. Enter to submit a search box.")]
+    #[tool(
+        description = "Press a named key (Enter, Tab, Escape, ArrowDown, ...) — e.g. Enter to submit a search box."
+    )]
     async fn page_press(
         &self,
-        Parameters(PagePressParams { session_id, page_id, key }): Parameters<PagePressParams>,
+        Parameters(PagePressParams {
+            session_id,
+            page_id,
+            key,
+        }): Parameters<PagePressParams>,
     ) -> Result<CallToolResult, rmcp::model::ErrorData> {
         let session = self
             .session(&session_id)
@@ -711,20 +857,28 @@ impl GhostcloakServer {    #[tool(description = "Create a new browsing session: 
         page.press_key(&key)
             .await
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
-        let _ = self.recorder.record(&session_id, "page_press", Some(&page_id), serde_json::json!({ "key": key }));
+        let _ = self.recorder.record(
+            &session_id,
+            "page_press",
+            Some(&page_id),
+            serde_json::json!({ "key": key }),
+        );
         Ok(text_result("ok"))
     }
 
     #[tool(description = "Generate a new coherent browser identity, returned as TOML.")]
     async fn identity_generate(&self) -> Result<CallToolResult, rmcp::model::ErrorData> {
-        let id = ghostcloak_fingerprint::generate(&ghostcloak_fingerprint::GenerateOptions::default());
+        let id =
+            ghostcloak_fingerprint::generate(&ghostcloak_fingerprint::GenerateOptions::default());
         let toml_str = id
             .to_toml()
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
         Ok(text_result(toml_str))
     }
 
-    #[tool(description = "Audit an identity TOML for coherence violations (contradictory signals a detector would flag).")]
+    #[tool(
+        description = "Audit an identity TOML for coherence violations (contradictory signals a detector would flag)."
+    )]
     async fn identity_audit(
         &self,
         Parameters(IdentityAuditParams { identity_toml }): Parameters<IdentityAuditParams>,

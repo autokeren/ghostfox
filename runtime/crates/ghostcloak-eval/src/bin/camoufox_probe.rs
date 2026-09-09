@@ -8,9 +8,7 @@ use ghostcloak_core::engine::{Engine, LaunchOptions};
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(
-            std::env::var("RUST_LOG").unwrap_or_else(|_| "ghostcloak=trace".into()),
-        )
+        .with_env_filter(std::env::var("RUST_LOG").unwrap_or_else(|_| "ghostcloak=trace".into()))
         .with_writer(std::io::stderr)
         .init();
 

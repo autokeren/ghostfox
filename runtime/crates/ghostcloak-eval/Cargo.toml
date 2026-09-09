@@ -16,7 +16,6 @@ ghostcloak-fingerprint = { path = "../ghostcloak-fingerprint" }
 ghostcloak-chromium = { path = "../ghostcloak-engines/ghostcloak-chromium" }
 ghostcloak-camoufox = { path = "../ghostcloak-engines/ghostcloak-camoufox" }
 os_pipe.workspace = true
-libc.workspace = true
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -26,3 +25,6 @@ chrono.workspace = true
 reqwest.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true

@@ -123,8 +123,7 @@ impl SessionVault {
     }
 
     pub async fn spawn(&self, identity: &str) -> Result<Session> {
-        let engine =
-            crate::engine_registry::try_acquire(self.default_engine, &self.launch).await?;
+        let engine = crate::engine_registry::try_acquire(self.default_engine, &self.launch).await?;
         Ok(Session {
             id: crate::util::short_id(),
             identity: identity.into(),

@@ -26,6 +26,7 @@ const LOCALE_ZONES: &[(&str, &str, f64, f64)] = &[
     ("en-AU", "Australia/Sydney", -33.8688, 151.2093),
 ];
 
+#[derive(Default)]
 pub struct GenerateOptions {
     /// Restrict to one platform (default: any).
     pub platform: Option<Platform>,
@@ -33,19 +34,13 @@ pub struct GenerateOptions {
     pub webrtc: Option<WebRtcPolicy>,
 }
 
-impl Default for GenerateOptions {
-    fn default() -> Self {
-        Self { platform: None, webrtc: None }
-    }
-}
-
 /// Generate a fresh, coherent identity.
 pub fn generate(opts: &GenerateOptions) -> Identity {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     let pool: Vec<_> = PRESETS
         .iter()
-        .filter(|p| opts.platform.map_or(true, |want| p.platform == want))
+        .filter(|p| opts.platform.is_none_or(|want| p.platform == want))
         .collect();
     let preset = pool.choose(&mut rng).expect("presets non-empty");
 
@@ -103,9 +98,10 @@ fn preset_label(platform: Platform) -> String {
 
 mod util {
     use rand::Rng;
+
     /// Short id, mirrored from core to keep this crate self-contained.
     pub fn short_id() -> String {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         (0..8)
             .map(|_| {
                 let i = rng.random_range(0..36);

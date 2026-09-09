@@ -26,7 +26,7 @@ impl EngineKind {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LaunchOptions {
     /// Persistent profile directory (empty = ephemeral).
     pub profile_dir: Option<String>,
@@ -38,18 +38,6 @@ pub struct LaunchOptions {
     pub headless: bool,
     /// Engine binary override; autodetected when absent.
     pub executable: Option<String>,
-}
-
-impl Default for LaunchOptions {
-    fn default() -> Self {
-        Self {
-            profile_dir: None,
-            proxy: None,
-            extra_args: vec![],
-            headless: false,
-            executable: None,
-        }
-    }
 }
 
 /// The full a11y snapshot result: elements plus page metadata.
@@ -160,7 +148,10 @@ pub trait PageHandle: Send + Sync {
 #[async_trait]
 pub trait Engine: Send + Sync {
     fn kind(&self) -> EngineKind;
-    async fn new_page(&self, opts: &HashMap<String, serde_json::Value>) -> Result<Arc<dyn PageHandle>>;
+    async fn new_page(
+        &self,
+        opts: &HashMap<String, serde_json::Value>,
+    ) -> Result<Arc<dyn PageHandle>>;
     async fn pages(&self) -> Result<Vec<String>>;
     async fn shutdown(&self) -> Result<()>;
 }

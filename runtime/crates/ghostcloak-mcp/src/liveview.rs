@@ -16,6 +16,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use ghostcloak_core::session::Session;
 
 #[derive(Clone)]
+#[allow(dead_code)]
 struct Shot {
     png: Arc<Vec<u8>>,
     ts: String,
@@ -64,7 +65,13 @@ pub fn start_if_configured(state: Arc<tokio::sync::RwLock<crate::server::ServerS
             loop {
                 tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                 let sessions: Vec<Arc<Session>> = {
-                    ticker_state.read().await.sessions.values().cloned().collect()
+                    ticker_state
+                        .read()
+                        .await
+                        .sessions
+                        .values()
+                        .cloned()
+                        .collect()
                 };
                 for session in sessions {
                     let pages = session.page_ids().await;
@@ -109,9 +116,7 @@ pub fn start_if_configured(state: Arc<tokio::sync::RwLock<crate::server::ServerS
                     );
                     let keys: Vec<String> = store().lock().unwrap().keys().cloned().collect();
                     for k in keys {
-                        html.push_str(&format!(
-                            "<a href=\"/shot/{k}\">{k}</a><br>",
-                        ));
+                        html.push_str(&format!("<a href=\"/shot/{k}\">{k}</a><br>",));
                     }
                     html.push_str("</body></html>");
                     ("200 OK", "text/html; charset=utf-8", html.into_bytes())

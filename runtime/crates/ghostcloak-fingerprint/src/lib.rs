@@ -5,10 +5,10 @@
 //! signals (`4 cores on a MacBook Pro M3` is a fingerprinting own-goal), and
 //! the auditor validates identities against the same rules before launch.
 
+pub mod auditor;
 pub mod generator;
 pub mod identity;
 pub mod presets;
-pub mod auditor;
 
 pub use auditor::audit;
 pub use generator::{generate, GenerateOptions};

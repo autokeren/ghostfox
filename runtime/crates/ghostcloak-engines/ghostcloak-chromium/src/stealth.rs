@@ -2,8 +2,8 @@
 //! identity. Every value injected here comes from the identity — never
 //! hardcoded defaults, so two identities never share a canvas seed.
 
-use chromiumoxide::Page;
 use chromiumoxide::cdp::browser_protocol::page::AddScriptToEvaluateOnNewDocumentParams;
+use chromiumoxide::Page;
 
 use ghostcloak_fingerprint::identity::Identity;
 
@@ -26,7 +26,6 @@ fn esc(s: &str) -> String {
 }
 
 pub fn build_init_script(identity: &Identity) -> String {
-    let fonts_json = serde_json::to_string(&identity.hardware.fonts).unwrap_or_else(|_| "[]".into());
     let geo = identity.geo.as_ref();
     let (lat, lon, acc) = match geo {
         Some(g) => (g.latitude, g.longitude, g.accuracy_m),
@@ -178,7 +177,8 @@ pub fn build_init_script(identity: &Identity) -> String {
         platform = esc(&platform_str(identity)),
         cores = identity.hardware.cpu_cores,
         mem = identity.hardware.device_memory_gb,
-        langs = serde_json::to_string(&[identity.locale.clone()]).unwrap_or_else(|_| r#"["en-US"]"#.into()),
+        langs = serde_json::to_string(std::slice::from_ref(&identity.locale))
+            .unwrap_or_else(|_| r#"["en-US"]"#.into()),
         sw = identity.screen.width,
         sh = identity.screen.height,
         dpr = identity.screen.dpr,

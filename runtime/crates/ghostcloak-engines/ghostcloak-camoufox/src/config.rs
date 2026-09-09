@@ -19,13 +19,29 @@ pub fn identity_to_config(identity: &Identity) -> BTreeMap<String, serde_json::V
     let ua = firefox_ua(identity);
     set(&mut cfg, "navigator.userAgent", ua.clone());
     set(&mut cfg, "navigator.appVersion", app_version(&ua));
-    set(&mut cfg, "navigator.platform", platform_str(identity.platform));
+    set(
+        &mut cfg,
+        "navigator.platform",
+        platform_str(identity.platform),
+    );
     set(&mut cfg, "navigator.oscpu", oscpu(identity.platform, &ua));
-    set(&mut cfg, "navigator.hardwareConcurrency", identity.hardware.cpu_cores);
-    set(&mut cfg, "navigator.languages", vec![identity.locale.clone()]);
+    set(
+        &mut cfg,
+        "navigator.hardwareConcurrency",
+        identity.hardware.cpu_cores,
+    );
+    set(
+        &mut cfg,
+        "navigator.languages",
+        vec![identity.locale.clone()],
+    );
     set(&mut cfg, "navigator.language", identity.locale.clone());
     set(&mut cfg, "headers.User-Agent", ua);
-    set(&mut cfg, "headers.Accept-Language", accept_language(&identity.locale));
+    set(
+        &mut cfg,
+        "headers.Accept-Language",
+        accept_language(&identity.locale),
+    );
 
     // Android personas: touch points consistent with a real phone. The
     // engine patch reads this key in Navigator::MaxTouchPoints; combined
@@ -39,12 +55,20 @@ pub fn identity_to_config(identity: &Identity) -> BTreeMap<String, serde_json::V
     set(&mut cfg, "screen.width", identity.screen.width);
     set(&mut cfg, "screen.height", identity.screen.height);
     set(&mut cfg, "screen.availWidth", identity.screen.width);
-    set(&mut cfg, "screen.availHeight", identity.screen.height.saturating_sub(40));
+    set(
+        &mut cfg,
+        "screen.availHeight",
+        identity.screen.height.saturating_sub(40),
+    );
     set(&mut cfg, "window.devicePixelRatio", identity.screen.dpr);
 
     // WebGL.
     set(&mut cfg, "webGl:vendor", "Mozilla");
-    set(&mut cfg, "webGl:renderer", identity.hardware.gpu_renderer.as_str());
+    set(
+        &mut cfg,
+        "webGl:renderer",
+        identity.hardware.gpu_renderer.as_str(),
+    );
 
     // Locale/timezone/geo — one coherent unit.
     if let Some((lang, region)) = identity.locale.split_once('-') {
@@ -81,7 +105,11 @@ pub fn identity_to_config(identity: &Identity) -> BTreeMap<String, serde_json::V
     cfg
 }
 
-fn set(cfg: &mut BTreeMap<String, serde_json::Value>, key: &str, value: impl Into<serde_json::Value>) {
+fn set(
+    cfg: &mut BTreeMap<String, serde_json::Value>,
+    key: &str,
+    value: impl Into<serde_json::Value>,
+) {
     cfg.insert(key.to_string(), value.into());
 }
 
@@ -133,8 +161,8 @@ pub fn firefox_major_from_home(home: &std::path::Path) -> Option<u32> {
 fn firefox_major(_identity: &Identity) -> u32 {
     // Prefer the engine's real version so UA, headers and buildID-adjacent
     // signals all agree with the binary in GHOSTFOX_HOME.
-    if let Some(home) = std::env::var_os("GHOSTFOX_HOME")
-        .or_else(|| std::env::var_os("CAMOUFOX_HOME"))
+    if let Some(home) =
+        std::env::var_os("GHOSTFOX_HOME").or_else(|| std::env::var_os("CAMOUFOX_HOME"))
     {
         if let Some(v) = firefox_major_from_home(std::path::Path::new(&home)) {
             return v;
@@ -204,11 +232,7 @@ pub fn env_for_identity(
     let json = serde_json::to_string(&cfg).unwrap_or_else(|_| "{}".into());
     // Linux chunk limit is 32767 chars per env var (same as the reference).
     let chunk_size = 32767;
-    for (i, chunk) in json
-        .as_bytes()
-        .chunks(chunk_size)
-        .enumerate()
-    {
+    for (i, chunk) in json.as_bytes().chunks(chunk_size).enumerate() {
         env.insert(
             format!("CAMOU_CONFIG_{}", i + 1),
             String::from_utf8_lossy(chunk).to_string(),
@@ -223,7 +247,10 @@ pub fn env_for_identity(
         Platform::Linux | Platform::Android => "lin",
     };
     let fc = camoufox_home.join("fontconfig").join(ua_os);
-    env.insert("FONTCONFIG_PATH".to_string(), fc.to_string_lossy().to_string());
+    env.insert(
+        "FONTCONFIG_PATH".to_string(),
+        fc.to_string_lossy().to_string(),
+    );
 
     env
 }

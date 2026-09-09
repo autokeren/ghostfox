@@ -1,5 +1,9 @@
 /target
 Cargo.lock
+node/*.tgz
+python/dist/
+python/build/
+python/ghostfox.egg-info/
 *.log
 profiles/
 evals/results/

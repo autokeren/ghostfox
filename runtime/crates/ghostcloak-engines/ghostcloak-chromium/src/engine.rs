@@ -62,9 +62,7 @@ impl ChromiumEngine {
         if opts.headless {
             // --headless=new is the modern headless: full engine, not the old
             // headless shell that detectors fingerprint instantly.
-            config = config
-                .arg("--headless=new")
-                .arg("--window-size=1920,1080");
+            config = config.arg("--headless=new").arg("--window-size=1920,1080");
         }
 
         let config = config
@@ -123,7 +121,10 @@ impl Engine for ChromiumEngine {
         EngineKind::Chromium
     }
 
-    async fn new_page(&self, _opts: &HashMap<String, serde_json::Value>) -> Result<Arc<dyn PageHandle>> {
+    async fn new_page(
+        &self,
+        _opts: &HashMap<String, serde_json::Value>,
+    ) -> Result<Arc<dyn PageHandle>> {
         let page = self
             .browser
             .new_page("about:blank")
@@ -146,7 +147,10 @@ impl Engine for ChromiumEngine {
             .pages()
             .await
             .map_err(|e| GhostError::Protocol(e.to_string()))?;
-        Ok(pages.into_iter().map(|_| ghostcloak_core::util::short_id()).collect())
+        Ok(pages
+            .into_iter()
+            .map(|_| ghostcloak_core::util::short_id())
+            .collect())
     }
 
     async fn shutdown(&self) -> Result<()> {
@@ -166,7 +170,7 @@ pub struct ChromiumPage {
 #[async_trait]
 impl PageHandle for ChromiumPage {
     async fn navigate(&self, url: &str) -> Result<()> {
-        let mut guard = self.page.lock().await;
+        let guard = self.page.lock().await;
         guard.goto(url).await.map_err(map_cdp_err)?;
         Ok(())
     }
@@ -208,7 +212,8 @@ impl PageHandle for ChromiumPage {
     async fn evaluate(&self, expression: &str) -> Result<serde_json::Value> {
         let guard = self.page.lock().await;
         let val = guard.evaluate(expression).await.map_err(map_cdp_err)?;
-        val.into_value().map_err(|e| GhostError::PageOp(e.to_string()))
+        val.into_value()
+            .map_err(|e| GhostError::PageOp(e.to_string()))
     }
 
     async fn url(&self) -> Result<String> {

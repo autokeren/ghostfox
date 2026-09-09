@@ -15,7 +15,11 @@ use ghostcloak_core::engine::{Engine, LaunchOptions};
 use ghostcloak_fingerprint::GenerateOptions;
 
 #[derive(Parser, Debug)]
-#[command(name = "ghostcloak-eval", version, about = "Stealth eval harness for ghostcloak")]
+#[command(
+    name = "ghostcloak-eval",
+    version,
+    about = "Stealth eval harness for ghostcloak"
+)]
 struct Cli {
     #[command(subcommand)]
     mode: Mode,
@@ -52,7 +56,11 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.mode {
         Mode::Identity { count } => eval_identity(count),
-        Mode::Web { url, expr, headless } => eval_web(url, expr, headless).await,
+        Mode::Web {
+            url,
+            expr,
+            headless,
+        } => eval_web(url, expr, headless).await,
         Mode::Targets { headless } => eval_targets(headless).await,
     }
 }
@@ -62,7 +70,11 @@ fn eval_identity(count: usize) -> anyhow::Result<()> {
     for i in 0..count {
         let id = ghostcloak_fingerprint::generate(&GenerateOptions::default());
         let violations = ghostcloak_fingerprint::audit(&id);
-        let score = if violations.is_empty() { "PASS" } else { "FAIL" };
+        let score = if violations.is_empty() {
+            "PASS"
+        } else {
+            "FAIL"
+        };
         if !violations.is_empty() {
             violations_total += violations.len();
             eprintln!("[{i}] {score} {}", id.label);
@@ -97,12 +109,13 @@ const TARGETS: &[(&str, &str)] = &[
     ("httpbin", "https://httpbin.org/html"),
     ("sannysoft", "https://bot.sannysoft.com"),
     // Headless-detection referee (Vastel's areyouheadless).
-    ("areyouheadless", "https://arh.antoinevastel.com/bots/areyouheadless"),
+    (
+        "areyouheadless",
+        "https://arh.antoinevastel.com/bots/areyouheadless",
+    ),
 ];
 
 async fn eval_targets(headless: bool) -> anyhow::Result<()> {
-    use ghostcloak_camoufox::CamoufoxEngine;
-
     let opts = LaunchOptions {
         headless,
         ..Default::default()
@@ -167,7 +180,8 @@ async fn eval_targets(headless: bool) -> anyhow::Result<()> {
                 let lower = body.to_lowercase();
                 let pass = lower.matches("passed").count();
                 let fail = lower.matches("failed").count();
-                let webdriver_leak = !lower.contains("webdriver") || lower.contains("missing (passed)");
+                let webdriver_leak =
+                    !lower.contains("webdriver") || lower.contains("missing (passed)");
                 serde_json::json!({ "pass_rows": pass, "fail_rows": fail, "webdriver_clean": webdriver_leak })
             }
             "areyouheadless" => {
@@ -201,12 +215,16 @@ async fn eval_targets(headless: bool) -> anyhow::Result<()> {
         let _ = page.close().await;
     }
 
-    eprintln!("— {ok} ok / {gated} gated / {blocked} blocked of {} targets —", TARGETS.len());
+    eprintln!(
+        "— {ok} ok / {gated} gated / {blocked} blocked of {} targets —",
+        TARGETS.len()
+    );
     let _ = engine.shutdown().await;
     Ok(())
 }
 
-async fn eval_web(url: String, expr: Option<String>, headless: bool) -> anyhow::Result<()> {    let opts = LaunchOptions {
+async fn eval_web(url: String, expr: Option<String>, headless: bool) -> anyhow::Result<()> {
+    let opts = LaunchOptions {
         headless,
         ..Default::default()
     };
@@ -244,9 +262,7 @@ async fn eval_web(url: String, expr: Option<String>, headless: bool) -> anyhow::
     }
     println!("{}", serde_json::to_string_pretty(&out)?);
 
-    if let Some(engine) = Arc::downcast::<ghostcloak_chromium::ChromiumEngine>(engine.clone())
-        .ok()
-    {
+    if let Ok(engine) = Arc::downcast::<ghostcloak_chromium::ChromiumEngine>(engine.clone()) {
         let _ = engine.shutdown().await;
     }
     Ok(())

@@ -29,7 +29,9 @@ async fn http_get_json(url: &str) -> Result<serde_json::Value, String> {
 /// Solve a Cloudflare Turnstile (or compatible) challenge for `sitekey` on
 /// `pageurl`; returns the `cf-turnstile-response` token.
 pub async fn solve_turnstile(sitekey: &str, pageurl: &str) -> Result<String, String> {
-    let (_, key) = provider().ok_or("captcha solving not configured (set GHOSTFOX_CAPTCHA_PROVIDER + GHOSTFOX_CAPTCHA_KEY)")?;
+    let (_, key) = provider().ok_or(
+        "captcha solving not configured (set GHOSTFOX_CAPTCHA_PROVIDER + GHOSTFOX_CAPTCHA_KEY)",
+    )?;
     let client = reqwest::Client::new();
 
     // Submit.
@@ -85,7 +87,9 @@ pub async fn solve_turnstile(sitekey: &str, pageurl: &str) -> Result<String, Str
 
 /// Solve an image captcha (base64 PNG) and return the text.
 pub async fn solve_image(image_b64: &str) -> Result<String, String> {
-    let (_, key) = provider().ok_or("captcha solving not configured (set GHOSTFOX_CAPTCHA_PROVIDER + GHOSTFOX_CAPTCHA_KEY)")?;
+    let (_, key) = provider().ok_or(
+        "captcha solving not configured (set GHOSTFOX_CAPTCHA_PROVIDER + GHOSTFOX_CAPTCHA_KEY)",
+    )?;
     let client = reqwest::Client::new();
     let submit: serde_json::Value = client
         .post("https://2captcha.com/in.php")
