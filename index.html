@@ -125,10 +125,10 @@ curl -fsSL https://raw.githubusercontent.com/autokeren/ghostfox/main/install.sh 
   <p>Or Python: <code>pip install ghostfox</code> ·
      Or Docker: <code>docker run ghcr.io/autokeren/ghostfox</code></p>
   <div class="grid">
-    <div class="card"><h3>Browse</h3><p><b>session_create · page_open · page_snapshot · page_screenshot · page_click · page_type · page_fill · page_press</b> — narrow, typed tools an agent can't misuse.</p></div>
-    <div class="card"><h3>Personas</h3><p><b>identity_generate · identity_audit</b> — coherent device presets (Windows · macOS · Linux · <b>Android</b>), audited before use. A spoofed browser's worst enemy is itself saying "4 cores on a MacBook".</p></div>
-    <div class="card"><h3>Evidence</h3><p><b>session_evidence</b> — every run writes an append-only <b>events.jsonl</b>, page snapshots, screenshots and the identity used. Replay what your agent did, after the fact.</p></div>
-    <div class="card"><h3>When gated</h3><p><b>captcha_solve</b> — optional hook (2captcha: Turnstile, image). Stealth-first: the goal is not being challenged at all.</p></div>
+    <div class="card"><h3>See &amp; understand</h3><p><b>page_a11y</b> — semantic snapshot with refs, roles, names, live values, login_state. Pierces shadow DOM + iframes. Then <b>page_read_ref</b> for full values, <b>page_wait_for</b> for element readiness, <b>page_screenshot</b> for pixels.</p></div>
+    <div class="card"><h3>Act by ref</h3><p><b>page_click_ref · page_type_ref · page_upload_file</b> — no CSS selectors. Rich editors (Lexical, Draft) handled via editor-native paste paths with fire-then-verify receipts. Every mutation returns proof it landed.</p></div>
+    <div class="card"><h3>Identity &amp; evidence</h3><p><b>identity_generate · identity_audit · session_evidence</b> — coherent personas (Windows · macOS · Linux · <b>Android</b>), audited before use. Every session writes an append-only event log, snapshots, screenshots and the identity used. Replay what your agent did.</p></div>
+    <div class="card"><h3>Session health</h3><p><b>login_state</b> in every a11y snapshot — agents detect dead sessions before acting, not after. Plus <b>captcha_solve</b> for when you're challenged anyway.</p></div>
   </div>
 </section>
 
