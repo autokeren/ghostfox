@@ -108,15 +108,22 @@ pub(crate) const WALK_JS: &str = r#"(
 
     // Session health: detect login/logout signals for the agent.
     var txt = document.body.innerText.toLowerCase();
-    var all = out.map(function (e) { return e.name.toLowerCase() });
-    var hasLoginBtn = all.some(function (n) { return n === 'log in' || n === 'sign in' || n === 'login' || /sign in with/.test(n); });
-    var hasUserMenu = all.some(function (n) {
-      return n.indexOf('user menu') >= 0 || n.indexOf('log out') >= 0 || n.indexOf('logout') >= 0 ||
-             n.indexOf('my profile') >= 0 || n.indexOf('open inbox') >= 0 || n.indexOf('open chat') >= 0 ||
-             n.indexOf('create post') >= 0 || n.indexOf('my account') >= 0;
+    // Session health: use STRONG signals only.
+    // "Expand user menu" is WEAK — exists even when logged out on most sites.
+    var all = out.map(function (e) { return e.name.toLowerCase(); });
+    // STRONG logged-in: these only appear with an authenticated session
+    var strongIn = all.some(function (n) {
+      return n.indexOf('open inbox') >= 0 || n.indexOf('open chat') >= 0 ||
+             n.indexOf('log out') >= 0 || n.indexOf('logout') >= 0 ||
+             n.indexOf('karma') >= 0 || n.indexOf('my profile') >= 0;
     });
-    var loginState = hasLoginBtn && !hasUserMenu ? 'logged-out' :
-                     hasUserMenu ? 'logged-in' : 'unknown';
+    // STRONG logged-out: explicit login/sign-up CTAs as primary actions
+    var strongOut = all.some(function (n) {
+      return n === 'log in' || n === 'login' || n === 'sign up' || n === 'sign in' ||
+             n === 'log in / sign up' || n === 'sign up or log in';
+    });
+    var loginState = strongIn ? 'logged-in' :
+                     strongOut ? 'logged-out' : 'unknown';
 
     return JSON.stringify({
       elements: out.slice(0, 400),
