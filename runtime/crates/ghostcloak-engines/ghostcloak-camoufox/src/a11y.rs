@@ -68,6 +68,33 @@ pub(crate) const WALK_JS: &str = r#"(
       if (!role) return;
       const name = nameOf(el);
       if (!name && (role === 'button' || role === 'link')) return;
+
+      // v0.5: Hidden content detection — check for invisible text planted
+      // in the accessible name that might contain injection attempts
+      const rawName = el.innerText || el.value || '';
+      const hiddenPatterns = [
+        /\bignore (all )?(previous|prior) (instructions?|prompts?)/i,
+        /\bdisregard (your|all|any) (previous|prior)/i,
+        /\bforget (your|all) (training|instructions)/i,
+        /\byou are now (a|an|the)/i,
+        /\bsystem prompt\b/i,
+        /\bapi key\b.*here/i,
+        /\bpassword\b.*here/i,
+        /<\|im_start\|>/i,
+      ];
+      let suspicious = false;
+      for (const pat of hiddenPatterns) {
+        if (pat.test(rawName) || pat.test(name)) {
+          suspicious = true;
+          break;
+        }
+      }
+      // Check computed styles for hidden text injection
+      const st = getComputedStyle(el);
+      if (st.fontSize === '0px' || (st.opacity !== '' && parseFloat(st.opacity) < 0.01 && el.innerText && el.innerText.length > 20)) {
+        suspicious = true;
+      }
+    
       let ref = el.__gfxRef;
       if (!ref) {
         n += 1;
@@ -76,6 +103,7 @@ pub(crate) const WALK_JS: &str = r#"(
         M.set(ref, el);
       }
       const entry = { ref: ref, role: role, name: name };
+      if (suspicious) entry.suspicious = true;
       if (role === 'textbox' || el.tagName === 'SELECT') {
         entry.value = String(el.value != null ? el.value : (el.innerText || '')).slice(0, 200);
       }
@@ -125,11 +153,32 @@ pub(crate) const WALK_JS: &str = r#"(
     var loginState = strongIn ? 'logged-in' :
                      strongOut ? 'logged-out' : 'unknown';
 
+    // v0.5: Danger zone detection — flag sensitive page categories
+    var pageText = document.body.innerText.toLowerCase();
+    var dangerZones = {
+      'financial': /bank|payment|credit card|loan|mortgage|invest|trading|crypto|wallet|paypal|stripe/i,
+      'medical': /health|medical|hospital|pharmacy|prescription|diagnosis/i,
+      'legal': /legal|lawyer|attorney|court|contract|nda|lawsuit/i,
+      'authentication': /password|login|sign in|2fa|otp|verify your identity/i,
+    };
+    var danger = null;
+    for (var zone in dangerZones) {
+      if (dangerZones[zone].test(pageText) || dangerZones[zone].test(document.title)) {
+        danger = zone;
+        break;
+      }
+    }
+
+    // v0.5: Count suspicious elements
+    var suspiciousCount = out.filter(function(e) { return e.suspicious; }).length;
+
     return JSON.stringify({
       elements: out.slice(0, 400),
       login_state: loginState,
       page_url: location.href,
       page_title: document.title,
+      danger_zone: danger,
+      suspicious_elements: suspiciousCount,
     });
   }
 )()"#;
@@ -243,3 +292,89 @@ pub(crate) fn wait_for_js(selector: &str) -> String {
         sel = serde_json::to_string(selector).unwrap_or_default()
     )
 }
+
+/// Humanized typing: inserts text with randomized inter-character timing.
+/// Simulates keystroke dynamics — fast for common chars, slow for punctuation,
+/// pauses at spaces and newlines. Fire-and-verify pattern.
+pub(crate) fn type_ref_human_js(r: &str, text: &str) -> String {
+    format!(
+        r#"(function() {{
+  var el = (window.__gfxRefs || new Map()).get({r});
+  if (!el || !el.isConnected) return 'STALE-REF';
+  var text = {text};
+  el.scrollIntoView({{block: 'center'}});
+  el.focus();
+
+  // For plain inputs: set value with realistic event timing
+  if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {{
+    el.value = '';
+    var i = 0;
+    var base = 45 + Math.random() * 65; // 45-110ms per char base
+    function typeNext() {{
+      if (i >= text.length) {{
+        el.dispatchEvent(new Event('input', {{bubbles: true}}));
+        el.dispatchEvent(new Event('change', {{bubbles: true}}));
+        return;
+      }}
+      var ch = text[i];
+      el.value += ch;
+      // Keystroke dynamics:
+      var delay = base;
+      if (ch === ' ') delay += 30 + Math.random() * 50;         // pause at spaces
+      if (ch === '\n') delay += 120 + Math.random() * 200;     // longer pause at newlines
+      if (/[.!?]/.test(ch)) delay += 80 + Math.random() * 150;  // pause at sentence end
+      if (/[,;:]/.test(ch)) delay += 40 + Math.random() * 80;   // pause at commas
+      if (Math.random() < 0.05) delay += 150 + Math.random() * 300; // random "thinking" pause
+      el.dispatchEvent(new Event('input', {{bubbles: true}}));
+      i++;
+      setTimeout(typeNext, delay);
+    }}
+    typeNext();
+    return 'FIRED';
+  }}
+
+  // For contenteditable: paste then let async editors settle
+  if (el.isContentEditable) {{
+    el.focus();
+    var sel = window.getSelection();
+    var range = document.createRange();
+    range.selectNodeContents(el);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try {{
+      var dt = new DataTransfer();
+      dt.setData('text/plain', text);
+      el.dispatchEvent(new ClipboardEvent('paste', {{clipboardData: dt, bubbles: true, cancelable: true}}));
+    }} catch (e) {{}}
+    if (el.textContent.length < text.length * 0.9) {{
+      document.execCommand('insertText', false, text);
+    }}
+    return 'FIRED';
+  }}
+  return 'NOT-EDITABLE';
+}})()"#,
+        r = serde_json::to_string(r).unwrap_or_default(),
+        text = serde_json::to_string(text).unwrap_or_default()
+    )
+}
+
+
+/// Detect prompt injection patterns and hidden content in a11y output.
+pub(crate) const INJECTION_PATTERNS: &[&str] = &[
+    "ignore previous instructions",
+    "ignore all previous",
+    "disregard your instructions",
+    "forget your training",
+    "you are now a",
+    "act as if",
+    "pretend you are",
+    "system prompt",
+    "### instruction",
+    "<|im_start|>",
+    "download from this link",
+    "enter your password",
+    "api key here",
+    "secret key",
+    "click here to download",
+    "install this extension",
+];

@@ -49,6 +49,14 @@ pub struct A11ySnapshot {
     pub login_state: String,
     pub page_url: String,
     pub page_title: String,
+    /// v0.5: "financial" | "medical" | "legal" | "authentication" | null
+    /// — agents slow down on sensitive pages.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub danger_zone: Option<String>,
+    /// v0.5: number of elements flagged as containing suspicious content
+    /// (prompt injection patterns, hidden text).
+    #[serde(default)]
+    pub suspicious_elements: usize,
 }
 
 /// A semantic element from the accessibility walk: what an agent needs to
@@ -68,6 +76,9 @@ pub struct A11yElement {
     pub checked: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disabled: Option<bool>,
+    /// v0.5: element contains suspicious content (prompt injection patterns).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suspicious: Option<bool>,
 }
 
 /// A captured page state, cheap to hand to an LLM.

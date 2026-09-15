@@ -1,13 +1,34 @@
 # Ghostfox License
 
-Ghostfox is a monorepo with two independently licensed components.
+Ghostfox uses a **dual-license structure** across two directories:
 
-## Engine
-`engine/` is licensed under the Mozilla Public License 2.0.
+## `engine/` — Mozilla Public License 2.0 (MPL-2.0)
 
-See [`engine/LICENSE`](engine/LICENSE).
+The browser engine (Firefox fork with Camoufox anti-detect patches) is
+licensed under the Mozilla Public License 2.0, inherited from:
+- Mozilla Firefox (© Mozilla Foundation)
+- Camoufox (© daijro)
 
-## Runtime
-`runtime/` is dual-licensed under MIT OR Apache-2.0.
+See `engine/LICENSE` for the full MPL-2.0 text.
 
-See [`runtime/LICENSE-MIT`](runtime/LICENSE-MIT) and [`runtime/LICENSE-APACHE`](runtime/LICENSE-APACHE).
+## `runtime/` — MIT OR Apache-2.0 (dual-licensed, your choice)
+
+The Rust MCP runtime (session management, identity engine, MCP server,
+Python/npm packages) is dual-licensed under:
+- MIT License (`runtime/LICENSE-MIT`)
+- Apache License 2.0 (`runtime/LICENSE-APACHE`)
+
+You may use the runtime under either license, at your option.
+
+## Summary
+
+| Directory | License |
+|-----------|---------|
+| `engine/` | MPL-2.0 |
+| `runtime/` | MIT OR Apache-2.0 |
+| `docs/`, `install.sh`, CI configs | MIT OR Apache-2.0 |
+
+This dual-license structure is standard for open-source projects that build
+on Mozilla-licensed code: the MPL-2.0 engine ensures modifications remain
+open, while the MIT/Apache runtime is maximally permissive for downstream
+use.

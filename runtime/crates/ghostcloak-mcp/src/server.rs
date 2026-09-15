@@ -47,6 +47,22 @@ struct RefParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+struct ConfirmActionParams {
+    session_id: String,
+    page_id: String,
+    /// What the agent is about to do (for the evidence log).
+    action: String,
+    /// The ref of the element that will be clicked/activated.
+    r#ref: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct DismissModalParams {
+    session_id: String,
+    page_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct ReadRefParams {
     session_id: String,
     page_id: String,
