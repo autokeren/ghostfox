@@ -1,0 +1,24 @@
+Ghostfox
+Copyright 2026 AutoKeren
+
+This product includes software developed by third parties:
+
+1. Mozilla Firefox — MPL-2.0
+   https://www.mozilla.org/firefox/
+   See engine/LICENSE for full text.
+
+2. Camoufox (by daijro) — MPL-2.0
+   https://github.com/daijro/camoufox
+   Anti-detect patches applied to Firefox source.
+
+3. LibreWolf — patch tooling lineage
+   https://librewolf.net/
+
+4. Playwright (by Microsoft) — Juggler protocol documentation
+   https://github.com/microsoft/playwright
+
+The `runtime/` directory is dual-licensed under MIT OR Apache-2.0.
+See LICENSE and runtime/LICENSE-MIT for details.
+
+The `engine/` directory is licensed under MPL-2.0.
+See engine/LICENSE for details.
