@@ -302,7 +302,7 @@ impl GhostcloakServer {
         Ok(text_result(id))
     }
 
-    #[tool(description = "Open a page (navigate) in a session. Returns page_id.")]
+    #[tool(description = "Navigate to a URL in an existing session. Returns a page_id (string) that must be passed to all subsequent page tools. Waits for the page to load. If the page has iframes or shadow DOM, use page_a11y instead of guessing CSS selectors. Example: page_open(session_id, 'https://example.com') returns a page_id like 'abc123'.")]
     async fn page_open(
         &self,
         Parameters(PageOpenParams { session_id, url }): Parameters<PageOpenParams>,
@@ -332,7 +332,7 @@ impl GhostcloakServer {
         Ok(text_result(new_id))
     }
 
-    #[tool(description = "Get a token-friendly snapshot of a page (url, title, extracted text).")]
+    #[tool(description = "Extract the visible text content of a page as plain text (token-friendly). Returns: url, title, and content (all visible text, no HTML). For semantic element data with refs and values, use page_a11y instead — it gives you interactive elements with roles and names. Use this when you just need to READ page content without needing to interact with elements.")]
     async fn page_snapshot(
         &self,
         Parameters(PageRefParams {
@@ -728,7 +728,7 @@ impl GhostcloakServer {
         }
     }
 
-    #[tool(description = "Click an element by CSS selector.")]
+    #[tool(description = "Click an element by CSS selector. For form controls (buttons, inputs), uses a JS click; for links and other elements, dispatches real mouse events at coordinates. Prefer page_click_ref when you have a page_a11y ref — it scrolls into view first and is more reliable on web-component UIs. Returns 'ok' on success.")]
     async fn page_click(
         &self,
         Parameters(PageClickParams {
@@ -757,7 +757,7 @@ impl GhostcloakServer {
         Ok(text_result("ok"))
     }
 
-    #[tool(description = "Type text into an element by CSS selector.")]
+    #[tool(description = "Type text character-by-character into an element by CSS selector (human-like key events). Prefer page_type_ref when you have a page_a11y ref — it handles rich editors (Lexical/Draft/ProseMirror) and returns a verified receipt. Use this only when you only have a CSS selector and don't need rich editor support. Returns 'ok' on success.")]
     async fn page_type(
         &self,
         Parameters(PageTypeParams {
