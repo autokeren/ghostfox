@@ -1,0 +1,57 @@
+name: Attach engine assets
+
+# When a release doesn't include the prebuilt engine zips (runtime-only
+# releases), copy them from the previous release so consumers (Glama,
+# install.sh, pip install) can always find them on `releases/latest`.
+on:
+  release:
+    types: [published]
+
+jobs:
+  copy-engine:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check if engine assets already exist
+        id: check
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          ASSETS=$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json assets -q '[.assets[].name] | join(" ")')
+          if echo "$ASSETS" | grep -q "lin.x86_64.zip"; then
+            echo "has-engine=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has-engine=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Copy engine assets from previous release
+        if: steps.check.outputs.has-engine == 'false'
+        run: |
+          # Find the most recent release that HAS engine assets
+          PREV_TAG=$(gh release list -R "$GITHUB_REPOSITORY" --json tagName,assets \
+            -q '[.[] | select(.assets | length > 3) | .tagName] | .[0] // empty')
+          
+          if [ -z "$PREV_TAG" ]; then
+            echo "No previous release with engine assets found, skipping"
+            exit 0
+          fi
+          
+          echo "Copying engine assets from $PREV_TAG to ${GITHUB_REF#refs/tags/}"
+          
+          # Download all engine zips from previous release
+          mkdir -p /tmp/engine-assets
+          gh release download "$PREV_TAG" -R "$GITHUB_REPOSITORY" \
+            -p 'ghostfox-*.zip' -D /tmp/engine-assets || true
+          
+          # Upload them to the current release
+          TAG="${GITHUB_REF#refs/tags/}"
+          for f in /tmp/engine-assets/*.zip; do
+            if [ -f "$f" ]; then
+              echo "Uploading $(basename $f)"
+              gh release upload "$TAG" -R "$GITHUB_REPOSITORY" "$f" --clobber
+            fi
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
