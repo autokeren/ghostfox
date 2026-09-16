@@ -296,6 +296,7 @@ pub(crate) fn wait_for_js(selector: &str) -> String {
 /// Humanized typing: inserts text with randomized inter-character timing.
 /// Simulates keystroke dynamics — fast for common chars, slow for punctuation,
 /// pauses at spaces and newlines. Fire-and-verify pattern.
+#[allow(dead_code)] // v0.5 feature — pending integration into type_ref
 pub(crate) fn type_ref_human_js(r: &str, text: &str) -> String {
     format!(
         r#"(function() {{
@@ -358,8 +359,8 @@ pub(crate) fn type_ref_human_js(r: &str, text: &str) -> String {
     )
 }
 
-
 /// Detect prompt injection patterns and hidden content in a11y output.
+#[allow(dead_code)] // v0.5 feature — pending integration into page_a11y
 pub(crate) const INJECTION_PATTERNS: &[&str] = &[
     "ignore previous instructions",
     "ignore all previous",

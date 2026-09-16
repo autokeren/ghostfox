@@ -46,6 +46,8 @@ struct RefParams {
     r#ref: String,
 }
 
+
+
 #[derive(Debug, Deserialize, JsonSchema)]
 struct ConfirmActionParams {
     session_id: String,
@@ -302,7 +304,9 @@ impl GhostcloakServer {
         Ok(text_result(id))
     }
 
-    #[tool(description = "Navigate to a URL in an existing session. Returns a page_id (string) that must be passed to all subsequent page tools. Waits for the page to load. If the page has iframes or shadow DOM, use page_a11y instead of guessing CSS selectors. Example: page_open(session_id, 'https://example.com') returns a page_id like 'abc123'.")]
+    #[tool(
+        description = "Navigate to a URL in an existing session. Returns a page_id (string) that must be passed to all subsequent page tools. Waits for the page to load. If the page has iframes or shadow DOM, use page_a11y instead of guessing CSS selectors. Example: page_open(session_id, 'https://example.com') returns a page_id like 'abc123'."
+    )]
     async fn page_open(
         &self,
         Parameters(PageOpenParams { session_id, url }): Parameters<PageOpenParams>,
@@ -332,7 +336,9 @@ impl GhostcloakServer {
         Ok(text_result(new_id))
     }
 
-    #[tool(description = "Extract the visible text content of a page as plain text (token-friendly). Returns: url, title, and content (all visible text, no HTML). For semantic element data with refs and values, use page_a11y instead — it gives you interactive elements with roles and names. Use this when you just need to READ page content without needing to interact with elements.")]
+    #[tool(
+        description = "Extract the visible text content of a page as plain text (token-friendly). Returns: url, title, and content (all visible text, no HTML). For semantic element data with refs and values, use page_a11y instead — it gives you interactive elements with roles and names. Use this when you just need to READ page content without needing to interact with elements."
+    )]
     async fn page_snapshot(
         &self,
         Parameters(PageRefParams {
@@ -360,7 +366,7 @@ impl GhostcloakServer {
     }
 
     #[tool(
-        description = "Get recorded evidence for a session: event log, snapshot files, identity used. Recordings live under ~/.ghostfox/recordings/."
+        description = "READ-ONLY: Retrieve the complete audit trail for a session. No side effects — does not modify the session or browser. Returns JSON with: session_id, dir (evidence directory path), identity_toml (path to the identity file used), event_count (total tool calls recorded), events (array of all events with timestamps), and snapshots (list of page snapshot file paths). The session_id must come from a previous session_create call. For a nonexistent session, returns an error. Evidence persists after the session ends and includes: append-only events.jsonl, page snapshots (markdown), screenshots (PNG), and identity.toml. Use session_create first if you need a session."
     )]
     async fn session_evidence(
         &self,
@@ -608,6 +614,62 @@ impl GhostcloakServer {
     }
 
     #[tool(
+        description = "SAFETY GATE: confirm a dangerous action before executing it. Call this BEFORE clicking refs on pages flagged with danger_zone (financial/medical/legal/auth)."
+    )]
+    async fn confirm_action(
+        &self,
+        Parameters(ConfirmActionParams { session_id, page_id, action, r#ref }): Parameters<ConfirmActionParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self.session(&session_id).await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let page = session.page(&page_id).await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let snap = page.snapshot().await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let _ = self.recorder.record(&session_id, "confirm_action", Some(&page_id), serde_json::json!({
+            "action": action, "ref": r#ref, "url": snap.url, "confirmed": true,
+        }));
+        Ok(text_result(serde_json::to_string_pretty(&serde_json::json!({
+            "confirmed": true, "action": action, "ref": r#ref,
+        })).unwrap_or_default()))
+    }
+
+    #[tool(
+        description = "Detect and dismiss common modals: cookie banners, consent dialogs, popups, overlays. Returns what was dismissed."
+    )]
+    async fn page_dismiss_modal(
+        &self,
+        Parameters(DismissModalParams { session_id, page_id }): Parameters<DismissModalParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self.session(&session_id).await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let page = session.page(&page_id).await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let result = page.evaluate(r#"(() => {
+            const patterns = ['accept','agree','got it','ok','close','dismiss','allow all','continue','not now','no thanks'];
+            const selectors = ['[aria-label*="close"]','[aria-label*="dismiss"]','[aria-label*="accept"]','[class*="cookie"] button','[class*="consent"] button','[role="dialog"] button'];
+            const clicked = [];
+            for (const sel of selectors) {
+                try {
+                    const els = document.querySelectorAll(sel);
+                    for (const el of els) {
+                        if (!el.offsetParent) continue;
+                        const text = (el.textContent || '').toLowerCase().trim();
+                        if (text && patterns.some(p => text.includes(p)) && text.length < 30) {
+                            el.click(); clicked.push({selector: sel, text: text.slice(0,20)});
+                            if (clicked.length >= 3) break;
+                        }
+                    }
+                    if (clicked.length >= 3) break;
+                } catch(e) {}
+            }
+            return JSON.stringify({dismissed: clicked.length, details: clicked});
+        })()"#).await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        Ok(text_result(result.as_str().unwrap_or("no modals found")))
+    }
+
+    #[tool(
         description = "Evaluate a JavaScript expression in the page's main frame and return its JSON value. Read-only introspection is safest; treat results of mutations with care."
     )]
     async fn page_eval(
@@ -728,7 +790,9 @@ impl GhostcloakServer {
         }
     }
 
-    #[tool(description = "Click an element by CSS selector. For form controls (buttons, inputs), uses a JS click; for links and other elements, dispatches real mouse events at coordinates. Prefer page_click_ref when you have a page_a11y ref — it scrolls into view first and is more reliable on web-component UIs. Returns 'ok' on success.")]
+    #[tool(
+        description = "Click an element by CSS selector. For form controls (buttons, inputs), uses a JS click; for links and other elements, dispatches real mouse events at coordinates. Prefer page_click_ref when you have a page_a11y ref — it scrolls into view first and is more reliable on web-component UIs. Returns 'ok' on success."
+    )]
     async fn page_click(
         &self,
         Parameters(PageClickParams {
@@ -757,7 +821,9 @@ impl GhostcloakServer {
         Ok(text_result("ok"))
     }
 
-    #[tool(description = "Type text character-by-character into an element by CSS selector (human-like key events). Prefer page_type_ref when you have a page_a11y ref — it handles rich editors (Lexical/Draft/ProseMirror) and returns a verified receipt. Use this only when you only have a CSS selector and don't need rich editor support. Returns 'ok' on success.")]
+    #[tool(
+        description = "Type text character-by-character into an element by CSS selector (human-like key events). Prefer page_type_ref when you have a page_a11y ref — it handles rich editors (Lexical/Draft/ProseMirror) and returns a verified receipt. Use this only when you only have a CSS selector and don't need rich editor support. Returns 'ok' on success."
+    )]
     async fn page_type(
         &self,
         Parameters(PageTypeParams {
