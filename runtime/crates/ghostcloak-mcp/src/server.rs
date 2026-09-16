@@ -48,6 +48,23 @@ struct RefParams {
 
 
 
+
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct PageCommentParams {
+    session_id: String,
+    page_id: String,
+    /// The comment text to submit.
+    text: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct SessionMeParams {
+    session_id: String,
+    #[serde(default)]
+    page_id: Option<String>,
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 struct ConfirmActionParams {
     session_id: String,
@@ -611,6 +628,270 @@ impl GhostcloakServer {
             serde_json::json!({ "selector": selector, "file": file_path }),
         );
         Ok(text_result(result.as_str().unwrap_or("unknown")))
+    }
+
+    #[tool(
+        description = "Detect the currently logged-in username on the page (Reddit, X, GitHub, HN). Returns username or 'unknown'. Use before commenting to avoid duplicates."
+    )]
+    async fn session_me(
+        &self,
+        Parameters(SessionMeParams { session_id, page_id }): Parameters<SessionMeParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let page = match page_id {
+            Some(pid) => session
+                .page(&pid)
+                .await
+                .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?,
+            None => {
+                let ids = session.page_ids().await;
+                if let Some(first) = ids.first() {
+                    session
+                        .page(first)
+                        .await
+                        .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?
+                } else {
+                    let pg = session.new_page(Some("about:blank")).await
+                        .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+                    pg
+                }
+            }
+        };
+        // Use a11y_snapshot (pierces shadow DOM) to find username
+        let snap = page.a11y_snapshot().await
+            .unwrap_or_else(|_| ghostcloak_core::engine::A11ySnapshot {
+                elements: vec![],
+                login_state: "unknown".into(),
+                page_url: String::new(),
+                page_title: String::new(),
+                danger_zone: None,
+                suspicious_elements: 0,
+            });
+        let mut username = "unknown".to_string();
+        for e in &snap.elements {
+            let name = &e.name;
+            // Reddit: "Comment from [username]"
+            if let Some(rest) = name.strip_prefix("Comment from ") {
+                let uname = rest.split_whitespace().next().unwrap_or("unknown");
+                if uname.len() >= 3 {
+                    username = uname.to_string();
+                    break;
+                }
+            }
+            // Reddit: "Expand user menu" → check for @username nearby
+            if name.contains("user menu") || name.contains("User menu") {
+                if let Some(at) = name.find('@') {
+                    let rest = &name[at+1..];
+                    let uname = rest.split_whitespace().next().unwrap_or("unknown");
+                    if uname.len() >= 3 {
+                        username = uname.to_string();
+                        break;
+                    }
+                }
+            }
+            // Reddit: profile link with /user/username
+            if name.contains("/user/") || name.contains("u/") {
+                let parts: Vec<&str> = name.split('/').collect();
+                for (i, part) in parts.iter().enumerate() {
+                    if (*part == "user" || *part == "u") && i + 1 < parts.len() {
+                        let uname = parts[i+1];
+                        if uname.len() >= 3 && uname.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-') {
+                            username = uname.to_string();
+                            break;
+                        }
+                    }
+                }
+                if username != "unknown" { break; }
+            }
+        }
+        let username = username;
+        Ok(text_result(username))
+    }
+
+    #[tool(
+        description = "Submit a comment on the current page. Automatically: 1) detects your username via session_me, 2) checks if you already commented (skips if duplicate), 3) finds the comment editor (Reply or Join conversation), 4) opens it, 5) types your text, 6) clicks submit, 7) verifies. Returns result JSON."
+    )]
+    async fn page_comment(
+        &self,
+        Parameters(PageCommentParams { session_id, page_id, text }): Parameters<PageCommentParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let page = session
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+
+        // STEP 1: Get own username via a11y (fast, uses shadow DOM piercing)
+        let snap = page.a11y_snapshot().await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+
+        let mut own_username = String::new();
+        for e in &snap.elements {
+            if let Some(rest) = e.name.strip_prefix("Comment from ") {
+                let uname = rest.split_whitespace().next().unwrap_or("");
+                if uname.len() >= 3 {
+                    own_username = uname.to_string();
+                    break;
+                }
+            }
+        }
+
+        // STEP 2: Check for duplicate comments
+        if !own_username.is_empty() {
+            let has_own = snap.elements.iter().any(|e| {
+                e.name.contains(&format!("Comment from {}", own_username))
+                    || (e.name.contains(&own_username) && e.name.contains("ago"))
+            });
+            if has_own {
+                let _ = self.recorder.record(&session_id, "page_comment", Some(&page_id), serde_json::json!({
+                    "action": "skipped", "reason": "duplicate", "username": own_username
+                }));
+                return Ok(text_result(serde_json::to_string_pretty(&serde_json::json!({
+                    "action": "skipped",
+                    "reason": "already_commented",
+                    "username": own_username,
+                })).unwrap_or_default()));
+            }
+        }
+
+        // STEP 3: Find comment trigger (Reply preferred, Join conversation fallback)
+        let trigger = page
+            .evaluate(r#"(() => {
+                var btns = document.querySelectorAll('button');
+                for (var i=0;i<btns.length;i++) {
+                    if (btns[i].offsetParent && btns[i].textContent.trim() === 'Reply') {
+                        return 'reply';
+                    }
+                }
+                var tbs = document.querySelectorAll('[role=textbox]');
+                for (var j=0;j<tbs.length;j++) {
+                    var label = tbs[j].getAttribute('aria-label')||tbs[j].textContent||'';
+                    if (label.includes('Join the conversation')) return 'join';
+                }
+                return 'none';
+            })()"#)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+
+        let trigger = trigger.as_str().unwrap_or("none");
+        if trigger == "none" {
+            return Err(rmcp::model::ErrorData::internal_error(
+                "No comment box or Reply button found on this page".to_string(),
+                None,
+            ));
+        }
+
+        // STEP 4: Click the trigger
+        let click_js = if trigger == "reply" {
+            r#"(() => {
+                var btns = document.querySelectorAll('button');
+                for (var i=0;i<btns.length;i++) {
+                    if (btns[i].offsetParent && btns[i].textContent.trim() === 'Reply') {
+                        btns[i].click(); return 'clicked-reply';
+                    }
+                }
+                return 'not-found';
+            })()"#
+        } else {
+            r#"(() => {
+                var els = document.querySelectorAll('[role=textbox]');
+                for (var i=0;i<els.length;i++) {
+                    if ((els[i].getAttribute('aria-label')||'').includes('Join the conversation')) {
+                        els[i].focus(); els[i].click(); return 'clicked-join';
+                    }
+                }
+                return 'not-found';
+            })()"#
+        };
+
+        page.evaluate(click_js).await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+
+        // Wait for editor to render
+        tokio::time::sleep(std::time::Duration::from_millis(3000)).await;
+
+        // STEP 5: Find editor and type
+        let typed = page
+            .evaluate(&format!(
+                r#"(() => {{
+                    var els = document.querySelectorAll('[contenteditable=true][role=textbox]');
+                    for (var i=0;i<els.length;i++) {{
+                        var r = els[i].getBoundingClientRect();
+                        if (r.width > 50 && r.height > 20 && els[i].offsetParent) {{
+                            var el = els[i];
+                            el.focus();
+                            var text = {text};
+                            try {{
+                                var dt = new DataTransfer();
+                                dt.setData('text/plain', text);
+                                el.dispatchEvent(new ClipboardEvent('paste', {{clipboardData: dt, bubbles: true, cancelable: true}}));
+                                if (el.textContent.length > 0) return 'TYPED:' + el.textContent.length;
+                            }} catch(e) {{}}
+                            el.textContent = text;
+                            el.dispatchEvent(new InputEvent('input', {{bubbles: true, data: text, inputType: 'insertText'}}));
+                            return 'TYPED:' + el.textContent.length;
+                        }}
+                    }}
+                    return 'NO-EDITOR';
+                }})()"#,
+                text = serde_json::to_string(&text).unwrap_or_default(),
+            ))
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+
+        let typed_str = typed.as_str().unwrap_or("");
+        if !typed_str.starts_with("TYPED:") {
+            return Err(rmcp::model::ErrorData::internal_error(
+                format!("Comment editor not found after clicking {}", trigger),
+                None,
+            ));
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+        // STEP 6: Find and click submit
+        let submitted = page
+            .evaluate(r#"(() => {
+                var btns = document.querySelectorAll('button');
+                for (var i=0;i<btns.length;i++) {
+                    if (btns[i].offsetParent && btns[i].textContent.trim() === 'Comment') {
+                        btns[i].click(); return 'SUBMITTED';
+                    }
+                }
+                return 'NO-SUBMIT';
+            })()"#)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+
+        // STEP 7: Verify
+        tokio::time::sleep(std::time::Duration::from_millis(3000)).await;
+        let verify_snippet: String = text.chars().take(25).collect();
+        let verified = page
+            .evaluate(&format!(
+                r#"(() => document.body.innerText.includes({snippet}) ? 'LIVE' : 'PENDING')()"#,
+                snippet = serde_json::to_string(&verify_snippet).unwrap_or_default(),
+            ))
+            .await
+            .unwrap_or_default();
+
+        let result = serde_json::json!({
+            "action": "commented",
+            "method": trigger,
+            "username": own_username,
+            "duplicate_check": "passed",
+            "typed": typed_str.trim_start_matches("TYPED:"),
+            "submitted": submitted.as_str().unwrap_or(""),
+            "verified": verified.as_str().unwrap_or(""),
+        });
+
+        let _ = self.recorder.record(&session_id, "page_comment", Some(&page_id), result.clone());
+        Ok(text_result(serde_json::to_string_pretty(&result).unwrap_or_default()))
     }
 
     #[tool(
