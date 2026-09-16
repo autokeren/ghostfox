@@ -1,24 +1,27 @@
 Ghostfox
 Copyright 2026 AutoKeren
 
-This product includes software developed by third parties:
+DUAL-LICENSE STRUCTURE:
 
-1. Mozilla Firefox — MPL-2.0
-   https://www.mozilla.org/firefox/
-   See engine/LICENSE for full text.
+- `runtime/` (Rust MCP server, Python/npm packages): MIT OR Apache-2.0
+  Full texts: runtime/LICENSE-MIT, runtime/LICENSE-APACHE
 
-2. Camoufox (by daijro) — MPL-2.0
-   https://github.com/daijro/camoufox
-   Anti-detect patches applied to Firefox source.
+- `engine/` (Firefox fork, Camoufox patches): MPL-2.0
+  Full text: engine/LICENSE
 
-3. LibreWolf — patch tooling lineage
-   https://librewolf.net/
+The root LICENSE file contains the MIT license (for the runtime).
+The engine directory inherits MPL-2.0 from Firefox/Camoufox upstream.
 
-4. Playwright (by Microsoft) — Juggler protocol documentation
-   https://github.com/microsoft/playwright
+THIRD-PARTY CREDITS:
 
-The `runtime/` directory is dual-licensed under MIT OR Apache-2.0.
-See LICENSE and runtime/LICENSE-MIT for details.
+- Mozilla Firefox — MPL-2.0
+  https://www.mozilla.org/firefox/
 
-The `engine/` directory is licensed under MPL-2.0.
-See engine/LICENSE for details.
+- Camoufox (by daijro) — MPL-2.0
+  https://github.com/daijro/camoufox
+
+- LibreWolf — patch tooling lineage
+  https://librewolf.net/
+
+- Playwright (by Microsoft) — Juggler protocol documentation
+  https://github.com/microsoft/playwright

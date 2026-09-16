@@ -19,16 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-DUAL-LICENSE NOTICE: This repository uses a dual-license structure:
-
-- `runtime/` (Rust MCP server, Python/npm packages): MIT OR Apache-2.0
-  Full texts: runtime/LICENSE-MIT, runtime/LICENSE-APACHE
-
-- `engine/` (Firefox fork, Camoufox patches): MPL-2.0
-  Full text: engine/LICENSE
-
-The MIT license above applies to the runtime and general repository files.
-The engine directory inherits MPL-2.0 from Firefox/Camoufox upstream.
