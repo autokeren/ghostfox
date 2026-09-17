@@ -295,6 +295,37 @@ popup-with-ghost-backdrop, different trigger target.
    Live proof: a 189px drag was read as "snap-back failure" while the
    screen showed success — the panel had closed and reset the piece.
 
+
+### GeeTest icon/word-click (bilibili login — recon complete, matching WIP)
+
+The hardest v3 variant: characters/icons drawn ON a photo, click in the
+instruction order. Live-recon'd on bilibili login (production GeeTest):
+
+1. **TRIGGER**: login form submit -> panel opens directly (no radar).
+   Refresh button: [class*="geetest_refresh"].
+2. **ASSETS — the tricks**:
+   - field image = CSS background-image on [class*="geetest_item_wrap"]
+     with a ?challenge= URL that is SINGLE-USE for pixel fetches (fetch
+     once per challenge; repeated fetches return a BLACK error image).
+   - instruction strip = the SAME image, CSS-cropped (bg-size ~298%x968%,
+     pos 0% 100% => bottom-left ~115x40 band). Not a separate asset!
+3. **EYES — what works**:
+   - LOCAL CONTRAST MAP (high-pass: |pixel - gaussian_blur|) makes the
+     characters VISIBLE against any photo (the breakthrough — global
+     luminance/hue/correlation all failed on dark instances).
+   - The ocrs text-DETECTION model (page_vision) finds stroke clusters
+     in the field (candidate localizer).
+   - Instruction glyphs: crop (600-736, 193-243 CSS) from a viewport
+     screenshot; ~25px each; lighter strokes on dark strip.
+4. **REMAINING**: multi-scale normalized cross-correlation of binarized
+   glyphs vs field stroke clusters (the pipeline grind), OR the host
+   multimodal tier (screenshot -> model reads the order + positions ->
+   marker elements + real engine clicks in sequence).
+5. Session lessons: refresh cycles difficulty (dark night-photo =
+   hard instance; refresh for bright ones); one fetch per challenge;
+   verify the screenshot matches the CURRENT challenge state before
+   cropping (stale-screenshot bug bit once).
+
 ---
 
 ## 6. Anti-patterns (all tried, all failed)
