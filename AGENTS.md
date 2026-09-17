@@ -216,6 +216,32 @@ upright. PROVEN E2E (solved at 165deg, server-verified).
    (unknown angle): needs eyes — symmetry/horizon heuristics via canvas
    pixel analysis, or the host agent's vision model (screenshot tier).
 
+
+### GeeTest v4 — mapped but not yet solved (playbook-in-progress)
+
+v4 differs from v3 everywhere that matters. What we verified live:
+
+1. **Structure**: img-based, NOT canvas. The piece =
+   `[class*=geetest_slice_bg]` (80x80 div) with a background-image URL;
+   the puzzle bg = `[class*=geetest_bg]` with its own URL. Both under
+   `geetest_window`; slider = `geetest_slider` with inner `geetest_btn`
+   handle (NOT `geetest_btn_click` — that's the trigger radar! The
+   wildcard `[class*=geetest_btn]` matches BOTH: scope the query INSIDE
+   the slider or you will drag the wrong element, twice.)
+2. **EYES (CORS-verified)**: both image URLs are fetchable with
+   `crossOrigin='anonymous'` -> draw to temp canvas -> pixel analysis:
+   piece = alpha scan (inner offset + width); gap = column luminance
+   dip + edge-spike detection (v4 exposes NO clean reference image).
+3. **Popup state**: `geetest_box` height 50 = radar collapsed; >300 =
+   challenge open. The popup auto-opens on the radar click (with delay)
+   — watch for it, don't re-click (clicks TOGGLE).
+4. **Wall hit**: after dozens of failed interactions the demo's fixed
+   captcha_id appears server-side rate-limited — fresh identities +
+   fresh reloads won't open challenges. Back off (hours), retry later.
+5. Drag semantics for v4 remain unverified (mechanics calibration was
+   blocked by the popup refusing to open) — first thing to test when
+   the wall clears: +30px drag on the slider handle, measure piece 1:1.
+
 ---
 
 ## 6. Anti-patterns (all tried, all failed)
