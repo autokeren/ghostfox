@@ -888,6 +888,24 @@ impl Engine for CamoufoxEngine {
 
 impl CamoufoxPage {
 
+/// v0.6.3: INIT SCRIPTS — run agent code at DOCUMENT START, before
+/// any page script. The deepest interception layer (hooks captured
+/// by page libraries become OURS). Ghostfox's engine-level advantage.
+async fn add_init_script(&self, source: &str) -> Result<()> {
+    let sid = self.session_id().await?;
+    self.conn
+        .request_session(
+            "Page.setInitScripts",
+            serde_json::json!({
+                "scripts": [ { "script": source } ]
+            }),
+            Some(&sid),
+        )
+        .await?;
+    Ok(())
+}
+
+
 /// v0.6: Resolve a ref to its viewport center (scrolls into view).
 async fn ref_center(&self, r: &str) -> Result<(f64, f64)> {
     let out = self.evaluate(&crate::a11y::rect_ref_js(r)).await?;
@@ -1543,6 +1561,10 @@ impl PageHandle for CamoufoxPage {
             tracing::warn!(target: "ghostcloak::camoufox", "mouseup response lost (treated as released)");
         }
         Ok(())
+    }
+
+    async fn add_init_script(&self, source: &str) -> Result<()> {
+        CamoufoxPage::add_init_script(self, source).await
     }
 
     async fn pixels_ref(&self, r: &str, gw: u32, gh: u32) -> Result<String> {

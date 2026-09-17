@@ -87,6 +87,14 @@ struct DragParams {
     }
 
     #[derive(Debug, Deserialize, JsonSchema)]
+    struct InitScriptParams {
+        session_id: String,
+        page_id: String,
+        /// JavaScript source to run at document start on every navigation.
+        source: String,
+    }
+
+    #[derive(Debug, Deserialize, JsonSchema)]
     struct MatchImageParams {
         session_id: String,
         page_id: String,
@@ -651,6 +659,37 @@ impl GhostcloakServer {
             serde_json::json!({ "ref": r#ref, "grid_w": gw, "grid_h": gh }),
         );
         Ok(text_result(grid))
+    }
+
+    #[tool(
+        description = "INIT SCRIPTS: run your JS at DOCUMENT START on every navigation — BEFORE any page script loads. The deepest interception layer in Ghostfox: hooks installed here are what page libraries (gt.js, analytics, frameworks) capture, so their stored references are YOURS. Use for: API response interception (JSONP callback swaps), state capture, anti-detection instrumentation, environment patches. Applies to subsequent navigations."
+    )]
+    async fn page_init_script(
+        &self,
+        Parameters(InitScriptParams {
+            session_id,
+            page_id,
+            source,
+        }): Parameters<InitScriptParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let page = session
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        page.add_init_script(&source)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let _ = self.recorder.record(
+            &session_id,
+            "page_init_script",
+            Some(&page_id),
+            serde_json::json!({ "chars": source.chars().count() }),
+        );
+        Ok(text_result("init script registered"))
     }
 
     #[tool(

@@ -198,6 +198,15 @@ pub trait PageHandle: Send + Sync {
             "drag_ref not supported by this engine".into(),
         ))
     }
+    /// v0.6.3: Register a script that runs at DOCUMENT START on every
+    /// navigation — before any page script. The deepest hook layer.
+    async fn add_init_script(&self, source: &str) -> Result<()> {
+        let _ = source;
+        Err(crate::error::GhostError::PageOp(
+            "add_init_script not supported by this engine".into(),
+        ))
+    }
+
     /// v0.6.2 SUPERMAN GLASSES: render the element a ref points at
     /// (canvas / img / background-image) as a compact luminance grid
     /// the agent READS as digits — a text-model-friendly way to see
