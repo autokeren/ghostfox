@@ -136,11 +136,18 @@ see [engine/README.md](engine/README.md) — `make dir && make build`.
 ```
 runtime/   Rust: ghostcloak-{core,fingerprint,mcp,eval}     (MIT OR Apache-2.0)
 engine/    Browser fork: patches, branding, build system    (MPL-2.0)
+AGENTS.md  The agent playbook — how AI agents drive Ghostfox like a human
 ```
 
 Two directories, two licenses, one product. The runtime speaks
 [Juggler](https://github.com/microsoft/playwright) natively — no Node, no
 Python at runtime.
+
+> **Using Ghostfox with an AI agent (opencode, Codex, Cursor, Claude Code,
+> ...)?** Read [`AGENTS.md`](AGENTS.md) first — it's the distilled playbook
+> from real agent runs: the READ → REASON → DECIDE → ACT loop, self-health
+> (rate limits, drafts, notifications), rich-editor typing, and every known
+> wall with its proven solution.
 
 ## Why own the engine?
 

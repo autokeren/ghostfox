@@ -674,6 +674,8 @@ impl GhostcloakServer {
                 username: None,
                 below_viewport: 0,
                 max_scroll_pages: 0,
+                notifications: vec![],
+                rate_limit_seconds: None,
             });
         // v0.5.3: page_a11y now detects the username from header profile
         // links (Reddit /user/X, X /@handle, HN logout link) — far more

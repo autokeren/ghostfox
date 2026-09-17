@@ -850,6 +850,11 @@ impl PageHandle for CamoufoxPage {
                 }
             };
             let Some((k, kc, code)) = spec else { continue };
+            // Printable non-alphanumeric chars (punctuation etc.) don't
+            // insert via keydown/keyup in this engine build — they need a
+            // CDP "char" event carrying the text. Letters/digits/space
+            // insert fine with the plain key events.
+            let needs_char_event = !k.chars().all(|c| c.is_ascii_alphanumeric());
             for ty in ["keydown", "keyup"] {
                 let _ = self
                     .conn
@@ -862,6 +867,19 @@ impl PageHandle for CamoufoxPage {
                             "location": 0,
                             "code": code,
                             "repeat": false,
+                        }),
+                        Some(&sid),
+                    )
+                    .await;
+            }
+            if needs_char_event {
+                let _ = self
+                    .conn
+                    .request_session(
+                        "Page.dispatchKeyEvent",
+                        serde_json::json!({
+                            "type": "char",
+                            "text": k,
                         }),
                         Some(&sid),
                     )

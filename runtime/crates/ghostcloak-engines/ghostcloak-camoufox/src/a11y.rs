@@ -263,6 +263,37 @@ pub(crate) const WALK_JS: &str = r#"(
       }
     });
 
+    // v0.5.3: NOTIFICATIONS — toasts, alerts, rate limits (self health).
+    // The agent MUST see errors/warnings after every action, or it acts
+    // blind (e.g. clicking submit while rate-limited, retrying into a wall).
+    var notifications = [];
+    var rateLimit = null;
+    function collectNotifs(root) {
+      if (!root || !root.querySelectorAll) return;
+      try {
+        root.querySelectorAll('faceplate-alert, faceplate-toast, shreddit-async-error, [role="alert"], [role="status"], [class*="toast" i], [class*="banner" i], [class*="error" i], [class*="warning" i], [class*="notice" i]').forEach(function(el) {
+          var r = el.getBoundingClientRect();
+          if (r.width < 2 || r.height < 2) return; // skip invisible
+          var t = (el.innerText || el.getAttribute('aria-label') || '').trim();
+          if (!t || t.length < 4 || t.length > 300) return;
+          if (notifications.indexOf(t) === -1) notifications.push(t.slice(0, 250));
+        });
+        root.querySelectorAll('*').forEach(function(el) {
+          if (el.shadowRoot) collectNotifs(el.shadowRoot);
+        });
+      } catch (e) {}
+    }
+    collectNotifs(document);
+    // Parse rate limit signals ("try again in X seconds" — Reddit, HN, etc).
+    var notifText = notifications.join(' | ');
+    var mRate = notifText.match(/try again in (\d+)\s*(seconds?|minutes?)/i) ||
+                notifText.match(/(?:wait|wait for)\s+(\d+)\s*(seconds?|minutes?)/i) ||
+                notifText.match(/you(?:'re| are) doing that too much[^]{0,80}?(\d+)\s*(seconds?|minutes?)/i);
+    if (mRate) {
+      rateLimit = parseInt(mRate[1], 10);
+      if (mRate[2] && /^min/i.test(mRate[2])) rateLimit *= 60;
+    }
+
     return JSON.stringify({
       elements: out.slice(0, 400),
       login_state: loginState,
@@ -275,6 +306,8 @@ pub(crate) const WALK_JS: &str = r#"(
       username: uname,
       below_viewport: belowCount,
       max_scroll_pages: maxPages,
+      notifications: notifications.slice(0, 10),
+      rate_limit_seconds: rateLimit,
     });
   }
 )()"#;

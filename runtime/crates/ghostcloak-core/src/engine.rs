@@ -72,6 +72,14 @@ pub struct A11ySnapshot {
     /// v0.5.3: how many viewport-pages down the lowest element is.
     #[serde(default)]
     pub max_scroll_pages: usize,
+    /// v0.5.3: visible notifications (toasts, alerts, errors) — the agent
+    /// MUST read these after every action (self health).
+    #[serde(default)]
+    pub notifications: Vec<String>,
+    /// v0.5.3: rate limit seconds remaining, parsed from notifications
+    /// ("try again in 381 seconds"). Agent waits instead of retrying blind.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rate_limit_seconds: Option<u64>,
 }
 
 /// A semantic element from the accessibility walk: what an agent needs to
