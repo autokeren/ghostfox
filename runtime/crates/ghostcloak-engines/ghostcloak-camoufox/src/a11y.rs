@@ -363,6 +363,75 @@ pub(crate) fn rect_ref_js(r: &str) -> String {
     )
 }
 
+/// v0.6.2 SUPERMAN GLASSES: render the element a ref points at
+/// (canvas / img / background-image) into a compact luminance grid the
+/// agent READS as numbers — a text-model-friendly way to literally
+/// SEE shapes: captcha holes show as darker cells, skies at the top,
+/// upright vs tilted objects, image layout. Kicks off async image
+/// loading; poll with pixels_poll_js().
+pub(crate) fn pixels_ref_js(r: &str, gw: u32, gh: u32) -> String {
+    format!(
+        r#"(function() {{
+  var el = (window.__gfxRefs || new Map()).get({r});
+  if (!el || !el.isConnected) return 'STALE-REF';
+  window.__pixResult = null;
+  function finish(img, w, h) {{
+    var t = document.createElement('canvas');
+    t.width = Math.max(w, 1); t.height = Math.max(h, 1);
+    var ctx = t.getContext('2d');
+    try {{ ctx.drawImage(img, 0, 0); }} catch (e) {{ window.__pixResult = 'DRAW-FAIL'; return; }}
+    var data;
+    try {{ data = ctx.getImageData(0, 0, t.width, t.height).data; }} catch (e) {{ window.__pixResult = 'CORS-TAINT'; return; }}
+    var lines = [];
+    for (var gy = 0; gy < {gh}; gy++) {{
+      var row = '';
+      for (var gx = 0; gx < {gw}; gx++) {{
+        var x0 = Math.floor(gx * t.width / {gw}), x1 = Math.max(x0 + 1, Math.floor((gx + 1) * t.width / {gw}));
+        var y0 = Math.floor(gy * t.height / {gh}), y1 = Math.max(y0 + 1, Math.floor((gy + 1) * t.height / {gh}));
+        var sum = 0, n = 0;
+        for (var y = y0; y < y1; y++) {{
+          for (var x = x0; x < x1; x++) {{
+            var i = (y * t.width + x) * 4;
+            sum += 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
+            n++;
+          }}
+        }}
+        row += Math.round((sum / n / 255) * 9);
+      }}
+      lines.push(row);
+    }}
+    window.__pixResult = JSON.stringify({{w: t.width, h: t.height, grid: lines}});
+  }}
+  function load(url) {{
+    var im = new Image();
+    im.crossOrigin = 'anonymous';
+    im.onload = function() {{ finish(im, im.naturalWidth, im.naturalHeight); }};
+    im.onerror = function() {{ window.__pixResult = 'IMG-LOAD-FAIL'; }};
+    im.src = url;
+  }}
+  if (el.tagName === 'CANVAS') {{
+    finish(el, el.width, el.height);
+  }} else if (el.tagName === 'IMG') {{
+    load(el.src);
+  }} else {{
+    var bg = getComputedStyle(el).backgroundImage;
+    var m = bg && bg.match(/url\("?([^")]+)"?\)/);
+    if (!m) {{ window.__pixResult = 'NO-IMAGE-SOURCE'; return 'NO-IMAGE-SOURCE'; }}
+    load(m[1]);
+  }}
+  return 'PENDING';
+}})()"#,
+        r = serde_json::to_string(r).unwrap_or_default(),
+        gw = gw,
+        gh = gh
+    )
+}
+
+/// Poll for the pixels_ref result (async image load settles here).
+pub(crate) fn pixels_poll_js() -> &'static str {
+    r#"(function(){ return window.__pixResult === null ? 'PENDING' : window.__pixResult; })()"#
+}
+
 /// Click the element a ref points at.
 pub(crate) fn click_ref_js(r: &str) -> String {
     format!(

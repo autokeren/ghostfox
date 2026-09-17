@@ -1294,6 +1294,41 @@ impl PageHandle for CamoufoxPage {
         Ok(())
     }
 
+    async fn pixels_ref(&self, r: &str, gw: u32, gh: u32) -> Result<String> {
+        // Kick off the render + async image load...
+        let out = self
+            .evaluate(&crate::a11y::pixels_ref_js(r, gw, gh))
+            .await?;
+        if out.as_str() == Some("STALE-REF") {
+            return Err(GhostError::PageOp(format!(
+                "ref {r} is stale — rerun page_a11y"
+            )));
+        }
+        // ...then poll for the settled grid (img/background load, CORS).
+        for _ in 0..40 {
+            tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+            let res = self.evaluate(crate::a11y::pixels_poll_js()).await?;
+            let s = res.as_str().unwrap_or("PENDING");
+            if s != "PENDING" {
+                return match s {
+                    "CORS-TAINT" => Err(GhostError::PageOp(format!(
+                        "pixels_ref({r}): image is CORS-tainted — cannot read"
+                    ))),
+                    "IMG-LOAD-FAIL" | "BG-LOAD-FAIL" => Err(GhostError::PageOp(format!(
+                        "pixels_ref({r}): image failed to load"
+                    ))),
+                    "DRAW-FAIL" => Err(GhostError::PageOp(format!(
+                        "pixels_ref({r}): drawImage failed"
+                    ))),
+                    other => Ok(other.to_string()),
+                };
+            }
+        }
+        Err(GhostError::PageOp(format!(
+            "pixels_ref({r}): image load did not settle in time"
+        )))
+    }
+
     async fn type_ref(&self, r: &str, text: &str) -> Result<()> {
         // Fire...
         let out = self

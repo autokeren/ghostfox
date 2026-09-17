@@ -242,6 +242,27 @@ v4 differs from v3 everywhere that matters. What we verified live:
    blocked by the popup refusing to open) — first thing to test when
    the wall clears: +30px drag on the slider handle, measure piece 1:1.
 
+
+### page_pixels — SUPERMAN GLASSES (v0.6.2)
+
+The agent SEES images as luminance grids (digits 0-9, 0=black).
+No vision model needed — text models read grids natively.
+
+- Works on: canvas elements, img elements, background-image elements.
+- Geometry: grid cols map back to image pixels via
+  `img_x = grid_col * img_w / grid_w`.
+- **Reading lesson (live-validated on GeeTest)**: dark cells are NOT
+  necessarily holes — images have dark CONTENT. To find a hole, request
+  BOTH grids (holed bg + clean reference) and DIFF them mentally:
+  the differing region IS the hole. Digit-diff matched the pixel-math
+  method exactly (grid cols 19-26 = image x 95-135 = border-diff 94).
+- Rotation captchas: read the grid to judge uprightness (bright sky rows
+  on top, symmetry) — and remember you can request a grid AT EACH
+  rotation step and hill-climb visually.
+- The vision stack now: page_a11y (structure) -> page_pixels (images as
+  digits) -> page_screenshot (host multimodal models) -> future: local
+  OCR (ocrs) + ONNX models in the engine.
+
 ---
 
 ## 6. Anti-patterns (all tried, all failed)

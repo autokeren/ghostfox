@@ -194,6 +194,16 @@ pub trait PageHandle: Send + Sync {
             "drag_ref not supported by this engine".into(),
         ))
     }
+    /// v0.6.2 SUPERMAN GLASSES: render the element a ref points at
+    /// (canvas / img / background-image) as a compact luminance grid
+    /// the agent READS as digits — a text-model-friendly way to see
+    /// shapes without a vision model.
+    async fn pixels_ref(&self, r: &str, gw: u32, gh: u32) -> Result<String> {
+        let _ = (r, gw, gh);
+        Err(crate::error::GhostError::PageOp(
+            "pixels_ref not supported by this engine".into(),
+        ))
+    }
     /// Read the FULL value of the element a ref points at (no truncation).
     async fn read_ref_full(&self, r: &str) -> Result<String> {
         let _ = r;

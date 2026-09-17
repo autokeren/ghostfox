@@ -60,6 +60,18 @@ struct DragParams {
     offset_y: Option<f64>,
 }
 
+#[derive(Debug, Deserialize, JsonSchema)]
+struct PixelsParams {
+    session_id: String,
+    page_id: String,
+    /// Ref of the element to render (canvas / img / background-image).
+    r#ref: String,
+    /// Grid width in cells (default 32).
+    grid_w: Option<u32>,
+    /// Grid height in cells (default 21).
+    grid_h: Option<u32>,
+}
+
 
 
 
@@ -550,6 +562,42 @@ impl GhostcloakServer {
             }),
         );
         Ok(text_result("dragged"))
+    }
+
+    #[tool(
+        description = "SUPERMAN GLASSES: render an element (canvas / img / background-image) as a compact luminance GRID of digits 0-9 the agent READS directly — see shapes, holes, object orientation, image layout WITHOUT a vision model. 0=black, 9=white. Captcha gaps appear as darker cells, upright skies are bright rows on top. Pass the ref from page_a11y. Returns JSON {w, h, grid:[rows of digits]}."
+    )]
+    async fn page_pixels(
+        &self,
+        Parameters(PixelsParams {
+            session_id,
+            page_id,
+            r#ref,
+            grid_w,
+            grid_h,
+        }): Parameters<PixelsParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let page = session
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let gw = grid_w.unwrap_or(32).clamp(4, 128);
+        let gh = grid_h.unwrap_or(21).clamp(4, 128);
+        let grid = page
+            .pixels_ref(&r#ref, gw, gh)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let _ = self.recorder.record(
+            &session_id,
+            "page_pixels",
+            Some(&page_id),
+            serde_json::json!({ "ref": r#ref, "grid_w": gw, "grid_h": gh }),
+        );
+        Ok(text_result(grid))
     }
 
     #[tool(
