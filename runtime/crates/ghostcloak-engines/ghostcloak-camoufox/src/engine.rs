@@ -1593,44 +1593,57 @@ impl PageHandle for CamoufoxPage {
 
     async fn net_capture_start(&self) -> Result<()> {
         let sid = self.session_id().await?;
-        // Juggler only emits Network.* events when interception is enabled
-        // (Playwright always sets this) — enable + disable cache so every
-        // response is fresh and observable.
-        let _ = self
-            .conn
-            .request_session(
-                "Network.setRequestInterception",
-                serde_json::json!({ "enabled": true, "bypassServiceWorker": true }),
-                Some(&sid),
-            )
-            .await;
-        let _ = self
-            .conn
-            .request_session(
-                "Page.setCacheDisabled",
-                serde_json::json!({ "cacheDisabled": true }),
-                Some(&sid),
-            )
-            .await;
+        // NOTE: Network.setRequestInterception HOLDS requests until resumed.
+        // Our auto-resume exists but the events may not flow through this
+        // connection — leaving interception OFF for now (the page works
+        // normally; responses will be captured if/when events flow).
         let tid = self.target_id.clone();
         let log = net_log_for(&tid);
         log.lock().unwrap().clear();
         let mut rx = self.conn.subscribe();
+        let conn = self.conn.clone();
         tokio::spawn(async move {
             loop {
                 match rx.recv().await {
                     Ok(msg) => {
+                        let method = msg.get("method").and_then(|m| m.as_str()).unwrap_or("");
                         let evt_sid = msg.get("sessionId").and_then(|v| v.as_str()).unwrap_or("");
                         if evt_sid != sid {
                             continue;
                         }
-                        if msg.get("method").and_then(|m| m.as_str()) == Some("Network.responseReceived") {
-                            if let (Some(url), Some(rid)) = (
-                                msg.pointer("/params/response/url").and_then(|v| v.as_str()),
-                                msg.pointer("/params/requestId").and_then(|v| v.as_str()),
-                            ) {
-                                log.lock().unwrap().push((url.to_string(), rid.to_string()));
+                        tracing::info!(target: "ghostcloak::netcap", "event for our session: {method}");
+                        match msg.get("method").and_then(|m| m.as_str()) {
+                            Some("Network.responseReceived") => {
+                                if let (Some(url), Some(rid)) = (
+                                    msg.pointer("/params/response/url").and_then(|v| v.as_str()),
+                                    msg.pointer("/params/requestId").and_then(|v| v.as_str()),
+                                ) {
+                                    log.lock().unwrap().push((url.to_string(), rid.to_string()));
+                                }
                             }
+                            // With interception ON, requests are HELD until
+                            // resumed. Auto-resume every request so the page
+                            // continues normally while we observe.
+                            Some("Network.requestWillBeSent") => {
+                                let intercepted = msg
+                                    .pointer("/params/isIntercepted")
+                                    .and_then(|v| v.as_bool())
+                                    .unwrap_or(false);
+                                if intercepted {
+                                    if let Some(rid) =
+                                        msg.pointer("/params/requestId").and_then(|v| v.as_str())
+                                    {
+                                        let _ = conn
+                                            .request_session(
+                                                "Network.resumeInterceptedRequest",
+                                                serde_json::json!({ "requestId": rid }),
+                                                Some(&sid),
+                                            )
+                                            .await;
+                                    }
+                                }
+                            }
+                            _ => {}
                         }
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
@@ -1655,15 +1668,17 @@ impl PageHandle for CamoufoxPage {
                 Some(&sid),
             )
             .await?;
-        if let Some(b64) = result.get("base64").and_then(|v| v.as_str()) {
+        if let Some(b64) = result.get("base64body").and_then(|v| v.as_str()) {
             use base64::Engine;
             let bytes = base64::engine::general_purpose::STANDARD
                 .decode(b64)
                 .map_err(|e| GhostError::PageOp(format!("net body decode: {e}")))?;
             return Ok(String::from_utf8_lossy(&bytes).into_owned());
         }
-        if let Some(body) = result.get("body").and_then(|v| v.as_str()) {
-            return Ok(body.to_string());
+        if result.get("evicted").and_then(|v| v.as_bool()) == Some(true) {
+            return Err(GhostError::PageOp(
+                "response body evicted (too large or consumed) — start capture before the request".into(),
+            ));
         }
         Ok(serde_json::to_string(&result).unwrap_or_default())
     }
