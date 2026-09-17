@@ -669,8 +669,17 @@ impl GhostcloakServer {
                 page_title: String::new(),
                 danger_zone: None,
                 suspicious_elements: 0,
+                page_archived: None,
+                own_elements: 0,
+                username: None,
+                below_viewport: 0,
+                max_scroll_pages: 0,
             });
-        let mut username = "unknown".to_string();
+        // v0.5.3: page_a11y now detects the username from header profile
+        // links (Reddit /user/X, X /@handle, HN logout link) — far more
+        // reliable than scraping "Comment from X" which matches other users.
+        let mut username = snap.username.clone().unwrap_or_else(|| "unknown".to_string());
+        if username == "unknown" {
         for e in &snap.elements {
             let name = &e.name;
             // Reddit: "Comment from [username]"
@@ -706,6 +715,7 @@ impl GhostcloakServer {
                 }
                 if username != "unknown" { break; }
             }
+        }
         }
         let username = username;
         Ok(text_result(username))

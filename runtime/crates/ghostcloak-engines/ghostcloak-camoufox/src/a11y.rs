@@ -109,6 +109,23 @@ pub(crate) const WALK_JS: &str = r#"(
       }
       if (el.checked !== undefined && el.type !== 'text') entry.checked = !!el.checked;
       if (el.disabled) entry.disabled = true;
+      // v0.5.3: richer element context — tag, expanded, required, description.
+      entry.tag = el.tagName.toLowerCase();
+      var exp = el.getAttribute('aria-expanded');
+      if (exp !== null) entry.expanded = exp === 'true';
+      else if (el.hasAttribute('open')) entry.expanded = true;
+      if (el.required === true || el.getAttribute('aria-required') === 'true' ||
+          el.hasAttribute('required')) entry.required = true;
+      var desc = el.getAttribute('aria-description') || el.getAttribute('description');
+      if (desc) entry.description = desc.trim().slice(0, 120);
+      // v0.5.3: viewport position — "visible" | "below" (with scroll_pages) | "hidden".
+      var rect = el.getBoundingClientRect();
+      var vh = window.innerHeight || document.documentElement.clientHeight;
+      if (rect.bottom < 0) entry.visibility = 'hidden';
+      else if (rect.top >= vh) {
+        entry.visibility = 'below';
+        entry.scroll_pages = Math.max(1, Math.round((rect.top - vh) / vh) + 1);
+      } else entry.visibility = 'visible';
       out.push(entry);
     }
 
@@ -172,6 +189,80 @@ pub(crate) const WALK_JS: &str = r#"(
     // v0.5: Count suspicious elements
     var suspiciousCount = out.filter(function(e) { return e.suspicious; }).length;
 
+    // v0.5.3: Page state — archived / read-only detection.
+    var archived = /this (post|thread|topic) (has been )?archived/i.test(pageText) ||
+                   /archived post\.? (new comments|cannot)/i.test(pageText) ||
+                   /new comments (cannot|can't|may not) be posted/i.test(pageText) ||
+                   /comments (are|is) closed/i.test(pageText) ||
+                   document.querySelector('[data-archived="true"]') !== null;
+
+    // v0.5.3: Username detection — WHO is logged in?
+    // Strategy: profile links in the header/nav area are OURS.
+    // Reddit: a[href*="/user/NAME"], X: a[href^="/@handle"], HN: logout link.
+    var uname = null;
+    try {
+      var profLinks = document.querySelectorAll('a[href*="/user/"], a[href^="/user/"]');
+      for (var i = 0; i < profLinks.length && !uname; i++) {
+        var pl = profLinks[i];
+        var m1 = (pl.getAttribute('href') || '').match(/\/user\/([A-Za-z0-9_-]{2,25})/);
+        if (!m1) continue;
+        // Header/nav profile link = ours (top-of-page chrome).
+        if (pl.closest('header, nav, [role="banner"]')) { uname = m1[1]; break; }
+      }
+      // Fallback: first /user/ link near the top of the page (y < 300px).
+      if (!uname) {
+        for (var j = 0; j < profLinks.length && !uname; j++) {
+          var pl2 = profLinks[j];
+          var r2 = pl2.getBoundingClientRect();
+          if (r2.top < 300 && r2.top > 0) {
+            var m2 = (pl2.getAttribute('href') || '').match(/\/user\/([A-Za-z0-9_-]{2,25})/);
+            if (m2) uname = m2[1];
+          }
+        }
+      }
+      // X/Twitter: profile link in the side nav.
+      if (!uname) {
+        var xlinks = document.querySelectorAll('a[href^="/@"]');
+        for (var k = 0; k < xlinks.length && !uname; k++) {
+          if (xlinks[k].closest('nav, header, [data-testid="AppTabBar_Profile_Link"]')) {
+            var m3 = (xlinks[k].getAttribute('href') || '').match(/\/@([A-Za-z0-9_]{2,20})/);
+            if (m3) uname = m3[1];
+          }
+        }
+      }
+      // HN: the "logout" link encodes the user in its href.
+      if (!uname) {
+        var lg = document.querySelector('a[href*="logout"]');
+        if (lg) {
+          var m4 = (lg.getAttribute('href') || '').match(/(?:whodoneit|user)=?([A-Za-z0-9_-]{2,20})/);
+          if (m4) uname = m4[1];
+        }
+      }
+    } catch (e) {}
+
+    // v0.5.3: Mark OUR OWN content — any element whose accessible name
+    // contains the logged-in username (e.g. "Comment from Healthy_Gas_683").
+    var ownCount = 0;
+    if (uname) {
+      var lowerU = String(uname).toLowerCase();
+      out.forEach(function(e) {
+        if (e.name && e.name.toLowerCase().indexOf(lowerU) >= 0) {
+          e.own = true;
+          ownCount++;
+        }
+      });
+    }
+
+    // v0.5.3: Scroll context — how much of the interactive inventory
+    // lives below the fold, and how far down.
+    var belowCount = 0, maxPages = 0;
+    out.forEach(function(e) {
+      if (e.visibility === 'below') {
+        belowCount++;
+        if (e.scroll_pages > maxPages) maxPages = e.scroll_pages;
+      }
+    });
+
     return JSON.stringify({
       elements: out.slice(0, 400),
       login_state: loginState,
@@ -179,6 +270,11 @@ pub(crate) const WALK_JS: &str = r#"(
       page_title: document.title,
       danger_zone: danger,
       suspicious_elements: suspiciousCount,
+      page_archived: archived,
+      own_elements: ownCount,
+      username: uname,
+      below_viewport: belowCount,
+      max_scroll_pages: maxPages,
     });
   }
 )()"#;

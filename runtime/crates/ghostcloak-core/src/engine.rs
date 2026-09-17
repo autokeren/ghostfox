@@ -57,6 +57,21 @@ pub struct A11ySnapshot {
     /// (prompt injection patterns, hidden text).
     #[serde(default)]
     pub suspicious_elements: usize,
+    /// v0.5.3: page is archived (read-only, no new interactions possible).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_archived: Option<bool>,
+    /// v0.5.3: number of elements that belong to the logged-in user.
+    #[serde(default)]
+    pub own_elements: usize,
+    /// v0.5.3: logged-in username (from own-content signals / user menu).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub username: Option<String>,
+    /// v0.5.3: interactive elements below the visible viewport (scroll to reach).
+    #[serde(default)]
+    pub below_viewport: usize,
+    /// v0.5.3: how many viewport-pages down the lowest element is.
+    #[serde(default)]
+    pub max_scroll_pages: usize,
 }
 
 /// A semantic element from the accessibility walk: what an agent needs to
@@ -79,6 +94,27 @@ pub struct A11yElement {
     /// v0.5: element contains suspicious content (prompt injection patterns).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub suspicious: Option<bool>,
+    /// v0.5.3: HTML tag name (button, input, a, shreddit-*, facepile-*...).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
+    /// v0.5.3: expandable element state (aria-expanded / open attr).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expanded: Option<bool>,
+    /// v0.5.3: form field is required (required / aria-required).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub required: Option<bool>,
+    /// v0.5.3: "visible" | "below" (scroll down) | "hidden" (off-screen).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<String>,
+    /// v0.5.3: if visibility == "below", how many viewport-pages down.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scroll_pages: Option<f64>,
+    /// v0.5.3: element is OUR own content (matches logged-in username).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub own: Option<bool>,
+    /// v0.5.3: aria-description / title text for extra context.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 /// A captured page state, cheap to hand to an LLM.
