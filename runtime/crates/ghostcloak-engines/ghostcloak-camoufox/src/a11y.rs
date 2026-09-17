@@ -279,6 +279,21 @@ pub(crate) const WALK_JS: &str = r#"(
           if (!t || t.length < 4 || t.length > 300) return;
           if (notifications.indexOf(t) === -1) notifications.push(t.slice(0, 250));
         });
+        // v0.6.2: VERDICT SIGNALS — success/result state text. Born from a
+        // live failure: an agent read "piece at x=0" as a failed slide and
+        // declared defeat while the widget showed "Verification Success".
+        // Success and failure can look IDENTICAL in element geometry — the
+        // widget's own verdict text is the truth. Collect it automatically
+        // so the eyes cannot miss a victory: elements with success/verified/
+        // result/tip classes whose TEXT carries a verdict keyword.
+        root.querySelectorAll('[class*="success" i], [class*="verified" i], [class*="result" i], [class*="tip_content" i], [class*="tip_content_"]').forEach(function(el) {
+          var r = el.getBoundingClientRect();
+          if (r.width < 2 || r.height < 2) return;
+          var t = (el.innerText || '').trim();
+          if (!t || t.length < 4 || t.length > 200) return;
+          if (!/(success|passed|verified|solved|complete|incorrect|failed|try again|wrong)/i.test(t)) return;
+          if (notifications.indexOf(t) === -1) notifications.push(t.slice(0, 250));
+        });
         root.querySelectorAll('*').forEach(function(el) {
           if (el.shadowRoot) collectNotifs(el.shadowRoot);
         });
