@@ -373,6 +373,37 @@ The full solve, native tools only, ~9 REPL calls, one image fetch:
    (Post-captcha "Timed out/Retry" = the HOST login flow, not the
    captcha — bilibili dummies time out; the captcha passed.)
 
+
+### Icon/word-click — RND findings: the classical-CV boundary
+
+Empirically tested on bilibili production (live data, many instances):
+
+| method | scores | verdict |
+|---|---|---|
+| NCC grayscale | -0.20..-0.07 | fails: polarity differs band vs field |
+| NCC binary ink | ~0.02 | fails: information destroyed |
+| SSIM | ~-0.02 | fails: structure transform too large |
+| HOG (8x8 cells, 8 bins) | 0.38-0.46 | weak-positive, best classical |
+| binary IoU | 0.31-0.41 | weak-positive |
+
+CRITICAL FINDING: margin-based confidence is UNRELIABLE at this
+information level — margin 0.095 was correct once, margin 0.100 was
+wrong. GeeTest anti-styles the 25px band icons against the 55px field
+characters specifically to defeat template matching; the remaining
+signal in 25px is below the classical-CV discrimination threshold.
+
+Quality-gate refresh loops (skip below margin 0.06) execute correctly
+but cannot cross this boundary. What actually worked ONCE was the
+agent reading glyph stroke TOPOLOGY at high fidelity (shape
+recognition, not correlation).
+
+The realistic paths:
+1. HOST VISION TIER (ready today): screenshot -> host multimodal
+   model reads icon order + character positions -> engine clicks.
+2. LOCAL ML (Tier 4 roadmap): small classifier on rten —
+   the RTEN runtime is already embedded via ocrs.
+3. All OTHER GeeTest variants are solved and stable.
+
 ---
 
 ## 6. Anti-patterns (all tried, all failed)
