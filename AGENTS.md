@@ -404,6 +404,30 @@ The realistic paths:
    the RTEN runtime is already embedded via ocrs.
 3. All OTHER GeeTest variants are solved and stable.
 
+
+### OCR-identity captcha matching (v0.6.3 — the OCR breakthrough)
+
+Instead of pixel correlation (unreliable at 0.38-0.46 NCC), characters
+are now matched by TEXT IDENTITY via the local ocrs engine:
+
+1. High-pass filter -> character clusters in the field (proven recipe)
+2. Each cluster RENDERED AS BINARIZED INK: black pixels on white canvas
+   at 6x upscale — photo background eliminated entirely
+3. The instruction strip (bottom-left 115x40 of the SAME image) also
+   binarized: ink = pixels darker than strip median by 10
+4. page_ocr reads both (instruction: 'L L T T', field: 'L K L A')
+5. Characters matched by TEXT IDENTITY: L matches L
+
+Key insight: the ocrs models are English-trained — they read
+anti-styled GeeTest glyphs imperfectly ('S' for '5', 'L' for 'T')
+but the RESULTS ARE CONSISTENT between instruction and field (same
+OCR engine, same rendering pipeline). A character that OCRs as 'L'
+in the instruction will OCR as 'L' in the field — match by the
+OCR's own consistent output, not by ground-truth identity.
+
+Improvements needed: bigger upscale (8-10x), stroke thickening,
+or Chinese character model for better OCR accuracy.
+
 ---
 
 ## 6. Anti-patterns (all tried, all failed)
