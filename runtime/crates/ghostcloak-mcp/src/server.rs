@@ -73,6 +73,20 @@ struct DragParams {
     }
 
     #[derive(Debug, Deserialize, JsonSchema)]
+    struct ContrastParams {
+        session_id: String,
+        page_id: String,
+        /// Ref of the element to analyze (canvas / img / background-image).
+        r#ref: String,
+        /// Grid width in cells (default 100).
+        grid_w: Option<u32>,
+        /// Grid height in cells (default 44).
+        grid_h: Option<u32>,
+        /// Gaussian blur radius in px (default 4).
+        blur_radius: Option<u32>,
+    }
+
+    #[derive(Debug, Deserialize, JsonSchema)]
     struct OcrParams {
         session_id: String,
         page_id: String,
@@ -615,6 +629,44 @@ impl GhostcloakServer {
         let _ = self.recorder.record(
             &session_id,
             "page_pixels",
+            Some(&page_id),
+            serde_json::json!({ "ref": r#ref, "grid_w": gw, "grid_h": gh }),
+        );
+        Ok(text_result(grid))
+    }
+
+    #[tool(
+        description = "HIGH-PASS VISION: local-contrast grid of an element's image (|gray - gaussian_blur|). Makes ANYTHING blended into a background VISIBLE — captcha characters on photos, watermarks, hidden strokes. 0 = flat area, 9 = strong edge. This is the native tool born from solving GeeTest icon-click with pure math. Works on canvas / img / background-image (one fetch per challenge)."
+    )]
+    async fn page_contrast(
+        &self,
+        Parameters(ContrastParams {
+            session_id,
+            page_id,
+            r#ref,
+            grid_w,
+            grid_h,
+            blur_radius,
+        }): Parameters<ContrastParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let page = session
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let gw = grid_w.unwrap_or(100).clamp(4, 256);
+        let gh = grid_h.unwrap_or(44).clamp(4, 256);
+        let radius = blur_radius.unwrap_or(4).clamp(1, 16);
+        let grid = page
+            .contrast_ref(&r#ref, gw, gh, radius)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let _ = self.recorder.record(
+            &session_id,
+            "page_contrast",
             Some(&page_id),
             serde_json::json!({ "ref": r#ref, "grid_w": gw, "grid_h": gh }),
         );

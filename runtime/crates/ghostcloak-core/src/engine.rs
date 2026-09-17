@@ -208,6 +208,16 @@ pub trait PageHandle: Send + Sync {
             "pixels_ref not supported by this engine".into(),
         ))
     }
+    /// v0.6.3: HIGH-PASS VISION — local-contrast grid of an element's
+    /// image. |gray - blur| makes blended content visible (captcha
+    /// characters on photos, watermarks). The technique that solved the
+    /// captcha family we believed needed a vision model.
+    async fn contrast_ref(&self, r: &str, gw: u32, gh: u32, radius: u32) -> Result<String> {
+        let _ = (r, gw, gh, radius);
+        Err(crate::error::GhostError::PageOp(
+            "contrast_ref not supported by this engine".into(),
+        ))
+    }
     /// Read the FULL value of the element a ref points at (no truncation).
     async fn read_ref_full(&self, r: &str) -> Result<String> {
         let _ = r;

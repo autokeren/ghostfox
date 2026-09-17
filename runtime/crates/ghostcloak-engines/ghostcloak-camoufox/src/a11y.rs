@@ -447,6 +447,86 @@ pub(crate) fn pixels_poll_js() -> &'static str {
     r#"(function(){ return window.__pixResult === null ? 'PENDING' : window.__pixResult; })()"#
 }
 
+/// v0.6.3 PAGE_CONTRAST — the high-pass filter as a native tool.
+/// Born from the bilibili icon-click solve: |gray - gaussian_blur(gray)|
+/// makes anything blended into a background VISIBLE (captcha characters
+/// on photos, watermarks, hidden strokes). The technique that beat the
+/// captcha we thought needed a vision model — now every agent has it.
+/// Renders the element's image (canvas / img / background-image) as a
+/// grid of local-contrast digits 0-9 (0 = flat, 9 = strong edge).
+pub(crate) fn contrast_ref_js(r: &str, gw: u32, gh: u32, radius: u32) -> String {
+    format!(
+        r#"(function() {{
+  var el = (window.__gfxRefs || new Map()).get({r});
+  if (!el || !el.isConnected) return 'STALE-REF';
+  window.__contrastResult = null;
+  function finish(img, w, h) {{
+    // base (gray) + blurred (ctx.filter = CSS blur)
+    var c1 = document.createElement('canvas');
+    c1.width = Math.max(w, 1); c1.height = Math.max(h, 1);
+    var x1 = c1.getContext('2d');
+    x1.drawImage(img, 0, 0);
+    var base = x1.getImageData(0, 0, c1.width, c1.height).data;
+    var c2 = document.createElement('canvas');
+    c2.width = c1.width; c2.height = c1.height;
+    var x2 = c2.getContext('2d');
+    try {{ x2.filter = 'blur({radius}px)'; }} catch (e) {{}}
+    x2.drawImage(img, 0, 0);
+    var blurred = x2.getImageData(0, 0, c2.width, c2.height).data;
+    var W = c1.width, H = c1.height;
+    var lines = [];
+    for (var gy = 0; gy < {gh}; gy++) {{
+      var row = '';
+      for (var gx = 0; gx < {gw}; gx++) {{
+        var xa = Math.floor(gx * W / {gw}), xb = Math.max(xa + 1, Math.floor((gx + 1) * W / {gw}));
+        var ya = Math.floor(gy * H / {gh}), yb = Math.max(ya + 1, Math.floor((gy + 1) * H / {gh}));
+        var mx = 0;
+        for (var y = ya; y < yb; y++) {{
+          for (var x = xa; x < xb; x++) {{
+            var i = (y * W + x) * 4;
+            var lb = 0.299 * base[i] + 0.587 * base[i+1] + 0.114 * base[i+2];
+            var lbb = 0.299 * blurred[i] + 0.587 * blurred[i+1] + 0.114 * blurred[i+2];
+            var d = Math.abs(lb - lbb);
+            if (d > mx) mx = d;
+          }}
+        }}
+        row += Math.min(9, Math.round(mx / 12));
+      }}
+      lines.push(row);
+    }}
+    window.__contrastResult = JSON.stringify({{w: W, h: H, grid: lines}});
+  }}
+  function load(url) {{
+    var im = new Image();
+    im.crossOrigin = 'anonymous';
+    im.onload = function() {{ finish(im, im.naturalWidth, im.naturalHeight); }};
+    im.onerror = function() {{ window.__contrastResult = 'IMG-LOAD-FAIL'; }};
+    im.src = url;
+  }}
+  if (el.tagName === 'CANVAS') {{
+    finish(el, el.width, el.height);
+  }} else if (el.tagName === 'IMG') {{
+    load(el.src);
+  }} else {{
+    var bg = getComputedStyle(el).backgroundImage;
+    var m = bg && bg.match(/url\("?([^")]+)"?\)/);
+    if (!m) {{ window.__contrastResult = 'NO-IMAGE-SOURCE'; return 'NO-IMAGE-SOURCE'; }}
+    load(m[1]);
+  }}
+  return 'PENDING';
+}})()"#,
+        r = serde_json::to_string(r).unwrap_or_default(),
+        gw = gw,
+        gh = gh,
+        radius = radius
+    )
+}
+
+/// Poll for the contrast_ref result.
+pub(crate) fn contrast_poll_js() -> &'static str {
+    r#"(function(){ return window.__contrastResult === null ? 'PENDING' : window.__contrastResult; })()"#
+}
+
 /// Click the element a ref points at.
 pub(crate) fn click_ref_js(r: &str) -> String {
     format!(

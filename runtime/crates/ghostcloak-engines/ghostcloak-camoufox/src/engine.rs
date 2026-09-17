@@ -1580,6 +1580,36 @@ impl PageHandle for CamoufoxPage {
         )))
     }
 
+    async fn contrast_ref(&self, r: &str, gw: u32, gh: u32, radius: u32) -> Result<String> {
+        let out = self
+            .evaluate(&crate::a11y::contrast_ref_js(r, gw, gh, radius))
+            .await?;
+        if out.as_str() == Some("STALE-REF") {
+            return Err(GhostError::PageOp(format!(
+                "ref {r} is stale — rerun page_a11y"
+            )));
+        }
+        for _ in 0..40 {
+            tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+            let res = self.evaluate(crate::a11y::contrast_poll_js()).await?;
+            let s = res.as_str().unwrap_or("PENDING");
+            if s != "PENDING" {
+                return match s {
+                    "CORS-TAINT" => Err(GhostError::PageOp(format!(
+                        "contrast_ref({r}): image is CORS-tainted"
+                    ))),
+                    "IMG-LOAD-FAIL" | "BG-LOAD-FAIL" => Err(GhostError::PageOp(format!(
+                        "contrast_ref({r}): image failed to load"
+                    ))),
+                    other => Ok(other.to_string()),
+                };
+            }
+        }
+        Err(GhostError::PageOp(format!(
+            "contrast_ref({r}): image load did not settle in time"
+        )))
+    }
+
     async fn type_ref(&self, r: &str, text: &str) -> Result<()> {
         // Fire...
         let out = self
