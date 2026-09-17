@@ -166,6 +166,26 @@ profile the movement (velocity, acceleration, tremor), not the endpoints.
   CDP — mouse moves are `"mousemove"` (lowercase), and synthetic JS drag
   events won't cut it: engine-level dispatch is the point.
 
+### GeeTest slide puzzle — proven recipe (E2E, one pass)
+
+1. **Trigger**: the widget renders its own DOM (plain divs — not in
+   page_a11y). Register + click: `.geetest_radar_tip`.
+2. **EYES (no vision model needed — pixel math)**: the canvases carry
+   the classes themselves (`canvas.geetest_canvas_bg`, NOT
+   `.geetest_canvas_bg canvas`). Diff bg vs `canvas.geetest_canvas_fullbg`
+   column-by-column; the strong divergence right of x≈30 is the gap:
+   ```js
+   colDiff[x] += |bg[i]-full[i]| + |bg[i+1]-full[i+1]| + |bg[i+2]-full[i+2]|
+   // gapX = first x >= 30 where colDiff[x] > maxDiff * 0.45
+   ```
+3. **BRAIN**: `scale = bg_css_width / canvas.width`;
+   `distance = (gapX - 6) * scale` (6 ≈ piece inset in the slice canvas).
+4. **HANDS**: register `.geetest_slider_button` as a ref, then
+   `page_drag(from_ref=handle, offset_x=distance)` — the human path IS
+   the passing grade: GeeTest profiles velocity/acceleration/jitter.
+5. **VERIFY**: success = `.geetest_success_radar_tip_content` appears +
+   the host page shows validate/seccode tokens.
+
 ---
 
 ## 6. Anti-patterns (all tried, all failed)
