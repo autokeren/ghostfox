@@ -218,6 +218,29 @@ pub trait PageHandle: Send + Sync {
             "contrast_ref not supported by this engine".into(),
         ))
     }
+    /// v0.6.3: REAL template matching — multi-scale NCC of a needle
+    /// (element image, optional sub-rect crop) against a haystack image,
+    /// computed in-page at full grayscale resolution. Returns top match
+    /// positions (needle centers) in haystack pixels.
+    #[allow(clippy::too_many_arguments)]
+    async fn match_image_ref(
+        &self,
+        needle_ref: &str,
+        nx: i64,
+        ny: i64,
+        nw: i64,
+        nh: i64,
+        hay_ref: &str,
+        hx: i64,
+        hy: i64,
+        hw: i64,
+        hh: i64,
+    ) -> Result<String> {
+        let _ = (needle_ref, nx, ny, nw, nh, hay_ref, hx, hy, hw, hh);
+        Err(crate::error::GhostError::PageOp(
+            "match_image_ref not supported by this engine".into(),
+        ))
+    }
     /// Read the FULL value of the element a ref points at (no truncation).
     async fn read_ref_full(&self, r: &str) -> Result<String> {
         let _ = r;

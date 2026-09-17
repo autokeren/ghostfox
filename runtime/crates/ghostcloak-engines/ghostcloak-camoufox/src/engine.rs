@@ -1610,6 +1610,43 @@ impl PageHandle for CamoufoxPage {
         )))
     }
 
+    async fn match_image_ref(
+        &self,
+        needle_ref: &str,
+        nx: i64,
+        ny: i64,
+        nw: i64,
+        nh: i64,
+        hay_ref: &str,
+        hx: i64,
+        hy: i64,
+        hw: i64,
+        hh: i64,
+    ) -> Result<String> {
+        let out = self
+            .evaluate(&crate::a11y::match_image_js(
+                needle_ref, nx, ny, nw, nh, hay_ref, hx, hy, hw, hh,
+            ))
+            .await?;
+        if out.as_str() == Some("STALE-REF") {
+            return Err(GhostError::PageOp(
+                "ref stale — rerun page_a11y".into(),
+            ));
+        }
+        for _ in 0..120 {
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+            let res = self.evaluate(crate::a11y::match_poll_js()).await?;
+            let s = res.as_str().unwrap_or("PENDING");
+            if s != "PENDING" {
+                if let Some(err) = s.strip_prefix("MATCH-FAIL:") {
+                    return Err(GhostError::PageOp(err.to_string()));
+                }
+                return Ok(s.to_string());
+            }
+        }
+        Err(GhostError::PageOp("match_image: did not settle in time".into()))
+    }
+
     async fn type_ref(&self, r: &str, text: &str) -> Result<()> {
         // Fire...
         let out = self

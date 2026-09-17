@@ -87,6 +87,24 @@ struct DragParams {
     }
 
     #[derive(Debug, Deserialize, JsonSchema)]
+    struct MatchImageParams {
+        session_id: String,
+        page_id: String,
+        /// Ref of the NEEDLE element (canvas / img / background-image).
+        needle_ref: String,
+        /// Optional crop of the needle image (x, y, w, h in needle-image px).
+        /// Omit to use the whole image. Use this to match a sub-region
+        /// (e.g. an instruction glyph band inside the same image).
+        needle_rect: Option<Vec<i64>>,
+        /// Ref of the HAYSTACK element to search in.
+        hay_ref: String,
+        /// Optional search-region crop of the haystack (x, y, w, h in
+        /// haystack-image px). Omit for the full image. USE THIS to
+        /// exclude the needle's own area (self-match guard).
+        hay_rect: Option<Vec<i64>>,
+    }
+
+    #[derive(Debug, Deserialize, JsonSchema)]
     struct OcrParams {
         session_id: String,
         page_id: String,
@@ -633,6 +651,51 @@ impl GhostcloakServer {
             serde_json::json!({ "ref": r#ref, "grid_w": gw, "grid_h": gh }),
         );
         Ok(text_result(grid))
+    }
+
+    #[tool(
+        description = "REAL TEMPLATE MATCHING: multi-scale normalized cross-correlation of a needle against a haystack, computed IN-PAGE at full grayscale resolution (no grid loss). Returns top matches [{x, y, score, scale}] — needle-center positions in haystack-image pixels. needle_rect optionally crops the needle (e.g. an instruction glyph band from the same image — GeeTest icon-click pattern). Images are cached per URL: single-use challenge URLs fetch exactly once. THE tool for: captcha piece->gap, glyph->character, logo->page."
+    )]
+    async fn page_match_image(
+        &self,
+        Parameters(MatchImageParams {
+            session_id,
+            page_id,
+            needle_ref,
+            needle_rect,
+            hay_ref,
+            hay_rect,
+        }): Parameters<MatchImageParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let page = session
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let rect = needle_rect.unwrap_or_default();
+        let (nx, ny, nw, nh) = match rect.as_slice() {
+            [x, y, w, h] => (*x, *y, *w, *h),
+            _ => (0, 0, 0, 0),
+        };
+        let hrect = hay_rect.unwrap_or_default();
+        let (hx, hy, hw, hh) = match hrect.as_slice() {
+            [x, y, w, h] => (*x, *y, *w, *h),
+            _ => (0, 0, 0, 0),
+        };
+        let result = page
+            .match_image_ref(&needle_ref, nx, ny, nw, nh, &hay_ref, hx, hy, hw, hh)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let _ = self.recorder.record(
+            &session_id,
+            "page_match_image",
+            Some(&page_id),
+            serde_json::json!({ "needle": needle_ref, "hay": hay_ref }),
+        );
+        Ok(text_result(result))
     }
 
     #[tool(

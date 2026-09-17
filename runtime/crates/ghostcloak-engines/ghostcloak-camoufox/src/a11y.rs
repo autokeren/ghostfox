@@ -527,6 +527,161 @@ pub(crate) fn contrast_poll_js() -> &'static str {
     r#"(function(){ return window.__contrastResult === null ? 'PENDING' : window.__contrastResult; })()"#
 }
 
+/// v0.6.3 PAGE_MATCH_IMAGE — real template matching, in-page (canvas).
+/// Multi-scale normalized cross-correlation of a needle (element image,
+/// optionally cropped to a sub-rect) against a haystack image. Returns
+/// top matches as needle-center coordinates in haystack pixels.
+/// Full grayscale resolution — no grid digitization loss. Images cache
+/// on window.__gfxImgCache so single-use URLs fetch exactly once.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn match_image_js(
+    needle_ref: &str,
+    nx: i64,
+    ny: i64,
+    nw: i64,
+    nh: i64,
+    hay_ref: &str,
+    hx: i64,
+    hy: i64,
+    hw: i64,
+    hh: i64,
+) -> String {
+    format!(
+        r#"(function() {{
+  var M = (window.__gfxRefs || new Map());
+  var needleEl = M.get({needle_ref}), hayEl = M.get({hay_ref});
+  if (!needleEl || !hayEl) return 'STALE-REF';
+  window.__gfxImgCache = window.__gfxImgCache || {{}};
+  window.__matchResult = null;
+
+  function srcOf(el) {{
+    if (el.tagName === 'CANVAS') return el;
+    if (el.tagName === 'IMG') return el.src;
+    var bg = getComputedStyle(el).backgroundImage;
+    var m = bg && bg.match(/url\("?([^")]+)"?\)/);
+    return m ? m[1] : null;
+  }}
+  function fetchImg(url) {{
+    if (window.__gfxImgCache[url]) return window.__gfxImgCache[url];
+    return new Promise(function(res, rej) {{
+      var im = new Image();
+      im.crossOrigin = 'anonymous';
+      im.onload = function() {{ window.__gfxImgCache[url] = im; res(im); }};
+      im.onerror = function() {{ rej('load fail'); }};
+      im.src = url;
+    }});
+  }}
+  function toCanvas(src) {{
+    if (src && src.tagName === 'CANVAS') return src;
+    return null; // handled via fetch
+  }}
+
+  var needleSrc = srcOf(needleEl), haySrc = srcOf(hayEl);
+
+  function grayOf(img, x0, y0, w, h) {{
+    var c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    var x = c.getContext('2d');
+    x.drawImage(img, x0, y0, w, h, 0, 0, w, h);
+    var d = x.getImageData(0, 0, w, h).data;
+    var g = new Float32Array(w * h);
+    for (var i = 0; i < w * h; i++) {{
+      g[i] = 0.299 * d[i*4] + 0.587 * d[i*4+1] + 0.114 * d[i*4+2];
+    }}
+    return g;
+  }}
+  function resizeGray(img, x0, y0, w, h, tw, th) {{
+    var c = document.createElement('canvas');
+    c.width = tw; c.height = th;
+    var x = c.getContext('2d');
+    x.drawImage(img, x0, y0, w, h, 0, 0, tw, th);
+    var d = x.getImageData(0, 0, tw, th).data;
+    var g = new Float32Array(tw * th);
+    for (var i = 0; i < tw * th; i++) {{
+      g[i] = 0.299 * d[i*4] + 0.587 * d[i*4+1] + 0.114 * d[i*4+2];
+    }}
+    return g;
+  }}
+  function ncc(needle, nw, nh, hay, hw, hh, ox, oy) {{
+    var n = nw * nh;
+    var sumA = 0, sumB = 0, sumAA = 0, sumBB = 0, sumAB = 0;
+    for (var y = 0; y < nh; y++) {{
+      var rowN = y * nw, rowH = (y + oy) * hw + ox;
+      for (var x = 0; x < nw; x++) {{
+        var a = needle[rowN + x], b = hay[rowH + x];
+        sumA += a; sumB += b; sumAA += a*a; sumBB += b*b; sumAB += a*b;
+      }}
+    }}
+    var cov = sumAB - sumA * sumB / n;
+    var va = sumAA - sumA * sumA / n;
+    var vb = sumBB - sumB * sumB / n;
+    var den = Math.sqrt(va * vb);
+    return den > 1e-6 ? cov / den : 0;
+  }}
+
+  Promise.all([
+    (needleSrc && needleSrc.tagName === 'CANVAS') ? Promise.resolve(needleSrc) : fetchImg(needleSrc),
+    (haySrc && haySrc.tagName === 'CANVAS') ? Promise.resolve(haySrc) : fetchImg(haySrc)
+  ]).then(function(imgs) {{
+    var nImg = imgs[0], hImg = imgs[1];
+    var nx = {nx}, ny = {ny}, nw = {nw}, nh = {nh};
+    if (nw <= 0 || nh <= 0) {{ nw = nImg.naturalWidth || nImg.width; nh = nImg.naturalHeight || nImg.height; nx = 0; ny = 0; }}
+    var hx = {hx}, hy = {hy}, hw = {hw}, hh = {hh};
+    var HIW = hImg.naturalWidth || hImg.width, HIH = hImg.naturalHeight || hImg.height;
+    if (hw <= 0 || hh <= 0) {{ hx = 0; hy = 0; hw = HIW; hh = HIH; }}
+    var HW = hw, HH = hh;
+    var hay = grayOf(hImg, hx, hy, HW, HH);
+    var scales = [1, 1.5, 2, 2.5, 3];
+    var results = [];
+    for (var si = 0; si < scales.length; si++) {{
+      var s = scales[si];
+      var tw = Math.max(4, Math.round(nw * s)), th = Math.max(4, Math.round(nh * s));
+      if (tw > HW || th > HH) continue;
+      var nd = resizeGray(nImg, nx, ny, nw, nh, tw, th);
+      var step = 2;
+      for (var oy = 0; oy + th <= HH; oy += step) {{
+        for (var ox = 0; ox + tw <= HW; ox += step) {{
+          var score = ncc(nd, tw, th, hay, HW, HH, ox, oy);
+          if (score > 0.35) results.push({{x: ox + tw/2, y: oy + th/2, s: s, score: Math.round(score*1000)/1000}});
+        }}
+      }}
+    }}
+    // re-base match coords from crop space to full haystack-image space
+    for (var ri = 0; ri < results.length; ri++) {{ results[ri].x += hx; results[ri].y += hy; }}
+    results.sort(function(a, b) {{ return b.score - a.score; }});
+    // non-max suppression: keep matches >= 20px apart
+    var keep = [];
+    for (var i = 0; i < results.length && keep.length < 8; i++) {{
+      var ok = true;
+      for (var k = 0; k < keep.length; k++) {{
+        if (Math.abs(results[i].x - keep[k].x) < 25 && Math.abs(results[i].y - keep[k].y) < 25) {{ ok = false; break; }}
+      }}
+      if (ok) keep.push(results[i]);
+    }}
+    window.__matchResult = JSON.stringify({{needle_rect: [nx, ny, nw, nh], hay_w: HW, hay_h: HH, matches: keep}});
+  }}).catch(function(e) {{
+    window.__matchResult = 'MATCH-FAIL: ' + String(e).slice(0, 60);
+  }});
+  return 'PENDING';
+}})()"#,
+        needle_ref = serde_json::to_string(needle_ref).unwrap_or_default(),
+        hay_ref = serde_json::to_string(hay_ref).unwrap_or_default(),
+        nx = nx,
+        ny = ny,
+        nw = nw,
+        nh = nh,
+        hx = hx,
+        hy = hy,
+        hw = hw,
+        hh = hh
+    )
+}
+
+/// Poll for the match_image result.
+pub(crate) fn match_poll_js() -> &'static str {
+    r#"(function(){ return window.__matchResult === null ? 'PENDING' : window.__matchResult; })()"#
+}
+
 /// Click the element a ref points at.
 pub(crate) fn click_ref_js(r: &str) -> String {
     format!(
