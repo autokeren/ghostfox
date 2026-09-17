@@ -831,8 +831,12 @@ impl PageHandle for CamoufoxPage {
             return Err(GhostError::PageOp("selector not found".into()));
         }
         let sid = self.session_id().await?;
-        // Type per-character via key events — what a human produces, and
-        // the point we can add cadence randomization later.
+        // Type per-character via key events — what a human produces.
+        // v0.5.3: HUMANIZED CADENCE — random inter-key delays with pauses at
+        // spaces/newlines and occasional "thinking" pauses. Machine-gun
+        // typing (sub-ms between chars) is a bot detection signal on sites
+        // that profile keystroke dynamics (X, Reddit).
+        use rand::Rng;
         let key = |c: char| -> (u32, String, String) {
             // (keyCode, code, key) for printable ASCII.
             let code = format!("Key{}", c.to_ascii_uppercase());
@@ -851,10 +855,12 @@ impl PageHandle for CamoufoxPage {
             };
             let Some((k, kc, code)) = spec else { continue };
             // Printable non-alphanumeric chars (punctuation etc.) don't
-            // insert via keydown/keyup in this engine build — they need a
-            // CDP "char" event carrying the text. Letters/digits/space
-            // insert fine with the plain key events.
-            let needs_char_event = !k.chars().all(|c| c.is_ascii_alphanumeric());
+            // insert via keydown/keyup in this engine build. The standard
+            // CDP insertion path is a keyDown carrying a "text" field (plus
+            // a "char" event for engines that model it); send both forms
+            // for punctuation. Letters/digits/space insert fine with the
+            // plain key events.
+            let needs_text_insert = !k.chars().all(|c| c.is_ascii_alphanumeric());
             for ty in ["keydown", "keyup"] {
                 let _ = self
                     .conn
@@ -872,19 +878,57 @@ impl PageHandle for CamoufoxPage {
                     )
                     .await;
             }
-            if needs_char_event {
-                let _ = self
-                    .conn
-                    .request_session(
-                        "Page.dispatchKeyEvent",
-                        serde_json::json!({
-                            "type": "char",
-                            "text": k,
-                        }),
-                        Some(&sid),
-                    )
-                    .await;
+            if needs_text_insert {
+                let payloads = [
+                    serde_json::json!({
+                        "type": "keyDown",
+                        "key": k,
+                        "keyCode": kc,
+                        "location": 0,
+                        "code": code,
+                        "repeat": false,
+                        "text": k,
+                    }),
+                    serde_json::json!({
+                        "type": "char",
+                        "text": k,
+                        "key": k,
+                    }),
+                    serde_json::json!({
+                        "type": "keyUp",
+                        "key": k,
+                        "keyCode": kc,
+                        "location": 0,
+                        "code": code,
+                        "repeat": false,
+                    }),
+                ];
+                for payload in payloads {
+                    let _ = self
+                        .conn
+                        .request_session("Page.dispatchKeyEvent", payload, Some(&sid))
+                        .await;
+                }
             }
+            // Humanized cadence between keystrokes:
+            //  - base 45-110ms per char (average typist)
+            //  - pause at spaces (+30-80ms), longer at newlines (+120-320ms)
+            //  - 5% "thinking" pause (+150-450ms)
+            // (RNG scoped here — ThreadRng is !Send, must not live across awaits.)
+            let delay = {
+                let mut rng = rand::rng();
+                let mut d = 45 + rng.random_range(0..65u64);
+                if ch == ' ' {
+                    d += 30 + rng.random_range(0..50);
+                } else if ch == '\n' {
+                    d += 120 + rng.random_range(0..200);
+                }
+                if rng.random_bool(0.05) {
+                    d += 150 + rng.random_range(0..300);
+                }
+                d
+            };
+            tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
         }
         Ok(())
     }
