@@ -139,6 +139,10 @@ pub struct PageSnapshot {
 #[async_trait]
 pub trait PageHandle: Send + Sync {
     async fn navigate(&self, url: &str) -> Result<()>;
+    /// v0.6.2: The engine-level target id (tab), if this handle wraps one.
+    fn target_id(&self) -> Option<String> {
+        None
+    }
     async fn snapshot(&self) -> Result<PageSnapshot>;
     async fn click(&self, selector: &str) -> Result<()>;
     async fn type_text(&self, selector: &str, text: &str) -> Result<()>;
@@ -237,4 +241,23 @@ pub trait Engine: Send + Sync {
     ) -> Result<Arc<dyn PageHandle>>;
     async fn pages(&self) -> Result<Vec<String>>;
     async fn shutdown(&self) -> Result<()>;
+    /// v0.6.2: All browser targets (tabs AND site-opened popups) with
+    /// URLs where known. Engines without popup vision return their
+    /// known page ids with unknown URLs.
+    async fn list_targets(&self) -> Result<Vec<(String, Option<String>)>> {
+        Ok(self
+            .pages()
+            .await?
+            .into_iter()
+            .map(|id| (id, None))
+            .collect())
+    }
+    /// v0.6.2: Attach to an existing target (a popup the SITE opened —
+    /// OAuth windows, payment flows). Returns a live page handle.
+    async fn attach_target(&self, target_id: &str) -> Result<Arc<dyn PageHandle>> {
+        let _ = target_id;
+        Err(crate::error::GhostError::PageOp(
+            "attach_target not supported by this engine".into(),
+        ))
+    }
 }

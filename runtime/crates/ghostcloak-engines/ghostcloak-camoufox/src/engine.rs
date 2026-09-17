@@ -26,6 +26,17 @@ pub struct CamoufoxEngine {
     /// Ephemeral profile dir to remove on shutdown (None = user-provided,
     /// persistent).
     ephemeral_profile: Option<PathBuf>,
+    /// v0.6.2: POPUP/TAB REGISTRY — every attached browser target
+    /// (targetId -> sessionId), including site-opened popups. Juggler
+    /// auto-attaches new targets and announces them via
+    /// `Browser.attachedToTarget`; previously only pages WE created were
+    /// tracked, making OAuth popups (Google login, payment windows...)
+    /// invisible to the agent. Kept in sync by a dedicated listener.
+    targets: tokio::sync::Mutex<std::collections::HashMap<String, String>>,
+    /// v0.6.2: session -> latest (executionContextId, frameId) so popup
+    /// handles can be born fully initialized (contexts fire at popup
+    /// creation, before anyone attaches).
+    contexts: tokio::sync::Mutex<std::collections::HashMap<String, (String, String)>>,
 }
 
 impl CamoufoxEngine {
@@ -183,12 +194,199 @@ impl CamoufoxEngine {
                 .await;
         }
 
-        Ok(Arc::new(Self {
+        let engine = Arc::new(Self {
             conn,
             identity,
             home,
             ephemeral_profile: ephemeral.then_some(profile),
-        }))
+            targets: tokio::sync::Mutex::new(std::collections::HashMap::new()),
+            contexts: tokio::sync::Mutex::new(std::collections::HashMap::new()),
+        });
+        // v0.6.2: POPUP LISTENER — record every attached target so
+        // site-opened popups (OAuth, payments) are discoverable and
+        // attachable by the agent. Detach removes them.
+        {
+            let engine_for_listener = engine.clone();
+            let mut events = engine_for_listener.conn.subscribe();
+            tokio::spawn(async move {
+                while let Ok(msg) = events.recv().await {
+                    let method = msg.get("method").and_then(|m| m.as_str());
+                    if method == Some("Browser.attachedToTarget") {
+                        let tid = msg
+                            .pointer("/params/targetInfo/targetId")
+                            .or_else(|| msg.pointer("/params/targetId"))
+                            .and_then(|v| v.as_str());
+                        let sid = msg.pointer("/params/sessionId").and_then(|v| v.as_str());
+                        if let (Some(tid), Some(sid)) = (tid, sid) {
+                            engine_for_listener
+                                .targets
+                                .lock()
+                                .await
+                                .insert(tid.to_string(), sid.to_string());
+                        }
+                    }
+                    if method == Some("Browser.detachedFromTarget") {
+                        if let Some(tid) =
+                            msg.pointer("/params/targetId").and_then(|v| v.as_str())
+                        {
+                            engine_for_listener.targets.lock().await.remove(tid);
+                        }
+                    }
+                    // Track the latest MAIN-FRAME execution context per
+                    // SESSION so popup handles attach fully-initialized.
+                    // Juggler frame ids: "mainframe-N" = page main frame,
+                    // "subframe-N" = iframes — recording an iframe context
+                    // here makes attach evaluate against the wrong world
+                    // (live bug: popup attached to a subframe context).
+                    if method == Some("Runtime.executionContextCreated") {
+                        let sid = msg.get("sessionId").and_then(|s| s.as_str());
+                        let cx = msg
+                            .pointer("/params/executionContextId")
+                            .and_then(|v| v.as_str());
+                        let fid = msg
+                            .pointer("/params/auxData/frameId")
+                            .and_then(|v| v.as_str());
+                        if let (Some(sid), Some(cx), Some(fid)) = (sid, cx, fid) {
+                            if fid.starts_with("mainframe") {
+                                engine_for_listener
+                                    .contexts
+                                    .lock()
+                                    .await
+                                    .insert(sid.to_string(), (cx.to_string(), fid.to_string()));
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        Ok(engine)
+    }
+
+    /// v0.6.2: The (targetId -> sessionId) registry of ALL attached
+    /// browser targets, including site-opened popups.
+    pub async fn all_targets(&self) -> Vec<(String, String)> {
+        self.targets
+            .lock()
+            .await
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
+    }
+
+    /// v0.6.2: Attach to an EXISTING browser target (popup/tab opened by
+    /// the site — OAuth windows, payment flows). Returns a fully live
+    /// page handle using the recorded session + context.
+    pub async fn attach_target(&self, target_id: &str) -> Result<Arc<dyn ghostcloak_core::engine::PageHandle>> {
+        let sid = self
+            .targets
+            .lock()
+            .await
+            .get(target_id)
+            .cloned()
+            .ok_or_else(|| {
+                GhostError::PageOp(format!(
+                    "target {target_id} is not attached (open popup unknown?)"
+                ))
+            })?;
+        let handle = CamoufoxPage::new(self.conn.clone(), target_id.to_string());
+        *handle.session_id.lock().await = Some(sid.clone());
+        if let Some((cx, fid)) = self.contexts.lock().await.get(&sid).cloned() {
+            *handle.execution_context_id.lock().await = Some(cx);
+            *handle.frame_id.lock().await = Some(fid.clone());
+            *handle.main_frame_id.lock().await = Some(fid);
+        } else {
+            // No context seen yet (e.g. blank popup) — the pump below fills
+            // ids as soon as the popup navigates.
+            *handle.frame_id.lock().await = Some(String::new());
+        }
+        // Context pump: keep ids live across the popup's future navigations
+        // (same cross-talk protection as new_page).
+        {
+            let conn = self.conn.clone();
+            let _ = conn;
+            let handle2 = handle.clone();
+            let mut rx = self.conn.subscribe();
+            tokio::spawn(async move {
+                loop {
+                    match rx.recv().await {
+                        Ok(msg) => {
+                            let method = msg.get("method").and_then(|m| m.as_str());
+                            if let Some(evt_sid) = msg.get("sessionId").and_then(|s| s.as_str()) {
+                                let my_sid = handle2.session_id.lock().await.clone();
+                                if Some(evt_sid) != my_sid.as_deref() {
+                                    continue;
+                                }
+                            }
+                            match method {
+                                Some("Browser.attachedToTarget") => {
+                                    // v0.6.2 SELF-HEALING SESSIONS: Juggler
+                                    // recycles sessions (OAuth popups, process
+                                    // swaps) and re-attaches with a NEW id —
+                                    // claim ours or the handle keeps a dead id
+                                    // ("cannot find session with id ...").
+                                    if let Some(tid) = msg
+                                        .pointer("/params/targetInfo/targetId")
+                                        .or_else(|| msg.pointer("/params/targetId"))
+                                        .and_then(|v| v.as_str())
+                                    {
+                                        if tid == handle2.target_id {
+                                            if let Some(sid) = msg
+                                                .pointer("/params/sessionId")
+                                                .and_then(|v| v.as_str())
+                                            {
+                                                *handle2.session_id.lock().await =
+                                                    Some(sid.to_string());
+                                            }
+                                        }
+                                    }
+                                }
+                                Some("Browser.detachedFromTarget") => {
+                                    if let Some(tid) =
+                                        msg.pointer("/params/targetId").and_then(|v| v.as_str())
+                                    {
+                                        if tid == handle2.target_id {
+                                            *handle2.session_id.lock().await = None;
+                                            *handle2.execution_context_id.lock().await = None;
+                                        }
+                                    }
+                                }
+                                Some("Runtime.executionContextCreated") => {
+                                    if let Some(cx) = msg
+                                        .pointer("/params/executionContextId")
+                                        .and_then(|v| v.as_str())
+                                    {
+                                        let fid = msg
+                                            .pointer("/params/auxData/frameId")
+                                            .and_then(|v| v.as_str())
+                                            .map(str::to_string);
+                                        let mut main = handle2.main_frame_id.lock().await;
+                                        let is_main = match (main.clone(), fid.as_deref()) {
+                                            (Some(m), Some(f)) => m == f,
+                                            (None, Some(f)) => {
+                                                *main = Some(f.to_string());
+                                                true
+                                            }
+                                            _ => false,
+                                        };
+                                        if is_main {
+                                            *handle2.execution_context_id.lock().await =
+                                                Some(cx.to_string());
+                                            if let Some(f) = fid {
+                                                *handle2.frame_id.lock().await = Some(f);
+                                            }
+                                        }
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(_) => break,
+                    }
+                }
+            });
+        }
+        Ok(handle)
     }
 
     pub fn identity(&self) -> &Identity {
@@ -559,10 +757,24 @@ impl Engine for CamoufoxEngine {
                                 }
                             }
                             if method == Some("Browser.attachedToTarget") {
-                                if let Some(sid) =
-                                    msg.pointer("/params/sessionId").and_then(|v| v.as_str())
-                                {
-                                    *handle2.session_id.lock().await = Some(sid.to_string());
+                                // v0.6.2 BUGFIX: scope the claim to OUR
+                                // targetId. This used to claim ANY attach's
+                                // sessionId — so when a site-opened popup
+                                // (OAuth) attached, the main page STOLE the
+                                // popup's session and died with it when the
+                                // popup closed ("cannot find session with
+                                // id ..." — the live TikTok OAuth case).
+                                let tid = msg
+                                    .pointer("/params/targetInfo/targetId")
+                                    .or_else(|| msg.pointer("/params/targetId"))
+                                    .and_then(|v| v.as_str());
+                                if tid == Some(handle2.target_id.as_str()) {
+                                    if let Some(sid) = msg
+                                        .pointer("/params/sessionId")
+                                        .and_then(|v| v.as_str())
+                                    {
+                                        *handle2.session_id.lock().await = Some(sid.to_string());
+                                    }
                                 }
                             }
                         }
@@ -613,6 +825,41 @@ impl Engine for CamoufoxEngine {
             .filter_map(|t| t.get("targetId").and_then(|i| i.as_str()))
             .map(|s| s.to_string())
             .collect())
+    }
+
+    async fn list_targets(&self) -> Result<Vec<(String, Option<String>)>> {
+        // TWO DETECTION CHANNELS, MERGED — a popup must be visible from
+        // at least one:
+        //   A. Browser.targets query (this Juggler build lists only some
+        //      targets — observed live missing an OAuth popup).
+        //   B. The attachedToTarget event listener registry (push channel
+        //      — every auto-attached target, incl. popups, lands here).
+        let mut out: Vec<(String, Option<String>)> = vec![];
+        let result = self
+            .conn
+            .request("Browser.targets", serde_json::json!({}))
+            .await
+            .unwrap_or(serde_json::Value::Null);
+        if let Some(targets) = result.get("targets").and_then(|t| t.as_array()) {
+            for t in targets {
+                if let Some(id) = t.get("targetId").and_then(|i| i.as_str()) {
+                    let url = t.get("url").and_then(|u| u.as_str());
+                    out.push((id.to_string(), url.map(str::to_string)));
+                }
+            }
+        }
+        // Channel B: registry entries not already listed.
+        let registry = self.all_targets().await;
+        for (tid, _sid) in registry {
+            if !out.iter().any(|(id, _)| id == &tid) {
+                out.push((tid, None));
+            }
+        }
+        Ok(out)
+    }
+
+    async fn attach_target(&self, target_id: &str) -> Result<Arc<dyn ghostcloak_core::engine::PageHandle>> {
+        CamoufoxEngine::attach_target(self, target_id).await
     }
 
     async fn shutdown(&self) -> Result<()> {
@@ -838,6 +1085,10 @@ async fn ref_center(&self, r: &str) -> Result<(f64, f64)> {
 
 #[async_trait]
 impl PageHandle for CamoufoxPage {
+    fn target_id(&self) -> Option<String> {
+        Some(self.target_id.clone())
+    }
+
     async fn navigate(&self, url: &str) -> Result<()> {
         let sid = self.session_id().await?;
         let frame = self.frame_id.lock().await.clone().unwrap_or_default();

@@ -88,6 +88,11 @@ struct DragParams {
         r#ref: Option<String>,
     }
 
+    #[derive(Debug, Deserialize, JsonSchema)]
+    struct PagesParams {
+        session_id: String,
+    }
+
 
 
 
@@ -732,6 +737,35 @@ impl GhostcloakServer {
         );
         Ok(text_result(
             serde_json::to_string_pretty(&boxes).unwrap_or_default(),
+        ))
+    }
+
+    #[tool(
+        description = "POPUP/TAB VISION: list EVERY browser target — pages you opened AND popups the site opened (OAuth windows, payment flows). Popups are auto-attached and given a page_id usable with every page_* tool immediately. Returns JSON [{page_id, target_id, url}]."
+    )]
+    async fn session_pages(
+        &self,
+        Parameters(PagesParams { session_id }): Parameters<PagesParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let overview = session.pages_overview().await;
+        let _ = self.recorder.record(
+            &session_id,
+            "session_pages",
+            None,
+            serde_json::json!({ "targets": overview.len() }),
+        );
+        let items: Vec<serde_json::Value> = overview
+            .into_iter()
+            .map(|(page_id, target_id, url)| {
+                serde_json::json!({ "page_id": page_id, "target_id": target_id, "url": url })
+            })
+            .collect();
+        Ok(text_result(
+            serde_json::to_string_pretty(&items).unwrap_or_default(),
         ))
     }
 

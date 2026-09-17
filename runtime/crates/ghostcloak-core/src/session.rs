@@ -55,6 +55,42 @@ impl Session {
             .ok_or_else(|| GhostError::PageNotFound(id.into()))
     }
 
+
+    /// v0.6.2: Every browser target as (page_id, target_id, url) — our
+    /// opened pages AND site-opened popups. Popups are auto-attached and
+    /// registered so the agent gets a page_id it can use directly.
+    pub async fn pages_overview(&self) -> Vec<(String, String, String)> {
+        let targets = self.engine.list_targets().await.unwrap_or_default();
+        // Existing handles first.
+        let mut out: Vec<(String, String, String)> = vec![];
+        let mut known: Vec<String> = vec![];
+        {
+            let pages = self.pages.lock().await;
+            for (pid, page) in pages.iter() {
+                known.push(page.target_id().unwrap_or_default());
+                let url = page.url().await.unwrap_or_default();
+                out.push((
+                    pid.clone(),
+                    page.target_id().unwrap_or_default(),
+                    url,
+                ));
+            }
+        }
+        // Auto-attach unseen targets (popups).
+        for (tid, _url_hint) in targets {
+            if tid.is_empty() || known.contains(&tid) {
+                continue;
+            }
+            if let Ok(page) = self.engine.attach_target(&tid).await {
+                let pid = crate::util::short_id();
+                let url = page.url().await.unwrap_or_default();
+                self.pages.lock().await.insert(pid.clone(), page);
+                out.push((pid, tid, url));
+            }
+        }
+        out
+    }
+
     pub async fn page_ids(&self) -> Vec<String> {
         self.pages.lock().await.keys().cloned().collect()
     }
