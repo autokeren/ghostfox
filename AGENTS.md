@@ -326,6 +326,34 @@ instruction order. Live-recon'd on bilibili login (production GeeTest):
    verify the screenshot matches the CURRENT challenge state before
    cropping (stale-screenshot bug bit once).
 
+
+### GeeTest icon/word-click — SOLVED (bilibili, pure math, no vision model)
+
+The variant we thought needed a vision model — beaten with high-pass
+filtering + binary correlation. Live-verified on bilibili production
+("Verification Succeeded" from the widget).
+
+THE PIPELINE (screenshot -> numpy/scipy -> clicks):
+1. Screenshot the CURRENT challenge state (verify freshness first!).
+2. INSTRUCTION GLYPHS: crop the tip strip (query the
+   [class*=geetest_tip_img] rect live), ink = pixels darker than the
+   strip region MEDIAN-18, split into glyphs by column-gap profile.
+3. FIELD CHARACTERS: high-pass map (|gray - gaussian_blur(gray, 4)|,
+   threshold ~25) -> connected components -> character-sized blobs
+   (20-95px, area 200+, density 0.15-0.85). THE KEY INSIGHT: global
+   luminance/hue/correlation all FAIL on photo backgrounds — only
+   LOCAL contrast makes characters visible.
+4. MATCH: normalize both sides to 20x20 binary grids, score IoU,
+   solve the assignment (max combined IoU). Even thin margins
+   (0.720 vs 0.697) were correct live — reading order is a prior.
+5. CLICK: place fixed-position marker divs at char centers (page =
+   field_rect + component center), REAL engine clicks (drag-zero),
+   then the OK/确认 button. Verify via widget text.
+Failed order = refresh + re-run (each instance = new characters).
+Post-captcha: the host flow may still reject (e.g. bilibili "Too
+many attempts" from earlier bad passwords) — that is NOT a captcha
+failure. Read which layer said no before reacting.
+
 ---
 
 ## 6. Anti-patterns (all tried, all failed)
