@@ -17,6 +17,7 @@ pub(crate) const WALK_JS: &str = r#"(
     const INTERACTIVE_SELECTOR = [
       'a[href]', 'button', 'input', 'select', 'textarea', 'summary',
       '[role]', '[contenteditable="true"]', '[onclick]', '[tabindex]',
+      '[draggable="true"]',
     ].join(',');
 
     function nameOf(el) {
@@ -322,6 +323,21 @@ pub(crate) fn resolve_js(r: &str) -> String {
   if (!el) return 'STALE-REF';
   if (!el.isConnected) return 'STALE-REF';
   return 'OK';
+}})()"#,
+        r = serde_json::to_string(r).unwrap_or_default()
+    )
+}
+
+/// Resolve a ref to its center coordinates (scrolls it into view first).
+/// Returns JSON {x, y, w, h} or 'STALE-REF'.
+pub(crate) fn rect_ref_js(r: &str) -> String {
+    format!(
+        r#"(function() {{
+  var el = (window.__gfxRefs || new Map()).get({r});
+  if (!el || !el.isConnected) return 'STALE-REF';
+  el.scrollIntoView({{block: 'center'}});
+  var rect = el.getBoundingClientRect();
+  return JSON.stringify({{x: rect.x + rect.width/2, y: rect.y + rect.height/2, w: rect.width, h: rect.height}});
 }})()"#,
         r = serde_json::to_string(r).unwrap_or_default()
     )

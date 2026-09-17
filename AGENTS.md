@@ -134,6 +134,33 @@ The fixes are all in the data:
 
 ---
 
+## 6. Human mouse: hover and drag (v0.6)
+
+`page_move_to(ref)` and `page_drag(...)` move a REAL mouse along HUMAN
+paths — bezier arcs with ease-in-out velocity, sub-pixel tremor,
+micro-pauses, and overshoot+correction at the target. Detection systems
+profile the movement (velocity, acceleration, tremor), not the endpoints.
+
+- **Hover**: `page_move_to(ref)` — approach from a random offset, settle
+  on the element. Triggers hover menus and tooltips.
+- **Element → element drag**: `page_drag(from_ref, to_ref)` — approach,
+  press, human-path drag, settle, release.
+- **Slider / captcha move**: `page_drag(from_ref, offset_x, offset_y)` —
+  grab the handle and drag by pixels. THE move for slider captchas:
+  the agent finds the gap (via `page_a11y` or `page_screenshot`),
+  computes the distance, then drags with human dynamics.
+- **Elements the walker misses** (jQuery-UI widgets set `draggable` via JS,
+  so `[draggable="true"]` doesn't match): register a ref yourself:
+  ```js
+  window.__gfxRefs.set('d1', document.querySelector('#draggable'))
+  ```
+  Run `page_a11y` FIRST — it creates the `__gfxRefs` map.
+- Protocol note: the engine is Juggler (Playwright-Firefox), not Chrome
+  CDP — mouse moves are `"mousemove"` (lowercase), and synthetic JS drag
+  events won't cut it: engine-level dispatch is the point.
+
+---
+
 ## 6. Anti-patterns (all tried, all failed)
 
 - ❌ Building a new tool for every edge case (`archived_detector`, etc.) —

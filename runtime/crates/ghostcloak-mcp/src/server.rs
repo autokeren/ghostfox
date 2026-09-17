@@ -46,6 +46,20 @@ struct RefParams {
     r#ref: String,
 }
 
+#[derive(Debug, Deserialize, JsonSchema)]
+struct DragParams {
+    session_id: String,
+    page_id: String,
+    /// Ref of the element to grab (from page_a11y).
+    from_ref: String,
+    /// Ref of the drop target. Omit to drag by offset instead (sliders).
+    to_ref: Option<String>,
+    /// Horizontal pixels to drag when to_ref is omitted (positive = right).
+    offset_x: Option<f64>,
+    /// Vertical pixels to drag when to_ref is omitted (positive = down).
+    offset_y: Option<f64>,
+}
+
 
 
 
@@ -465,6 +479,77 @@ impl GhostcloakServer {
             serde_json::json!({ "ref": r#ref }),
         );
         Ok(text_result("clicked"))
+    }
+
+    #[tool(
+        description = "Move the mouse onto an element (hover) along a HUMAN-LIKE path: bezier arc, ease-in-out velocity, sub-pixel tremor, overshoot+correction. Triggers hover menus and tooltips. Pass the ref from page_a11y."
+    )]
+    async fn page_move_to(
+        &self,
+        Parameters(RefParams {
+            session_id,
+            page_id,
+            r#ref,
+        }): Parameters<RefParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let page = session
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        page.mouse_move_to(&r#ref)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let _ = self.recorder.record(
+            &session_id,
+            "page_move_to",
+            Some(&page_id),
+            serde_json::json!({ "ref": r#ref }),
+        );
+        Ok(text_result("moved"))
+    }
+
+    #[tool(
+        description = "Drag with a HUMAN-LIKE movement profile: approaches the source, presses, drags along a bezier arc with ease-in-out velocity and micro-pauses, settles, releases. Pass from_ref + to_ref to drag element onto element, or from_ref + offset_x/offset_y to drag by pixels (slider captchas, resize handles). All from page_a11y refs."
+    )]
+    async fn page_drag(
+        &self,
+        Parameters(DragParams {
+            session_id,
+            page_id,
+            from_ref,
+            to_ref,
+            offset_x,
+            offset_y,
+        }): Parameters<DragParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let page = session
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let to = to_ref.unwrap_or_default();
+        page.drag_ref(&from_ref, &to, offset_x.unwrap_or(0.0), offset_y.unwrap_or(0.0))
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let _ = self.recorder.record(
+            &session_id,
+            "page_drag",
+            Some(&page_id),
+            serde_json::json!({
+                "from": from_ref,
+                "to": to,
+                "offset_x": offset_x.unwrap_or(0.0),
+                "offset_y": offset_y.unwrap_or(0.0),
+            }),
+        );
+        Ok(text_result("dragged"))
     }
 
     #[tool(

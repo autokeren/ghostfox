@@ -176,6 +176,24 @@ pub trait PageHandle: Send + Sync {
             "click_ref not supported by this engine".into(),
         ))
     }
+    /// Move the mouse onto the element a ref points at, along a
+    /// human-like path (hover). Engines without mouse pathing return
+    /// an error naming the limitation.
+    async fn mouse_move_to(&self, r: &str) -> Result<()> {
+        let _ = r;
+        Err(crate::error::GhostError::PageOp(
+            "mouse_move_to not supported by this engine".into(),
+        ))
+    }
+    /// Drag the element `from` (ref) onto the element `to` (ref), or by
+    /// an offset when `to` is empty, with a human-like movement profile
+    /// (bezier arc, ease-in-out velocity, jitter, overshoot+correction).
+    async fn drag_ref(&self, from: &str, to: &str, dx: f64, dy: f64) -> Result<()> {
+        let _ = (from, to, dx, dy);
+        Err(crate::error::GhostError::PageOp(
+            "drag_ref not supported by this engine".into(),
+        ))
+    }
     /// Read the FULL value of the element a ref points at (no truncation).
     async fn read_ref_full(&self, r: &str) -> Result<String> {
         let _ = r;

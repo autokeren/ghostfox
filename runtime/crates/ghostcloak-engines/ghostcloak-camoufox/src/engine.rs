@@ -635,6 +635,138 @@ impl Engine for CamoufoxEngine {
     }
 }
 
+// ---------------------------------------------------------------------------
+// v0.6: Human mouse — engine-level hands.
+// ---------------------------------------------------------------------------
+
+impl CamoufoxPage {
+
+/// v0.6: Resolve a ref to its viewport center (scrolls into view).
+async fn ref_center(&self, r: &str) -> Result<(f64, f64)> {
+    let out = self.evaluate(&crate::a11y::rect_ref_js(r)).await?;
+    let s = out.as_str().ok_or_else(|| {
+        GhostError::PageOp(format!("rect_ref({r}) bad response"))
+    })?;
+    if s == "STALE-REF" {
+        return Err(GhostError::PageOp(format!(
+            "ref {r} is stale — rerun page_a11y"
+        )));
+    }
+    let v: serde_json::Value = serde_json::from_str(s)
+        .map_err(|e| GhostError::PageOp(format!("rect_ref({r}) parse: {e}")))?;
+    Ok((
+        v.get("x").and_then(|x| x.as_f64()).unwrap_or(0.0),
+        v.get("y").and_then(|y| y.as_f64()).unwrap_or(0.0),
+    ))
+}
+
+    /// v0.6: Dispatch one mouse event at (x, y). `buttons` is the
+    /// bitmask of held buttons (1 = left held — drag moves). NOTE: the
+    /// Juggler protocol (Playwright-Firefox) uses lowercase event types —
+    /// "mousemove", not CDP's "mouseMoved" (down/up match the existing
+    /// click path).
+    async fn dispatch_mouse(&self, ty: &str, x: f64, y: f64, buttons: u32, count: u32) -> Result<()> {
+        let sid = self.session_id().await?;
+        let payload = match ty {
+            "mousedown" | "mouseup" => serde_json::json!({
+                "type": ty,
+                "button": 0,
+                "x": x,
+                "y": y,
+                "modifiers": 0,
+                "clickCount": count,
+                "buttons": buttons,
+            }),
+            _ => serde_json::json!({
+                "type": "mousemove",
+                "button": 0,
+                "x": x,
+                "y": y,
+                "modifiers": 0,
+                "buttons": buttons,
+            }),
+        };
+        self.conn
+            .request_session("Page.dispatchMouseEvent", payload, Some(&sid))
+            .await?;
+        Ok(())
+    }
+
+/// v0.6: Human-like mouse path from -> to: cubic bezier with a random
+/// arc bulge, smoothstep (ease-in-out) velocity, sub-pixel tremor and
+/// a small overshoot+correction at the end. Returns (x, y, delay_ms)
+/// triples — the delays ARE the human rhythm (slow ends, fast middle).
+fn human_path(from: (f64, f64), to: (f64, f64)) -> Vec<(f64, f64, u64)> {
+    use rand::Rng;
+    let mut rng = rand::rng();
+    let (x0, y0) = from;
+    let (x1, y1) = to;
+    let dx = x1 - x0;
+    let dy = y1 - y0;
+    let dist = (dx * dx + dy * dy).sqrt();
+    if dist < 1.5 {
+        return vec![(x1, y1, 6)];
+    }
+    // Perpendicular bulge on a random side: humans don't move straight.
+    let side: f64 = if rng.random_bool(0.5) { 1.0 } else { -1.0 };
+    let (px, py) = (-dy / dist * side, dx / dist * side);
+    let bulge = dist * rng.random_range(0.04..0.16);
+    let c1 = (
+        x0 + dx / 3.0 + px * bulge + rng.random_range(-6.0..6.0),
+        y0 + dy / 3.0 + py * bulge + rng.random_range(-6.0..6.0),
+    );
+    let c2 = (
+        x0 + 2.0 * dx / 3.0 + px * bulge * 0.4 + rng.random_range(-6.0..6.0),
+        y0 + 2.0 * dy / 3.0 + py * bulge * 0.4 + rng.random_range(-6.0..6.0),
+    );
+    // ~8px per step, clamped — short hops stay cheap, long drags stay real.
+    let steps = ((dist / 8.0).ceil() as i32).clamp(10, 48);
+    let mut pts = Vec::with_capacity(steps as usize + 3);
+    for i in 1..=steps {
+        let t = i as f64 / steps as f64;
+        // Ease-in-out: hands accelerate and decelerate smoothly.
+        let te = t * t * (3.0 - 2.0 * t);
+        let u = 1.0 - te;
+        let x = u * u * u * x0 + 3.0 * u * u * te * c1.0 + 3.0 * u * te * te * c2.0 + te * te * te * x1;
+        let y = u * u * u * y0 + 3.0 * u * u * te * c1.1 + 3.0 * u * te * te * c2.1 + te * te * te * y1;
+        // Sub-pixel hand tremor.
+        let jx = rng.random_range(-0.6..0.6);
+        let jy = rng.random_range(-0.6..0.6);
+        // Rhythm: slow near the ends, quick through the middle,
+        // occasional micro-pause ("hand eye coordination").
+            let mut d = if !(0.15..=0.85).contains(&t) {
+            rng.random_range(12.0..26.0)
+        } else {
+            rng.random_range(4.0..11.0)
+        };
+        if rng.random_bool(0.04) {
+            d += rng.random_range(30.0..70.0);
+        }
+        pts.push((x + jx, y + jy, d as u64));
+    }
+    // Overshoot past the target then correct back — the classic human
+    // landing signature (bots stop EXACTLY on target; hands don't).
+    if dist > 40.0 {
+        let over = rng.random_range(2.0..5.0);
+        pts.push((x1 + dx / dist * over, y1 + dy / dist * over, rng.random_range(16.0..30.0) as u64));
+        pts.push((x1, y1, rng.random_range(20.0..40.0) as u64));
+    }
+    pts
+}
+
+/// Move the mouse along a path, optionally with the button held
+/// (drag). The per-point delays from human_path set the rhythm.
+async fn move_along(&self, path: &[(f64, f64, u64)], pressed: bool) -> Result<()> {
+    for &(x, y, d) in path {
+        self.dispatch_mouse("mouseMoved", x, y, if pressed { 1 } else { 0 }, 0)
+            .await?;
+        tokio::time::sleep(std::time::Duration::from_millis(d)).await;
+    }
+    Ok(())
+}
+
+}
+
 #[async_trait]
 impl PageHandle for CamoufoxPage {
     async fn navigate(&self, url: &str) -> Result<()> {
@@ -1017,6 +1149,59 @@ impl PageHandle for CamoufoxPage {
                 "click_ref({r}) unexpected result"
             ))),
         }
+    }
+    async fn mouse_move_to(&self, r: &str) -> Result<()> {
+        let (x, y) = self.ref_center(r).await?;
+        // Approach from a small random offset — a hand comes from somewhere,
+        // it never spawns on the target. (RNG scoped: ThreadRng is !Send.)
+        let start = {
+            use rand::Rng;
+            let mut rng = rand::rng();
+            (x + rng.random_range(-90.0..-25.0), y + rng.random_range(-70.0..-20.0))
+        };
+        let path = Self::human_path(start, (x, y));
+        self.move_along(&path, false).await
+    }
+
+    async fn drag_ref(&self, from: &str, to: &str, dx: f64, dy: f64) -> Result<()> {
+        let (sx, sy) = self.ref_center(from).await?;
+        let (tx, ty) = if to.is_empty() {
+            (sx + dx, sy + dy)
+        } else {
+            // Re-resolve AFTER the source scroll: both elements must be
+            // in the same viewport frame for coordinate math to hold.
+            self.ref_center(to).await?
+        };
+        // (RNG scoped per use — ThreadRng is !Send, must not live across awaits.)
+        let approach = {
+            use rand::Rng;
+            let mut rng = rand::rng();
+            Self::human_path(
+                (sx + rng.random_range(-90.0..-25.0), sy + rng.random_range(-70.0..-20.0)),
+                (sx, sy),
+            )
+        };
+        // 1. Approach the source (hover first — hands grab, they don't teleport).
+        self.move_along(&approach, false).await?;
+        // 2. Press. Small human grab-pause before moving.
+        self.dispatch_mouse("mousedown", sx, sy, 1, 1).await?;
+        {
+            use rand::Rng;
+            let pause: u64 = rand::rng().random_range(40..120);
+            tokio::time::sleep(std::time::Duration::from_millis(pause)).await;
+        }
+        // 3. Drag along a human path with the button held.
+        let path = Self::human_path((sx, sy), (tx, ty));
+        self.move_along(&path, true).await?;
+        // 4. Settle on the target before letting go (humans verify the drop).
+        {
+            use rand::Rng;
+            let settle: u64 = rand::rng().random_range(50..180);
+            tokio::time::sleep(std::time::Duration::from_millis(settle)).await;
+        }
+        // 5. Release.
+        self.dispatch_mouse("mouseup", tx, ty, 1, 1).await?;
+        Ok(())
     }
 
     async fn type_ref(&self, r: &str, text: &str) -> Result<()> {
