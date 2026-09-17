@@ -263,6 +263,38 @@ No vision model needed — text models read grids natively.
   digits) -> page_screenshot (host multimodal models) -> future: local
   OCR (ocrs) + ONNX models in the engine.
 
+
+### GeeTest v4 — SOLVED (server-verified, E2E)
+
+v4 differs from v3 everywhere: img-based, no clean reference image,
+popup-with-ghost-backdrop, different trigger target.
+
+1. **TRIGGER**: click the WIDGET ROOT — the `geetest_captcha` div, NOT
+   the child buttons (btn_click/holder/tip don't open it!). Verify the
+   open state by the GHOST backdrop: `[class*=geetest_popup_ghost]`
+   ~viewport-sized = open (the geetest_box height is NOT a reliable
+   open marker — the DOM exists either way).
+2. **EYES (both glasses + pixel math)**:
+   - glasses: `page_pixels` on `[class*=geetest_bg]` — the hole shows
+     as a dark notch (validated live: grid cols 41-49 = image x 203).
+   - precise: fetch both background-image URLs (CORS ok) —
+     hole = strongest vertical luminance edge right of x=60;
+     piece = alpha scan of `[class*=geetest_slice_bg]` image.
+3. **BRAIN**: `drag = (hole_left - piece_inner) x scale` —
+   (203 - 15) x 1.007 = 189px. Measure piece_inner, never assume.
+4. **HANDS**: `page_drag` on the handle INSIDE the slider:
+   `[class*=geetest_slider] [class*=geetest_btn]` (scoping matters —
+   `[class*=geetest_btn]` alone matches the trigger radar too).
+5. **VERIFY — THE RULE (broken twice in one day)**: after a solve
+   attempt, "piece back at 0" has TWO meanings:
+     (a) REJECTED — panel still open, widget shows error/refresh
+     (b) SUCCEEDED — panel CLOSED, widget text says so, elements reset
+   NEVER conclude from element geometry alone. Read the widget's OWN
+   state ("Verification Success" tips, holder class) and whether the
+   panel closed. Then the host's verify button → server verdict.
+   Live proof: a 189px drag was read as "snap-back failure" while the
+   screen showed success — the panel had closed and reset the piece.
+
 ---
 
 ## 6. Anti-patterns (all tried, all failed)
