@@ -195,6 +195,27 @@ synthetic clicks, fast uniform drags, plain mouseup semantics, stale
 press coordinates. Every one of these was a separate wall — each now
 has a dedicated engine fix.
 
+
+### Rotate captcha (2captcha demo / FunCaptcha family) — proven recipe
+
+Rotation challenges rotate an image/object; the fix is to rotate it back
+upright. PROVEN E2E (solved at 165deg, server-verified).
+
+1. **Read the current angle from CSS**: `matrix(a,b,c,d,e,f)` ->
+   `deg = atan2(b, a) * 180 / PI` (identity = 0deg).
+2. **Rotation step**: demo buttons = 15deg/click. Real vendors use a
+   slider -> drive it with `page_drag` (the human trajectory matters).
+3. **Hill-climb loop**: rotate -> check -> read feedback. MULTI-SIGNAL
+   verification — a failure alert that DISAPPEARS is often the success
+   state rendering with a DIFFERENT element: treat changed feedback as
+   UNKNOWN, investigate the DOM, never assume failure. (Live lesson:
+   an agent kept rotating a captcha it had already solved for 24 steps
+   because "alert is gone" was misread as "not yet".)
+4. **Fixed-image demos** have a constant answer (165deg here) — one
+   sweep makes the recipe permanent. **Real vendors** rotate server-side
+   (unknown angle): needs eyes — symmetry/horizon heuristics via canvas
+   pixel analysis, or the host agent's vision model (screenshot tier).
+
 ---
 
 ## 6. Anti-patterns (all tried, all failed)
