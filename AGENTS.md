@@ -354,6 +354,25 @@ Post-captcha: the host flow may still reject (e.g. bilibili "Too
 many attempts" from earlier bad passwords) — that is NOT a captcha
 failure. Read which layer said no before reacting.
 
+
+### Icon/word-click — THE FAST PIPELINE (v2, live-verified x2)
+
+The full solve, native tools only, ~9 REPL calls, one image fetch:
+
+1. Trigger panel (login submit), register `[class*="geetest_item_wrap"]`.
+2. `page_contrast` on the field — warms `__gfxImgCache` (one fetch).
+3. Icon-span eval: band = bottom-left of the image (~0-125 x 346-384);
+   per-column count of pixels deviating >12 from band median; dips in
+   the profile = icon gaps (live: icons at cols 0-27, 34-58).
+4. `page_match_image` per precise icon needle:
+   needle_rect = [span+1, band_y+3, span_w-2, 30],
+   hay_rect = [0, 0, 344, 340]  (self-match guard — exclude the band!).
+   Precise needles score 0.45-0.49 vs 0.38 for coarse thirds.
+5. Click best matches IN BAND ORDER (marker div + real engine clicks),
+   then the OK button. Verify widget text: "Verification Succeeded".
+   (Post-captcha "Timed out/Retry" = the HOST login flow, not the
+   captcha — bilibili dummies time out; the captcha passed.)
+
 ---
 
 ## 6. Anti-patterns (all tried, all failed)

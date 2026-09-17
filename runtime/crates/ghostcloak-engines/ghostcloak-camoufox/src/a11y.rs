@@ -418,9 +418,11 @@ pub(crate) fn pixels_ref_js(r: &str, gw: u32, gh: u32) -> String {
     window.__pixResult = JSON.stringify({{w: t.width, h: t.height, grid: lines}});
   }}
   function load(url) {{
+    window.__gfxImgCache = window.__gfxImgCache || {{}};
+    if (window.__gfxImgCache[url]) {{ finish(window.__gfxImgCache[url], window.__gfxImgCache[url].naturalWidth, window.__gfxImgCache[url].naturalHeight); return; }}
     var im = new Image();
     im.crossOrigin = 'anonymous';
-    im.onload = function() {{ finish(im, im.naturalWidth, im.naturalHeight); }};
+    im.onload = function() {{ window.__gfxImgCache[url] = im; finish(im, im.naturalWidth, im.naturalHeight); }};
     im.onerror = function() {{ window.__pixResult = 'IMG-LOAD-FAIL'; }};
     im.src = url;
   }}
@@ -497,9 +499,11 @@ pub(crate) fn contrast_ref_js(r: &str, gw: u32, gh: u32, radius: u32) -> String 
     window.__contrastResult = JSON.stringify({{w: W, h: H, grid: lines}});
   }}
   function load(url) {{
+    window.__gfxImgCache = window.__gfxImgCache || {{}};
+    if (window.__gfxImgCache[url]) {{ finish(window.__gfxImgCache[url], window.__gfxImgCache[url].naturalWidth, window.__gfxImgCache[url].naturalHeight); return; }}
     var im = new Image();
     im.crossOrigin = 'anonymous';
-    im.onload = function() {{ finish(im, im.naturalWidth, im.naturalHeight); }};
+    im.onload = function() {{ window.__gfxImgCache[url] = im; finish(im, im.naturalWidth, im.naturalHeight); }};
     im.onerror = function() {{ window.__contrastResult = 'IMG-LOAD-FAIL'; }};
     im.src = url;
   }}
