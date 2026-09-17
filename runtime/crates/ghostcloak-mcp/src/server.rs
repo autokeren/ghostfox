@@ -95,6 +95,22 @@ struct DragParams {
     }
 
     #[derive(Debug, Deserialize, JsonSchema)]
+    struct NetParams {
+        session_id: String,
+        page_id: String,
+        /// Optional URL substring filter (e.g. "geetest").
+        filter: Option<String>,
+    }
+
+    #[derive(Debug, Deserialize, JsonSchema)]
+    struct NetBodyParams {
+        session_id: String,
+        page_id: String,
+        /// requestId from page_network_read.
+        request_id: String,
+    }
+
+    #[derive(Debug, Deserialize, JsonSchema)]
     struct MatchImageParams {
         session_id: String,
         page_id: String,
@@ -690,6 +706,76 @@ impl GhostcloakServer {
             serde_json::json!({ "chars": source.chars().count() }),
         );
         Ok(text_result("init script registered"))
+    }
+
+    #[tool(
+        description = "PROTOCOL-LEVEL NETWORK CAPTURE: start recording every HTTP response for this page, BELOW the page (invisible to page JS, unpatchable). The answer data of any captcha/API travels here. Start before triggering the flow you want to see."
+    )]
+    async fn page_network_start(
+        &self,
+        Parameters(NetParams { session_id, page_id, .. }): Parameters<NetParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let page = session
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        page.net_capture_start()
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        Ok(text_result("capture started"))
+    }
+
+    #[tool(
+        description = "List captured HTTP responses [{url, requestId}] since capture start. Optionally filter by URL substring (e.g. 'geetest' or 'api.'). Pair with page_network_body to read the response content BY PROTOCOL."
+    )]
+    async fn page_network_read(
+        &self,
+        Parameters(NetParams { session_id, page_id, filter }): Parameters<NetParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let page = session
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let entries = page
+            .net_capture_list()
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let filtered: Vec<serde_json::Value> = entries
+            .into_iter()
+            .filter(|(url, _)| filter.as_deref().is_none_or(|f| url.contains(f)))
+            .map(|(url, id)| serde_json::json!({ "url": url, "requestId": id }))
+            .collect();
+        Ok(text_result(serde_json::to_string_pretty(&filtered).unwrap_or_default()))
+    }
+
+    #[tool(
+        description = "Fetch the BODY of a captured response by requestId — Network.getResponseBody BY PROTOCOL. The JSONP/API answer data that page JS can't see, served from the engine. THIS is the 0s and 1s layer."
+    )]
+    async fn page_network_body(
+        &self,
+        Parameters(NetBodyParams { session_id, page_id, request_id }): Parameters<NetBodyParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let page = session
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let body = page
+            .net_get_body(&request_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        Ok(text_result(body))
     }
 
     #[tool(

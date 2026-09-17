@@ -207,6 +207,27 @@ pub trait PageHandle: Send + Sync {
         ))
     }
 
+    /// v0.6.3: PROTOCOL-LEVEL network capture — start collecting every
+    /// HTTP response for this page, BELOW the page (invisible to page JS).
+    async fn net_capture_start(&self) -> Result<()> {
+        Err(crate::error::GhostError::PageOp(
+            "net_capture not supported by this engine".into(),
+        ))
+    }
+    /// List captured responses (url, requestId) since capture start.
+    async fn net_capture_list(&self) -> Result<Vec<(String, String)>> {
+        Err(crate::error::GhostError::PageOp(
+            "net_capture not supported by this engine".into(),
+        ))
+    }
+    /// Fetch a captured response body BY PROTOCOL (Network.getResponseBody).
+    async fn net_get_body(&self, request_id: &str) -> Result<String> {
+        let _ = request_id;
+        Err(crate::error::GhostError::PageOp(
+            "net_capture not supported by this engine".into(),
+        ))
+    }
+
     /// v0.6.2 SUPERMAN GLASSES: render the element a ref points at
     /// (canvas / img / background-image) as a compact luminance grid
     /// the agent READS as digits — a text-model-friendly way to see

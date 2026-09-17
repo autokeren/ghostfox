@@ -1101,7 +1101,31 @@ async fn ref_center(&self, r: &str) -> Result<(f64, f64)> {
 
 }
 
+// ---------------------------------------------------------------------------
+// v0.6.3: PROTOCOL-LEVEL NETWORK CAPTURE — engine-wide registry.
+// Responses live BELOW the page: no page JS can detect or patch this.
+// ---------------------------------------------------------------------------
+
+type NetLog = std::sync::Mutex<Vec<(String, String)>>;
+
+static NET_REGISTRY: std::sync::OnceLock<
+    std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<NetLog>>>,
+> = std::sync::OnceLock::new();
+
+fn net_registry() -> &'static std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<NetLog>>> {
+    NET_REGISTRY.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+fn net_log_for(target_id: &str) -> std::sync::Arc<NetLog> {
+    let mut reg = net_registry().lock().unwrap();
+    reg.entry(target_id.to_string())
+        .or_insert_with(|| std::sync::Arc::new(std::sync::Mutex::new(Vec::new())))
+        .clone()
+}
+
 #[async_trait]
+
+
 impl PageHandle for CamoufoxPage {
     fn target_id(&self) -> Option<String> {
         Some(self.target_id.clone())
@@ -1565,6 +1589,83 @@ impl PageHandle for CamoufoxPage {
 
     async fn add_init_script(&self, source: &str) -> Result<()> {
         CamoufoxPage::add_init_script(self, source).await
+    }
+
+    async fn net_capture_start(&self) -> Result<()> {
+        let sid = self.session_id().await?;
+        // Juggler only emits Network.* events when interception is enabled
+        // (Playwright always sets this) — enable + disable cache so every
+        // response is fresh and observable.
+        let _ = self
+            .conn
+            .request_session(
+                "Network.setRequestInterception",
+                serde_json::json!({ "enabled": true, "bypassServiceWorker": true }),
+                Some(&sid),
+            )
+            .await;
+        let _ = self
+            .conn
+            .request_session(
+                "Page.setCacheDisabled",
+                serde_json::json!({ "cacheDisabled": true }),
+                Some(&sid),
+            )
+            .await;
+        let tid = self.target_id.clone();
+        let log = net_log_for(&tid);
+        log.lock().unwrap().clear();
+        let mut rx = self.conn.subscribe();
+        tokio::spawn(async move {
+            loop {
+                match rx.recv().await {
+                    Ok(msg) => {
+                        let evt_sid = msg.get("sessionId").and_then(|v| v.as_str()).unwrap_or("");
+                        if evt_sid != sid {
+                            continue;
+                        }
+                        if msg.get("method").and_then(|m| m.as_str()) == Some("Network.responseReceived") {
+                            if let (Some(url), Some(rid)) = (
+                                msg.pointer("/params/response/url").and_then(|v| v.as_str()),
+                                msg.pointer("/params/requestId").and_then(|v| v.as_str()),
+                            ) {
+                                log.lock().unwrap().push((url.to_string(), rid.to_string()));
+                            }
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(_) => break,
+                }
+            }
+        });
+        Ok(())
+    }
+
+    async fn net_capture_list(&self) -> Result<Vec<(String, String)>> {
+        Ok(net_log_for(&self.target_id).lock().unwrap().clone())
+    }
+
+    async fn net_get_body(&self, request_id: &str) -> Result<String> {
+        let sid = self.session_id().await?;
+        let result = self
+            .conn
+            .request_session(
+                "Network.getResponseBody",
+                serde_json::json!({ "requestId": request_id }),
+                Some(&sid),
+            )
+            .await?;
+        if let Some(b64) = result.get("base64").and_then(|v| v.as_str()) {
+            use base64::Engine;
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(b64)
+                .map_err(|e| GhostError::PageOp(format!("net body decode: {e}")))?;
+            return Ok(String::from_utf8_lossy(&bytes).into_owned());
+        }
+        if let Some(body) = result.get("body").and_then(|v| v.as_str()) {
+            return Ok(body.to_string());
+        }
+        Ok(serde_json::to_string(&result).unwrap_or_default())
     }
 
     async fn pixels_ref(&self, r: &str, gw: u32, gh: u32) -> Result<String> {
