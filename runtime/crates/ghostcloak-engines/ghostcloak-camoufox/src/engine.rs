@@ -667,6 +667,11 @@ async fn ref_center(&self, r: &str) -> Result<(f64, f64)> {
     /// click path).
     async fn dispatch_mouse(&self, ty: &str, x: f64, y: f64, buttons: u32, count: u32) -> Result<()> {
         let sid = self.session_id().await?;
+        // DOM semantics: `buttons` is the state AFTER the event. On
+        // mouseup the button is no longer held — sending buttons=1 there
+        // makes pointer-capturing pages (GeeTest etc.) treat the release
+        // as "still pressed" and the drag never completes ("Incomplete").
+        let held = if ty == "mouseup" { 0 } else { buttons };
         let payload = match ty {
             "mousedown" | "mouseup" => serde_json::json!({
                 "type": ty,
@@ -675,7 +680,7 @@ async fn ref_center(&self, r: &str) -> Result<(f64, f64)> {
                 "y": y,
                 "modifiers": 0,
                 "clickCount": count,
-                "buttons": buttons,
+                "buttons": held,
             }),
             _ => serde_json::json!({
                 "type": "mousemove",
@@ -683,7 +688,7 @@ async fn ref_center(&self, r: &str) -> Result<(f64, f64)> {
                 "x": x,
                 "y": y,
                 "modifiers": 0,
-                "buttons": buttons,
+                "buttons": held,
             }),
         };
         self.conn
@@ -692,78 +697,142 @@ async fn ref_center(&self, r: &str) -> Result<(f64, f64)> {
         Ok(())
     }
 
-/// v0.6: Human-like mouse path from -> to: cubic bezier with a random
-/// arc bulge, smoothstep (ease-in-out) velocity, sub-pixel tremor and
-/// a small overshoot+correction at the end. Returns (x, y, delay_ms)
-/// triples — the delays ARE the human rhythm (slow ends, fast middle).
-fn human_path(from: (f64, f64), to: (f64, f64)) -> Vec<(f64, f64, u64)> {
-    use rand::Rng;
-    let mut rng = rand::rng();
-    let (x0, y0) = from;
-    let (x1, y1) = to;
-    let dx = x1 - x0;
-    let dy = y1 - y0;
-    let dist = (dx * dx + dy * dy).sqrt();
-    if dist < 1.5 {
-        return vec![(x1, y1, 6)];
-    }
-    // Perpendicular bulge on a random side: humans don't move straight.
-    let side: f64 = if rng.random_bool(0.5) { 1.0 } else { -1.0 };
-    let (px, py) = (-dy / dist * side, dx / dist * side);
-    let bulge = dist * rng.random_range(0.04..0.16);
-    let c1 = (
-        x0 + dx / 3.0 + px * bulge + rng.random_range(-6.0..6.0),
-        y0 + dy / 3.0 + py * bulge + rng.random_range(-6.0..6.0),
-    );
-    let c2 = (
-        x0 + 2.0 * dx / 3.0 + px * bulge * 0.4 + rng.random_range(-6.0..6.0),
-        y0 + 2.0 * dy / 3.0 + py * bulge * 0.4 + rng.random_range(-6.0..6.0),
-    );
-    // ~8px per step, clamped — short hops stay cheap, long drags stay real.
-    let steps = ((dist / 8.0).ceil() as i32).clamp(10, 48);
-    let mut pts = Vec::with_capacity(steps as usize + 3);
-    for i in 1..=steps {
-        let t = i as f64 / steps as f64;
-        // Ease-in-out: hands accelerate and decelerate smoothly.
-        let te = t * t * (3.0 - 2.0 * t);
-        let u = 1.0 - te;
-        let x = u * u * u * x0 + 3.0 * u * u * te * c1.0 + 3.0 * u * te * te * c2.0 + te * te * te * x1;
-        let y = u * u * u * y0 + 3.0 * u * u * te * c1.1 + 3.0 * u * te * te * c2.1 + te * te * te * y1;
-        // Sub-pixel hand tremor.
-        let jx = rng.random_range(-0.6..0.6);
-        let jy = rng.random_range(-0.6..0.6);
-        // Rhythm: slow near the ends, quick through the middle,
-        // occasional micro-pause ("hand eye coordination").
-            let mut d = if !(0.15..=0.85).contains(&t) {
-            rng.random_range(12.0..26.0)
-        } else {
-            rng.random_range(4.0..11.0)
-        };
-        if rng.random_bool(0.04) {
-            d += rng.random_range(30.0..70.0);
+    /// v0.6: Human-like mouse path from -> to: cubic bezier with a random
+    /// arc bulge, ease-in-out velocity, sub-pixel tremor and a small
+    /// overshoot+correction at the end. Returns (x, y, delay_ms) triples.
+    ///
+    /// v0.6.1 CAPTCHA HARDENING — the timing model matters more than the
+    /// geometry for behavioral captchas (GeeTest profiles the drag
+    /// time-series): total duration scales with distance (~4.5-6.5ms/px,
+    /// a 160px human drag takes 1-1.5s, not 300ms), velocity is phased
+    /// (slow start, cruise, careful approach, landing dance), real
+    /// pauses (60-180ms) punctuate the drag, and the hand drifts in y.
+    fn human_path(from: (f64, f64), to: (f64, f64)) -> Vec<(f64, f64, u64)> {
+        use rand::Rng;
+        let mut rng = rand::rng();
+        let (x0, y0) = from;
+        let (x1, y1) = to;
+        let dx = x1 - x0;
+        let dy = y1 - y0;
+        let dist = (dx * dx + dy * dy).sqrt();
+        if dist < 1.5 {
+            return vec![(x1, y1, 6)];
         }
-        pts.push((x + jx, y + jy, d as u64));
+        // Perpendicular bulge on a random side: humans don't move straight.
+        let side: f64 = if rng.random_bool(0.5) { 1.0 } else { -1.0 };
+        let (px, py) = (-dy / dist * side, dx / dist * side);
+        let bulge = dist * rng.random_range(0.04..0.16);
+        let c1 = (
+            x0 + dx / 3.0 + px * bulge + rng.random_range(-6.0..6.0),
+            y0 + dy / 3.0 + py * bulge + rng.random_range(-6.0..6.0),
+        );
+        let c2 = (
+            x0 + 2.0 * dx / 3.0 + px * bulge * 0.4 + rng.random_range(-6.0..6.0),
+            y0 + 2.0 * dy / 3.0 + py * bulge * 0.4 + rng.random_range(-6.0..6.0),
+        );
+        let steps = ((dist / 7.0).ceil() as i32).clamp(14, 60);
+        // --- TIME MODEL: the drag must take human-long for its distance.
+        let total_ms: f64 = dist * rng.random_range(4.5..6.5) + rng.random_range(250.0..450.0);
+        // Velocity profile: v(t) ∝ smoothstep derivative (zero at ends,
+        // peak mid) — per-step delay ∝ 1/v, normalized to total_ms.
+        let mut raw = Vec::with_capacity(steps as usize);
+        let mut raw_sum = 0.0;
+        for i in 1..=steps {
+            let t = i as f64 / steps as f64;
+            let v = (t * (1.0 - t)).max(0.02) * 3.0; // ∝ smoothstep speed
+            // Approach phase (last 25%) gets extra care: slower.
+            let v = if t > 0.75 { v * 0.45 } else { v };
+            raw.push(1.0 / v);
+            raw_sum += 1.0 / v;
+        }
+        // Y-drift: low-frequency wander, hands are never perfectly level.
+        let drift_amp = rng.random_range(0.5..1.8);
+        let drift_phase = rng.random_range(0.0..std::f64::consts::TAU);
+        // Real pauses: 2-4 hold-still moments mid-drag.
+        let mut pause_at = [false; 61];
+        let n_pauses = rng.random_range(2..=4);
+        for _ in 0..n_pauses {
+            let idx = rng.random_range((steps / 4) as usize..steps as usize);
+            pause_at[idx.min(60)] = true;
+        }
+        let mut pts = Vec::with_capacity(steps as usize + 4);
+        for i in 1..=steps {
+            let t = i as f64 / steps as f64;
+            let te = t * t * (3.0 - 2.0 * t);
+            let u = 1.0 - te;
+            let x = u * u * u * x0 + 3.0 * u * u * te * c1.0 + 3.0 * u * te * te * c2.0 + te * te * te * x1;
+            let wander = (drift_phase + t * std::f64::consts::PI).sin() * drift_amp;
+            let y = u * u * u * y0 + 3.0 * u * u * te * c1.1 + 3.0 * u * te * te * c2.1 + te * te * te * y1
+                + wander * (dy / dist).abs().max(0.0); // only when horizontal-ish
+            let jx = rng.random_range(-0.7..0.7);
+            let jy = rng.random_range(-0.7..0.7);
+            let mut d = raw[i as usize - 1] / raw_sum * total_ms;
+            if pause_at[i as usize] {
+                d += rng.random_range(60.0..180.0);
+            }
+            pts.push((x + jx, y + jy, d.max(3.0) as u64));
+        }
+        // Landing dance: small overshoot, SLOW correction (humans correct
+        // deliberately), and 1-2 micro-nudges — the classic human finish.
+        if dist > 40.0 {
+            let over = rng.random_range(1.5..4.0);
+            pts.push((
+                x1 + dx / dist * over,
+                y1 + dy / dist * over,
+                rng.random_range(60.0..140.0) as u64,
+            ));
+            // micro-nudge back toward the target
+            let nudge = over * rng.random_range(0.4..0.8);
+            pts.push((
+                x1 + dx / dist * (over - nudge),
+                y1 + dy / dist * (over - nudge),
+                rng.random_range(80.0..180.0) as u64,
+            ));
+            pts.push((x1, y1, rng.random_range(100.0..240.0) as u64));
+        }
+        pts
     }
-    // Overshoot past the target then correct back — the classic human
-    // landing signature (bots stop EXACTLY on target; hands don't).
-    if dist > 40.0 {
-        let over = rng.random_range(2.0..5.0);
-        pts.push((x1 + dx / dist * over, y1 + dy / dist * over, rng.random_range(16.0..30.0) as u64));
-        pts.push((x1, y1, rng.random_range(20.0..40.0) as u64));
-    }
-    pts
-}
 
-/// Move the mouse along a path, optionally with the button held
-/// (drag). The per-point delays from human_path set the rhythm.
-async fn move_along(&self, path: &[(f64, f64, u64)], pressed: bool) -> Result<()> {
-    for &(x, y, d) in path {
-        self.dispatch_mouse("mouseMoved", x, y, if pressed { 1 } else { 0 }, 0)
-            .await?;
-        tokio::time::sleep(std::time::Duration::from_millis(d)).await;
+    /// Move the mouse along a path, optionally with the button held
+    /// (drag). The per-point delays from human_path set the rhythm.
+    /// Response loss is TOLERATED (the event usually landed — same
+    /// philosophy as click()); aborting mid-drag would leave the button
+    /// stuck in a pressed state for the whole browser session.
+    async fn move_along(&self, path: &[(f64, f64, u64)], pressed: bool) -> Result<()> {
+        let mut consecutive_errors = 0u8;
+        for &(x, y, d) in path {
+            if self
+                .dispatch_mouse("mousemove", x, y, if pressed { 1 } else { 0 }, 0)
+                .await
+                .is_err()
+            {
+                consecutive_errors += 1;
+                tracing::warn!(target: "ghostcloak::camoufox", "mousemove response lost ({consecutive_errors}; continuing)");
+                if consecutive_errors >= 3 {
+                    return Err(GhostError::PageOp(
+                        "mouse channel unresponsive — aborting path".into(),
+                    ));
+                }
+            } else {
+                consecutive_errors = 0;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(d)).await;
+        }
+        Ok(())
     }
-    Ok(())
-}
+
+    /// Best-effort button release at (x, y). Used for cleanup when a
+    /// drag hits a protocol error — a stuck-pressed button wedges the
+    /// whole Juggler session (all later mouse dispatches time out).
+    async fn force_release(&self, x: f64, y: f64) {
+        for _attempt in 0..3 {
+            if self.dispatch_mouse("mouseup", x, y, 1, 1).await.is_ok() {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        }
+        tracing::warn!(target: "ghostcloak::camoufox", "force_release: mouseup never confirmed after retries");
+    }
 
 }
 
@@ -1164,14 +1233,9 @@ impl PageHandle for CamoufoxPage {
     }
 
     async fn drag_ref(&self, from: &str, to: &str, dx: f64, dy: f64) -> Result<()> {
+        // Initial source measure: only to aim the approach path. The exact
+        // press point is re-resolved right before mousedown (layout shifts).
         let (sx, sy) = self.ref_center(from).await?;
-        let (tx, ty) = if to.is_empty() {
-            (sx + dx, sy + dy)
-        } else {
-            // Re-resolve AFTER the source scroll: both elements must be
-            // in the same viewport frame for coordinate math to hold.
-            self.ref_center(to).await?
-        };
         // (RNG scoped per use — ThreadRng is !Send, must not live across awaits.)
         let approach = {
             use rand::Rng;
@@ -1183,24 +1247,50 @@ impl PageHandle for CamoufoxPage {
         };
         // 1. Approach the source (hover first — hands grab, they don't teleport).
         self.move_along(&approach, false).await?;
-        // 2. Press. Small human grab-pause before moving.
-        self.dispatch_mouse("mousedown", sx, sy, 1, 1).await?;
+        // 1b. RE-RESOLVE the source right before pressing: layout can shift
+        // during the approach (settling panels, banners, scroll anchoring) —
+        // pressing stale coordinates misses the target element and the page's
+        // drag handler never engages (observed: press landing on the parent
+        // panel instead of the slider button).
+        let (sx, sy) = self.ref_center(from).await?;
+        let (tx, ty) = if to.is_empty() {
+            (sx + dx, sy + dy)
+        } else {
+            self.ref_center(to).await?
+        };
+        tracing::info!(target: "ghostcloak::camoufox",
+            "drag_ref: from={from} to={to:?} press=({sx:.1},{sy:.1}) release=({tx:.1},{ty:.1}) dx_param={dx:.1}");
+        // 2. Press. Small human grab-pause before moving. If the press
+        // response is lost, keep going — aborting here would wedge the
+        // session with a stuck button. If it truly didn't land, the
+        // drag just won't take (safe, recoverable on the page).
+        if self.dispatch_mouse("mousedown", sx, sy, 1, 1).await.is_err() {
+            tracing::warn!(target: "ghostcloak::camoufox", "mousedown response lost (continuing drag)");
+        }
         {
             use rand::Rng;
             let pause: u64 = rand::rng().random_range(40..120);
             tokio::time::sleep(std::time::Duration::from_millis(pause)).await;
         }
-        // 3. Drag along a human path with the button held.
+        // 3. Drag along a human path with the button held. On any
+        // failure, release the button before returning the error so
+        // the session stays usable.
         let path = Self::human_path((sx, sy), (tx, ty));
-        self.move_along(&path, true).await?;
+        if self.move_along(&path, true).await.is_err() {
+            self.force_release(tx, ty).await;
+            return Err(GhostError::PageOp("drag path interrupted — button released, page intact".into()));
+        }
         // 4. Settle on the target before letting go (humans verify the drop).
         {
             use rand::Rng;
-            let settle: u64 = rand::rng().random_range(50..180);
+            let settle: u64 = rand::rng().random_range(150..450);
             tokio::time::sleep(std::time::Duration::from_millis(settle)).await;
         }
-        // 5. Release.
-        self.dispatch_mouse("mouseup", tx, ty, 1, 1).await?;
+        // 5. Release. Tolerate response loss here too — the release
+        // usually lands, and an error return would mislead the agent.
+        if self.dispatch_mouse("mouseup", tx, ty, 1, 1).await.is_err() {
+            tracing::warn!(target: "ghostcloak::camoufox", "mouseup response lost (treated as released)");
+        }
         Ok(())
     }
 

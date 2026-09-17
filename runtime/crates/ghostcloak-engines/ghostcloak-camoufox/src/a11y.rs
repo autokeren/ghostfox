@@ -328,7 +328,10 @@ pub(crate) fn resolve_js(r: &str) -> String {
     )
 }
 
-/// Resolve a ref to its center coordinates (scrolls it into view first).
+/// Resolve a ref to its center coordinates (scrolls it into view).
+/// Verifies via elementFromPoint that the returned point actually
+/// hits the element (or a descendant) — layout shifts between measure
+/// and press are the #1 drag misfire cause.
 /// Returns JSON {x, y, w, h} or 'STALE-REF'.
 pub(crate) fn rect_ref_js(r: &str) -> String {
     format!(
@@ -337,7 +340,24 @@ pub(crate) fn rect_ref_js(r: &str) -> String {
   if (!el || !el.isConnected) return 'STALE-REF';
   el.scrollIntoView({{block: 'center'}});
   var rect = el.getBoundingClientRect();
-  return JSON.stringify({{x: rect.x + rect.width/2, y: rect.y + rect.height/2, w: rect.width, h: rect.height}});
+  var x = rect.x + rect.width/2, y = rect.y + rect.height/2;
+  // Hit-test verify: the point must land on el or inside it.
+  function hits(px, py) {{
+    var probe = document.elementFromPoint(px, py);
+    return probe && (probe === el || el.contains(probe));
+  }}
+  if (!hits(x, y)) {{
+    // Scan the rect for a point that does hit (overlays, masks,
+    // mid-animation transforms eat the center all the time).
+    var found = false;
+    for (var fx = 0.25; fx <= 0.75 && !found; fx += 0.125) {{
+      for (var fy = 0.25; fy <= 0.75 && !found; fy += 0.125) {{
+        var px = rect.x + rect.width * fx, py = rect.y + rect.height * fy;
+        if (hits(px, py)) {{ x = px; y = py; found = true; }}
+      }}
+    }}
+  }}
+  return JSON.stringify({{x: x, y: y, w: rect.width, h: rect.height}});
 }})()"#,
         r = serde_json::to_string(r).unwrap_or_default()
     )
