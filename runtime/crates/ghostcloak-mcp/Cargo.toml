@@ -33,6 +33,12 @@ async-trait.workspace = true
 chrono.workspace = true
 reqwest.workspace = true
 base64.workspace = true
+ocrs.workspace = true
+rten.workspace = true
+rten-imageproc.workspace = true
+image.workspace = true
+once_cell.workspace = true
+dirs.workspace = true
 
 [dev-dependencies]
 tempfile = "3"

@@ -60,17 +60,33 @@ struct DragParams {
     offset_y: Option<f64>,
 }
 
-#[derive(Debug, Deserialize, JsonSchema)]
-struct PixelsParams {
-    session_id: String,
-    page_id: String,
-    /// Ref of the element to render (canvas / img / background-image).
-    r#ref: String,
-    /// Grid width in cells (default 32).
-    grid_w: Option<u32>,
-    /// Grid height in cells (default 21).
-    grid_h: Option<u32>,
-}
+    #[derive(Debug, Deserialize, JsonSchema)]
+    struct PixelsParams {
+        session_id: String,
+        page_id: String,
+        /// Ref of the element to render (canvas / img / background-image).
+        r#ref: String,
+        /// Grid width in cells (default 32).
+        grid_w: Option<u32>,
+        /// Grid height in cells (default 21).
+        grid_h: Option<u32>,
+    }
+
+    #[derive(Debug, Deserialize, JsonSchema)]
+    struct OcrParams {
+        session_id: String,
+        page_id: String,
+        /// Ref of the element to OCR. Omit for the whole viewport.
+        r#ref: Option<String>,
+    }
+
+    #[derive(Debug, Deserialize, JsonSchema)]
+    struct VisionParams {
+        session_id: String,
+        page_id: String,
+        /// Ref of the element to analyze. Omit for the whole viewport.
+        r#ref: Option<String>,
+    }
 
 
 
@@ -598,6 +614,125 @@ impl GhostcloakServer {
             serde_json::json!({ "ref": r#ref, "grid_w": gw, "grid_h": gh }),
         );
         Ok(text_result(grid))
+    }
+
+    /// Shared helper: produce PNG bytes of the whole viewport or the
+    /// element a ref points at (screenshot + crop).
+    async fn element_png(
+        &self,
+        session_id: &str,
+        page_id: &str,
+        r#ref: Option<String>,
+    ) -> Result<Vec<u8>, rmcp::model::ErrorData> {
+        let session = self
+            .session(session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let page = session
+            .page(page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let png = page
+            .screenshot(false)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        match r#ref {
+            None => Ok(png),
+            Some(r) => {
+                // Rect of the element (CSS px) + viewport width + DPR.
+                let js = format!(
+                    r#"(function() {{
+  var el = (window.__gfxRefs || new Map()).get({r});
+  if (!el || !el.isConnected) return 'STALE-REF';
+  var r = el.getBoundingClientRect();
+  return JSON.stringify({{x: r.x, y: r.y, w: r.width, h: r.height, vw: window.innerWidth}});
+}})()"#,
+                    r = serde_json::to_string(&r).unwrap_or_default()
+                );
+                let out = page
+                    .evaluate(&js)
+                    .await
+                    .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+                let s = out.as_str().unwrap_or("STALE-REF");
+                if s == "STALE-REF" {
+                    return Err(rmcp::model::ErrorData::internal_error(
+                        format!("ref {r} is stale — rerun page_a11y"),
+                        None,
+                    ));
+                }
+                let rect: serde_json::Value = serde_json::from_str(s)
+                    .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+                let img = image::load_from_memory(&png)
+                    .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+                let vw = rect.get("vw").and_then(|v| v.as_f64()).unwrap_or(1.0);
+                let scale = img.width() as f64 / vw.max(1.0);
+                let x = (rect.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0) * scale) as i64;
+                let y = (rect.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0) * scale) as i64;
+                let w = (rect.get("w").and_then(|v| v.as_f64()).unwrap_or(0.0) * scale) as i64;
+                let h = (rect.get("h").and_then(|v| v.as_f64()).unwrap_or(0.0) * scale) as i64;
+                let (x, y) = (x.max(0) as u32, y.max(0) as u32);
+                let (w, h) = (
+                    (w.max(1) as u32).min(img.width().saturating_sub(x)),
+                    (h.max(1) as u32).min(img.height().saturating_sub(y)),
+                );
+                let cropped = image::imageops::crop_imm(&img, x, y, w, h).to_image();
+                let mut buf = std::io::Cursor::new(Vec::new());
+                cropped
+                    .write_to(&mut buf, image::ImageFormat::Png)
+                    .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+                Ok(buf.into_inner())
+            }
+        }
+    }
+
+    #[tool(
+        description = "TIER 2 VISION — LOCAL OCR: extract text from an element (or the whole viewport if no ref). 100% local (pure-Rust ML models auto-download once to GHOSTFOX_HOME/models). Answers 'what text is written there' — for image captchas, canvas text, scanned UI. Models download on first call (~12MB, once)."
+    )]
+    async fn page_ocr(
+        &self,
+        Parameters(OcrParams {
+            session_id,
+            page_id,
+            r#ref,
+        }): Parameters<OcrParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let png = self.element_png(&session_id, &page_id, r#ref).await?;
+        let text = crate::ocr::ocr_png(&png)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let _ = self.recorder.record(
+            &session_id,
+            "page_ocr",
+            Some(&page_id),
+            serde_json::json!({ "chars": text.chars().count() }),
+        );
+        Ok(text_result(text))
+    }
+
+    #[tool(
+        description = "TIER 4 VISION — VISUAL CORTEX: detect word bounding boxes in an element (or viewport) via the built-in text-detection ML model. Returns JSON [{x, y, w, h}, ...] in image pixels. The first shipped visual-cortex model — see where text lives in ANY image (click-order captchas, canvas text, scanned layout). 100% local."
+    )]
+    async fn page_vision(
+        &self,
+        Parameters(VisionParams {
+            session_id,
+            page_id,
+            r#ref,
+        }): Parameters<VisionParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let png = self.element_png(&session_id, &page_id, r#ref).await?;
+        let boxes = crate::ocr::detect_text_boxes(&png)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let _ = self.recorder.record(
+            &session_id,
+            "page_vision",
+            Some(&page_id),
+            serde_json::json!({ "words_found": boxes.len() }),
+        );
+        Ok(text_result(
+            serde_json::to_string_pretty(&boxes).unwrap_or_default(),
+        ))
     }
 
     #[tool(
