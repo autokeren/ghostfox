@@ -149,6 +149,13 @@ profile the movement (velocity, acceleration, tremor), not the endpoints.
   grab the handle and drag by pixels. THE move for slider captchas:
   the agent finds the gap (via `page_a11y` or `page_screenshot`),
   computes the distance, then drags with human dynamics.
+- **Precision slider math** (proven E2E, one-pass exact): native range
+  inputs JUMP the thumb to the mousedown position first — and the drag
+  starts at the element CENTER. So the landing value is:
+  `final = center_value + (drag_px / px_per_unit)` where
+  `px_per_unit = (track_width - handle_w) / (max - min)`.
+  Compute the offset from that, not from the current value. Verify by
+  reading the value back; correct by the residual if ±1 unit matters.
 - **Elements the walker misses** (jQuery-UI widgets set `draggable` via JS,
   so `[draggable="true"]` doesn't match): register a ref yourself:
   ```js
