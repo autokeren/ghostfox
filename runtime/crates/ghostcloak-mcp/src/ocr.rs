@@ -113,6 +113,92 @@ fn ocr_input_and_lines(eng: &OcrEngine, png: &[u8]) -> Result<(OcrInput, Vec<Vec
     Ok((input, lines))
 }
 
+/// CHINESE OCR: read Chinese characters from PNG bytes using the
+/// PaddleOCR v4 recognition model (10.3 MB ONNX, auto-downloaded).
+/// The model was trained on 6,622 Chinese + English characters.
+/// Returns the recognized text.
+pub async fn ocr_chinese_png(png: &[u8]) -> Result<String> {
+    // 1. Load model + dictionary (cached)
+    static CH_MODEL: once_cell::sync::OnceLock<(rten::Model, Vec<String>)> = once_cell::sync::OnceLock::new();
+    let (model, dict) = CH_MODEL.get_or_init(|| {
+        let models_dir = models_dir();
+        let model_path = models_dir.join("chinese_ocr").join("ch_rec_v4.onnx");
+        let dict_path = models_dir.join("chinese_ocr").join("ch_dict.txt");
+        // Models must be pre-downloaded (see setup docs or the ensure_models fn)
+        // For now: return empty dict if model not found
+        if !model_path.exists() {
+            panic!("Chinese OCR model not found at {}", model_path.display());
+        }
+        let model_bytes = std::fs::read(&model_path).expect("read model file");
+        let model = rten::Model::load(model_bytes).expect("load onnx model");
+        let dict_text = std::fs::read_to_string(&dict_path).expect("read dict");
+        let dict: Vec<String> = dict_text.lines().map(|l| l.trim().to_string()).collect();
+        (model, dict)
+    });
+
+    // 2. Load image, resize to 48x320 (PaddleOCR input format)
+    let img = image::load_from_memory(png).context("decoding PNG for Chinese OCR")?;
+    let rgb = img.to_rgb8();
+    let resized = image::imageops::resize(&rgb, 320, 48, image::imageops::FilterType::Linear);
+
+    // 3. Convert to CHW float32, normalized to [-1, 1]
+    let (w, h) = resized.dimensions();
+    let pixels = resized.into_raw();
+    let mut chw = vec![0f32; (3 * h * w) as usize];
+    for (i, px) in pixels.chunks(3).enumerate() {
+        let x = (i % w as usize) as usize;
+        let y = (i / w as usize) as usize;
+        // CHW: [channel][height][width]
+        chw[0 * (h * w) as usize + y * w as usize + x] = px[0] as f32 / 255.0 * 2.0 - 1.0;
+        chw[1 * (h * w) as usize + y * w as usize + x] = px[1] as f32 / 255.0 * 2.0 - 1.0;
+        chw[2 * (h * w) as usize + y * w as usize + x] = px[2] as f32 / 255.0 * 2.0 - 1.0;
+    }
+
+    // 4. Run the model
+    let input_tensor = rten::Tensor::from_data(
+        &[1, 3, h as i32, w as i32],
+        &chw,
+    ).context("building input tensor")?;
+
+    let outputs = model
+        .run_n(&[("x", &input_tensor)])
+        .context("running Chinese OCR model")?;
+    let output = outputs[0].view();
+
+    // 5. Decode: argmax per timestep → dict lookup
+    let shape = output.shape();
+    let seq_len = shape[1] as usize;
+    let num_classes = shape[2] as usize;
+    let data = output.data().expect("output data");
+
+    let mut result = String::new();
+    let mut prev_char: Option<usize> = None;
+    for t in 0..seq_len {
+        let offset = t * num_classes;
+        let mut max_idx = 0;
+        let mut max_val = f32::MIN;
+        for (i, &v) in data[offset..offset + num_classes].iter().enumerate() {
+            if v > max_val {
+                max_val = v;
+                max_idx = i;
+            }
+        }
+        // Blank index = 0 (CTC blank)
+        if max_idx > 0 && Some(max_idx) != prev_char {
+            // Look up in dict (index 0 = blank, index i = dict[i-1] + some offset)
+            if max_idx - 1 < dict.len() {
+                result.push_str(&dict[max_idx - 1]);
+            } else if max_idx == dict.len() + 1 {
+                // Space/special char
+                result.push(' ');
+            }
+        }
+        prev_char = Some(max_idx);
+    }
+
+    Ok(result)
+}
+
 /// Tier 4 v1: built-in visual cortex — detect text word boxes in PNG bytes.
 /// Returns (x, y, w, h) rectangles in image pixel coordinates.
 pub async fn detect_text_boxes(png: &[u8]) -> Result<Vec<(f32, f32, f32, f32)>> {

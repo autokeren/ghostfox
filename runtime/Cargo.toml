@@ -38,7 +38,7 @@ dirs = "6"
 chrono = { version = "0.4", features = ["serde"] }
 once_cell = "1"
 ocrs = "0.13"
-rten = "0.26"
+rten = { version = "0.26", features = ["onnx_format"] }
 rten-imageproc = "0.26"
 image = { version = "0.25", default-features = false, features = ["png"] }
 parking_lot = "0.12"
