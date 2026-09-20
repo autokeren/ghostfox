@@ -404,6 +404,52 @@ The realistic paths:
    the RTEN runtime is already embedded via ocrs.
 3. All OTHER GeeTest variants are solved and stable.
 
+### Icon/word-click — FINAL SOLVE (trained eyes, 0.5s, 100% runs)
+
+2026-09-21. The classical-CV boundary above was real, but the answer
+was NOT a bigger VLM — it was a **trained pair of tiny ONNX models**
+from ravizhan/geetest-v3-click-crack (AGPL-3.0, attributed):
+
+| model | job |
+|---|---|
+| `yolov8s.onnx` | detects char boxes, 2 classes: small (<35px = strip, ordered) / big (field) |
+| `siamese.onnx` | strip-glyph vs field-glyph embedding similarity -> click order |
+
+Shipped in `models/geetest_click/`. Solver in `tools/geetest-click/`.
+Solve time ~0.5s CPU. VLM prompting, ddddocr, PaddleOCR, 9 classical
+CV methods, saturation masks — ALL beaten by this pair. ddddocr still
+useful as a strip-read cross-check (reads `香汁大虾` perfectly).
+
+Verified:
+- Local testbed (bilibili gt via passport API + own page): 3/3 SUCCESS
+- Real passport.bilibili.com login: 2/2 "Verification Succeeded"
+- Pure API flow (crack.py protocol): 2/2 success (1st try + retry loop)
+
+Two integration paths:
+1. BROWSER HANDS: page widget shows challenge -> grab `.geetest_item_wrap`
+   bg URL from DOM -> `solve_image(bytes)` -> click box centers via
+   page_drag (human mouse) -> `.geetest_commit`. Box coords are in the
+   raw 344x384 image; field = top 344px shown at 333px (scale 333/344,
+   strip excluded: sy = h/(H-40)).
+2. API EYES+HANDS (no browser): `solve_api(gt, challenge)` does
+   gettype->get_c_s->ajax->get_pic->verify with AES/RSA + mouse-path
+   encoding. Image comes from api.geevisit.com/get.php — bypasses the
+   in-page widget entirely (the error_01 "refresh too much" killer).
+
+Lessons from the VLM rabbit hole (kept for history):
+- GLM-5.3-flash IS multimodal on Workers AI; GLM-5.3 (full) is NOT.
+- Reasoning models eat max_tokens -> empty content; fall back to
+  reasoning_content. Answer "1st=2 2nd=3 3rd=5" patterns parse via
+  `(\d+)(?:st|nd|rd|th)?\s*=\s*"?(\d)`.
+- Prompt phrases like "left to right" make VLMs hallucinate `左中右`.
+- The instruction strip is the BOTTOM 40px of the SAME image as the
+  field (tip_img css pos 0% 100%, item_wrap pos 0% 0%).
+- Strip chars form REAL phrases (香汁大虾 dish, 香沙大桥 bridge) — but
+  the strip glyphs are a DIFFERENT rendering from field glyphs, so
+  cross-render template matching is dead; the siamese net was trained
+  for exactly this.
+- Strip target count varies: 2, 3, or 4 chars + optional decoys.
+
 
 ### OCR-identity captcha matching (v0.6.3 — the OCR breakthrough)
 
