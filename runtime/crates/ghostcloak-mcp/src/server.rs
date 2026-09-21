@@ -170,6 +170,21 @@ struct DragParams {
     }
 
     #[derive(Debug, Deserialize, JsonSchema)]
+    struct HcaptchaParams {
+        session_id: String,
+        page_id: String,
+        /// Optional ref of the hCaptcha anchor iframe / checkbox. If omitted
+        /// the tool auto-locates the anchor iframe by src pattern.
+        checkbox_ref: Option<String>,
+        /// Cloudflare API key for the host vision model (defaults to CLOUDFLARE_API_KEY env).
+        cf_api_key: Option<String>,
+        /// Cloudflare account id (defaults to CLOUDFLARE_ACCOUNT_ID env).
+        cf_account_id: Option<String>,
+        /// Max challenge rounds (hCaptcha chains 2-4). Default 4.
+        max_rounds: Option<u32>,
+    }
+
+    #[derive(Debug, Deserialize, JsonSchema)]
     struct RotateParams {
         session_id: String,
         page_id: String,
@@ -1230,6 +1245,244 @@ impl GhostcloakServer {
             serde_json::json!({ "chars": text.chars().count() }),
         );
         Ok(text_result(text))
+    }
+
+    #[tool(
+        description = "HCAPTCHA SOLVER: solve hCaptcha image challenges from the live page with the host vision model (Cloudflare Workers AI GLM). Handles ALL challenge variants — tile grids, pattern-break icon fields, any image-pick — by asking the model for the exact pixel coordinates of every element to click, then clicking with the humanized mouse. Multi-round: loops until the page's h-captcha-response field receives a token (up to max_rounds, default 4). Credentials come from CLOUDFLARE_API_KEY / CLOUDFLARE_ACCOUNT_ID env or the params. Returns JSON {success, rounds, response_len}."
+    )]
+    async fn page_hcaptcha(
+        &self,
+        Parameters(HcaptchaParams {
+            session_id,
+            page_id,
+            checkbox_ref,
+            cf_api_key,
+            cf_account_id,
+            max_rounds,
+        }): Parameters<HcaptchaParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let page = session
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let key = cf_api_key
+            .or_else(|| std::env::var("CLOUDFLARE_API_KEY").ok())
+            .ok_or_else(|| rmcp::model::ErrorData::invalid_params("no CLOUDFLARE_API_KEY (param or env)", None))?;
+        let account = cf_account_id
+            .or_else(|| std::env::var("CLOUDFLARE_ACCOUNT_ID").ok())
+            .ok_or_else(|| rmcp::model::ErrorData::invalid_params("no CLOUDFLARE_ACCOUNT_ID (param or env)", None))?;
+        let glm = crate::hcaptcha::Glm::new(account, key);
+        let max_rounds = max_rounds.unwrap_or(6) as usize;
+
+        // 1. Locate + click the anchor checkbox.
+        let anchor_js = match &checkbox_ref {
+            Some(r) => format!(
+                r#"(function() {{
+  var el = (window.__gfxRefs || new Map()).get({r});
+  if (!el || !el.isConnected) return JSON.stringify({{err: 'stale ref'}});
+  var b = el.getBoundingClientRect();
+  return JSON.stringify({{x: b.x + b.width/2, y: b.y + b.height/2}});
+}})()"#,
+                r = serde_json::to_string(r).unwrap_or_default()
+            ),
+            None => r#"(function() {
+  var f = null;
+  document.querySelectorAll('iframe').forEach(function(i) {
+    var src = (i.src || '');
+    if ((src.indexOf('hcaptcha') >= 0 || src.indexOf('newassets') >= 0) && !f) {
+      var b = i.getBoundingClientRect();
+      if (b.width > 200 && b.width < 400 && b.y > -100) f = i;
+    }
+  });
+  if (!f) return JSON.stringify({err: 'no hCaptcha anchor iframe found'});
+  var b = f.getBoundingClientRect();
+  return JSON.stringify({x: b.x + b.width/2, y: b.y + b.height/2});
+})()"#
+                .to_string(),
+        };
+        let out = page
+            .evaluate(&anchor_js)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let av: serde_json::Value = serde_json::from_str(out.as_str().unwrap_or("{}"))
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        if let Some(err) = av.get("err").and_then(|e| e.as_str()).map(|e| e.to_string()) {
+            return Err(rmcp::model::ErrorData::internal_error(err, None));
+        }
+        let (ax, ay) = (
+            av.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0),
+            av.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0),
+        );
+        let mk_js = format!(
+            r#"(function() {{
+  window.__gfxRefs = window.__gfxRefs || new Map();
+  var d = document.createElement('div');
+  d.style.cssText = 'position:fixed;left:{ax}px;top:{ay}px;width:2px;height:2px;z-index:99999;pointer-events:none;';
+  document.body.appendChild(d);
+  window.__gfxRefs.set('hc_anchor', d);
+  return 'OK';
+}})()"#
+        );
+        let _ = page.evaluate(&mk_js).await;
+        page.drag_ref("hc_anchor", "", 0.0, 0.0)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+
+        // 2. Wait for the challenge iframe (large, visible).
+        let chall_js = r#"(function() {
+  var f = null;
+  document.querySelectorAll('iframe').forEach(function(i) {
+    var b = i.getBoundingClientRect();
+    if (b.width > 400 && b.y > -100 && !f) f = i;
+  });
+  if (!f) return 'NO';
+  var b = f.getBoundingClientRect();
+  return JSON.stringify({x: b.x, y: b.y, w: b.width, h: b.height, vw: window.innerWidth});
+})()"#;
+        let mut chall: Option<serde_json::Value> = None;
+        for _ in 0..14 {
+            tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+            let out = page
+                .evaluate(chall_js)
+                .await
+                .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+            if out.as_str() != Some("NO") {
+                chall = serde_json::from_str(out.as_str().unwrap_or("")).ok();
+                break;
+            }
+        }
+        let chall = chall.ok_or_else(|| rmcp::model::ErrorData::internal_error("hCaptcha challenge iframe never appeared", None))?;
+        let (mut cx, mut cy, mut cw, mut ch, vw) = (
+            chall.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0),
+            chall.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0),
+            chall.get("w").and_then(|v| v.as_f64()).unwrap_or(0.0),
+            chall.get("h").and_then(|v| v.as_f64()).unwrap_or(0.0),
+            chall.get("vw").and_then(|v| v.as_f64()).unwrap_or(1.0),
+        );
+
+        let token_js = r#"(function() {
+  var r = document.querySelector('[name*=h-captcha-response], textarea[name*=h-captcha-response]');
+  return r ? (r.value || '').length : 0;
+})()"#;
+
+        // 3. Solve rounds.
+        let mut rounds = 0usize;
+        let mut response_len = 0i64;
+        let mut debug_rounds: Vec<serde_json::Value> = Vec::new();
+        for round in 0..max_rounds {
+            rounds = round + 1;
+            // Re-query the challenge iframe each round (it can move/resize).
+            let out = page
+                .evaluate(chall_js)
+                .await
+                .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+            if out.as_str() == Some("NO") {
+                break;
+            }
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(out.as_str().unwrap_or("")) {
+                cx = v.get("x").and_then(|x| x.as_f64()).unwrap_or(cx);
+                cy = v.get("y").and_then(|x| x.as_f64()).unwrap_or(cy);
+                cw = v.get("w").and_then(|x| x.as_f64()).unwrap_or(cw);
+                ch = v.get("h").and_then(|x| x.as_f64()).unwrap_or(ch);
+            }
+            let png = page
+                .screenshot(false)
+                .await
+                .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+            let img = image::load_from_memory(&png)
+                .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+            let scale = img.width() as f64 / vw.max(1.0);
+            let (bx, by, bw, bh) = (
+                (cx * scale) as u32,
+                (cy * scale) as u32,
+                (cw * scale) as u32,
+                (ch * scale) as u32,
+            );
+            let cropped = image::imageops::crop_imm(
+                &img,
+                bx,
+                by,
+                bw.min(img.width().saturating_sub(bx)),
+                bh.min(img.height().saturating_sub(by)),
+            )
+            .to_image();
+            let mut buf = std::io::Cursor::new(Vec::new());
+            cropped
+                .write_to(&mut buf, image::ImageFormat::Png)
+                .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+            let (clicks, verify) = glm
+                .solve_challenge(&buf.into_inner(), cropped.width(), cropped.height())
+                .await
+                .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+            debug_rounds.push(serde_json::json!({
+                "round": round + 1,
+                "iframe": { "x": cx, "y": cy, "w": cw, "h": ch },
+                "clicks": clicks,
+                "verify": verify,
+            }));
+
+            for (i, (px, py)) in clicks.iter().enumerate() {
+                let mk = format!(
+                    r#"(function() {{
+  window.__gfxRefs = window.__gfxRefs || new Map();
+  var d = document.createElement('div');
+  d.style.cssText = 'position:fixed;left:{x}px;top:{y}px;width:2px;height:2px;z-index:99999;pointer-events:none;';
+  document.body.appendChild(d);
+  window.__gfxRefs.set('hc_t{i}', d);
+  return 'OK';
+}})()"#,
+                    x = cx + px,
+                    y = cy + py,
+                    i = i
+                );
+                let _ = page.evaluate(&mk).await;
+                page.drag_ref(&format!("hc_t{i}"), "", 0.0, 0.0)
+                    .await
+                    .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+                tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+            }
+            if let Some((vx, vy)) = verify {
+                let mk = format!(
+                    r#"(function() {{
+  window.__gfxRefs = window.__gfxRefs || new Map();
+  var d = document.createElement('div');
+  d.style.cssText = 'position:fixed;left:{x}px;top:{y}px;width:2px;height:2px;z-index:99999;pointer-events:none;';
+  document.body.appendChild(d);
+  window.__gfxRefs.set('hc_v', d);
+  return 'OK';
+}})()"#,
+                    x = cx + vx,
+                    y = cy + vy
+                );
+                let _ = page.evaluate(&mk).await;
+                page.drag_ref("hc_v", "", 0.0, 0.0)
+                    .await
+                    .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(3000)).await;
+            let out = page.evaluate(token_js).await.unwrap_or_default();
+            response_len = out.as_i64().unwrap_or(0);
+            if response_len > 0 {
+                break;
+            }
+        }
+        let _ = self.recorder.record(
+            &session_id,
+            "page_hcaptcha",
+            Some(&page_id),
+            serde_json::json!({ "rounds": rounds, "response_len": response_len }),
+        );
+        Ok(text_result(serde_json::to_string_pretty(&serde_json::json!({
+            "success": response_len > 0,
+            "rounds": rounds,
+            "response_len": response_len,
+            "debug": debug_rounds,
+        }))
+        .unwrap_or_default()))
     }
 
     #[tool(

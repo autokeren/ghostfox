@@ -5,6 +5,7 @@ use rmcp::transport::stdio;
 mod captcha;
 mod ddddocr;
 mod geetest;
+mod hcaptcha;
 mod liveview;
 mod ocr;
 mod recording;
