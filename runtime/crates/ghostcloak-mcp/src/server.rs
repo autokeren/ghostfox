@@ -1414,8 +1414,41 @@ impl GhostcloakServer {
             cropped
                 .write_to(&mut buf, image::ImageFormat::Png)
                 .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+            // Render-wait: hCaptcha tiles lazy-load; solve only once content is visible.
+            let mut ready_png = buf.into_inner();
+            for _ in 0..6 {
+                if crate::hcaptcha::is_rendered(&ready_png) {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+                let png2 = page
+                    .screenshot(false)
+                    .await
+                    .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+                let img2 = image::load_from_memory(&png2)
+                    .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+                let scale2 = img2.width() as f64 / vw.max(1.0);
+                let (bx2, by2, bw2, bh2) = (
+                    (cx * scale2) as u32,
+                    (cy * scale2) as u32,
+                    (cw * scale2) as u32,
+                    (ch * scale2) as u32,
+                );
+                let c2 = image::imageops::crop_imm(
+                    &img2,
+                    bx2,
+                    by2,
+                    bw2.min(img2.width().saturating_sub(bx2)),
+                    bh2.min(img2.height().saturating_sub(by2)),
+                )
+                .to_image();
+                let mut b2 = std::io::Cursor::new(Vec::new());
+                c2.write_to(&mut b2, image::ImageFormat::Png)
+                    .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+                ready_png = b2.into_inner();
+            }
             let (clicks, verify) = glm
-                .solve_challenge(&buf.into_inner(), cropped.width(), cropped.height())
+                .solve_challenge(&ready_png, cropped.width(), cropped.height())
                 .await
                 .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
             debug_rounds.push(serde_json::json!({
