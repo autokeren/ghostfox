@@ -36,6 +36,8 @@ base64.workspace = true
 ocrs.workspace = true
 rten.workspace = true
 rten-tensor = "0.26"
+ort = { version = "2.0.0-rc.10", features = ["download-binaries", "ndarray"] }
+ndarray = "0.16"
 rten-imageproc.workspace = true
 image.workspace = true
 once_cell.workspace = true

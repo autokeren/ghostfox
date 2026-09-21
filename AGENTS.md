@@ -484,6 +484,26 @@ or Chinese character model for better OCR accuracy.
 
 ---
 
+## 6c. ALL-NATIVE CAPTCHA TOOLSET (v0.6.7)
+
+Every family now has a native MCP tool in ghostcloak-mcp (no Python in
+the solve path — Python stays only as the R&D lab):
+
+| tool | family | engine |
+|---|---|---|
+| page_geetest_click | icon-click 文字点选 | rten: yolov8s + siamese_float (dequantized) |
+| page_geetest_slide | v3 slide | pure pixel math in Rust: bg-fullbg diff > 40 + closing 5x5 + largest blob (BFS) = hole; slice alpha>128 = piece; drag = hx0 - px0. Does the human drag itself |
+| page_captcha_rotate | rotate | JS sweep (instant .click()s, reads feedback per angle) + HUMAN REPLAY of the winner via drag_ref. Re-resolve refs before replay: the sweep re-renders the page (React) and stale refs fail a11y validation |
+| page_captcha_ocr | normal text captcha | ddddocr model on ort (rten has no LSTM importer). w9h5k first-try |
+
+Port gotchas (cost real hours):
+1. ddddocr output is [T, 1, C] sequence-major, NOT [1, T, C].
+2. The common.onnx model pairs with CHARSET_BETA (not OLD) — BETA[306]='w' etc.
+3. The upstream siamese is dynamic-quantized: rten mangles ConvInteger
+   silently (all-1.0 sigmoids) — always ship the dequantized float port.
+4. ort 2 rc: Session::run needs &mut self (Mutex the session); the
+   workspace image crate needs the jpeg feature for captcha images.
+
 ## 6b. THE 7 CAPTCHA FAMILIES — final E2E (2026-09-21)
 
 All seven families re-verified in one day. Evidence screenshots under

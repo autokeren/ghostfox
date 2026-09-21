@@ -284,6 +284,140 @@ pub async fn solve_image(img_bytes: &[u8]) -> Result<Vec<[i32; 2]>> {
     }
     Ok(result)
 }
+
+/// Binary closing: dilate then erode with an s x s square kernel.
+fn binary_closing(mask: &mut [bool], w: usize, h: usize, s: usize) {
+    let mut tmp = mask.to_vec();
+    let r = (s / 2) as isize;
+    // dilate
+    for y in 0..h as isize {
+        for x in 0..w as isize {
+            if !mask[(y * w as isize + x) as usize] {
+                for dy in -r..=r {
+                    for dx in -r..=r {
+                        let nx = x + dx;
+                        let ny = y + dy;
+                        if nx >= 0 && ny >= 0 && nx < w as isize && ny < h as isize
+                            && mask[(ny * w as isize + nx) as usize]
+                        {
+                            tmp[(y * w as isize + x) as usize] = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let dil = tmp;
+    tmp = vec![false; w * h];
+    // erode
+    for y in 0..h as isize {
+        for x in 0..w as isize {
+            let mut all = dil[(y * w as isize + x) as usize];
+            for dy in -r..=r {
+                for dx in -r..=r {
+                    let nx = x + dx;
+                    let ny = y + dy;
+                    if nx >= 0 && ny >= 0 && nx < w as isize && ny < h as isize {
+                        all &= dil[(ny * w as isize + nx) as usize];
+                    } else {
+                        all = false;
+                    }
+                }
+            }
+            tmp[(y * w as isize + x) as usize] = all;
+        }
+    }
+    mask.copy_from_slice(&tmp);
+}
+
+/// Largest 4-connected component bounding box.
+fn largest_blob(mask: &[bool], w: usize, h: usize) -> Option<(usize, usize, usize, usize)> {
+    let mut seen = vec![false; w * h];
+    let mut best: Option<(usize, (usize, usize, usize, usize))> = None;
+    for start in 0..(w * h) {
+        if !mask[start] || seen[start] {
+            continue;
+        }
+        let mut stack = vec![start];
+        seen[start] = true;
+        let (mut x0, mut y0, mut x1, mut y1, mut area) = (w, h, 0usize, 0usize, 0usize);
+        while let Some(p) = stack.pop() {
+            let x = p % w;
+            let y = p / w;
+            x0 = x0.min(x);
+            y0 = y0.min(y);
+            x1 = x1.max(x);
+            y1 = y1.max(y);
+            area += 1;
+            if x > 0 && mask[p - 1] && !seen[p - 1] {
+                seen[p - 1] = true;
+                stack.push(p - 1);
+            }
+            if x + 1 < w && mask[p + 1] && !seen[p + 1] {
+                seen[p + 1] = true;
+                stack.push(p + 1);
+            }
+            if p >= w && mask[p - w] && !seen[p - w] {
+                seen[p - w] = true;
+                stack.push(p - w);
+            }
+            if p + w < w * h && mask[p + w] && !seen[p + w] {
+                seen[p + w] = true;
+                stack.push(p + w);
+            }
+        }
+        if best.as_ref().map_or(true, |(ba, _)| area > *ba) {
+            best = Some((area, (x0, y0, x1, y1)));
+        }
+    }
+    best.map(|(_, b)| b)
+}
+
+/// GeeTest v3 slide: find the drag distance.
+/// bg = canvas bg (hole), sl = slice (piece), full = complete reference.
+pub fn slide_gap(
+    bg: &image::GrayImage,
+    sl: &image::RgbaImage,
+    full: &image::GrayImage,
+) -> Result<usize> {
+    let (w, h) = bg.dimensions();
+    let (fw, fh) = full.dimensions();
+    if (w, h) != (fw, fh) || w == 0 || h == 0 {
+        return Err(anyhow!("canvas size mismatch"));
+    }
+    let mut diff_mask = vec![false; (w * h) as usize];
+    let mut max_diff = 0f32;
+    for i in 0..(w * h) as usize {
+        let d = (bg.as_raw()[i] as f32 - full.as_raw()[i] as f32).abs();
+        if d > max_diff {
+            max_diff = d;
+        }
+        if d > 40.0 {
+            diff_mask[i] = true;
+        }
+    }
+    if max_diff < 10.0 {
+        return Err(anyhow!("bg and full canvas are identical — no hole to find"));
+    }
+    binary_closing(&mut diff_mask, w as usize, h as usize, 5);
+    let (hx0, _hy0, _hx1, _hy1) =
+        largest_blob(&diff_mask, w as usize, h as usize).context("no diff blob found")?;
+    // piece solid left edge: alpha > 128
+    let (pw, ph) = sl.dimensions();
+    let mut px0 = pw as usize;
+    for y in 0..ph {
+        for x in 0..pw {
+            if sl.get_pixel(x, y).0[3] > 128 {
+                px0 = px0.min(x as usize);
+            }
+        }
+    }
+    if px0 == pw as usize {
+        return Err(anyhow!("slice has no solid pixels"));
+    }
+    Ok(hx0.saturating_sub(px0))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

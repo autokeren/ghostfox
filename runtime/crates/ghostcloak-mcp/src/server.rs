@@ -153,6 +153,37 @@ struct DragParams {
     }
 
     #[derive(Debug, Deserialize, JsonSchema)]
+    struct GeetestSlideParams {
+        session_id: String,
+        page_id: String,
+        /// Optional ref of the slider handle (.geetest_slider_button). If omitted
+        /// the tool locates it by selector and registers its own ref.
+        slider_ref: Option<String>,
+    }
+
+    #[derive(Debug, Deserialize, JsonSchema)]
+    struct CaptchaOcrParams {
+        session_id: String,
+        page_id: String,
+        /// Ref of the captcha <img> element. Omit for the whole viewport.
+        r#ref: Option<String>,
+    }
+
+    #[derive(Debug, Deserialize, JsonSchema)]
+    struct RotateParams {
+        session_id: String,
+        page_id: String,
+        /// Ref of the rotate-right button (15deg per click in the standard demos).
+        rot_right_ref: String,
+        /// Ref of the rotate-left button.
+        rot_left_ref: String,
+        /// Ref of the check/verify button.
+        check_ref: String,
+        /// Ref of the reset button.
+        reset_ref: String,
+    }
+
+    #[derive(Debug, Deserialize, JsonSchema)]
     struct PagesParams {
         session_id: String,
     }
@@ -1082,6 +1113,246 @@ impl GhostcloakServer {
             "boxes_raw": boxes,
             "rect": { "x": rx, "y": ry, "w": rw, "h": rh },
             "img": { "w": iw, "h": ih },
+        }))
+        .unwrap_or_default()))
+    }
+
+    #[tool(
+        description = "GEETEST SLIDE SOLVER: solve the GeeTest v3-style slide puzzle from the live page, then perform the human drag itself. Extracts the three canvases (bg, puzzle slice, full reference bg) via toDataURL, finds the hole with |bg-fullbg| diff + largest-blob + morphological closing (the JPEG-noise trap), measures the piece's solid-alpha left edge, and drags the slider by hole_x0 - piece_x0 with the engine's humanized mouse. Returns JSON {drag_x, hole: [x0, x1], piece_x0}. Call AFTER the challenge popup is open. No vision model, pure pixel math."
+    )]
+    async fn page_geetest_slide(
+        &self,
+        Parameters(GeetestSlideParams {
+            session_id,
+            page_id,
+            slider_ref,
+        }): Parameters<GeetestSlideParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let page = session
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        // 1. Grab the three canvases as data URLs + register the slider ref.
+        let slider_js = match &slider_ref {
+            Some(r) => serde_json::to_string(r).unwrap_or_default(),
+            None => "null".into(),
+        };
+        let js = format!(
+            r#"(function() {{
+  window.__gfxRefs = window.__gfxRefs || new Map();
+  var bg = document.querySelector('canvas.geetest_canvas_bg');
+  var sl = document.querySelector('canvas.geetest_canvas_slice');
+  var fb = document.querySelector('canvas.geetest_canvas_fullbg');
+  if (!bg || !sl) return JSON.stringify({{err: 'canvases missing — is the slide challenge open?'}});
+  var btn = {slider_js} !== null && (window.__gfxRefs.get({slider_js}) || null);
+  if (!btn) {{
+    btn = document.querySelector('.geetest_slider_button');
+    if (btn) window.__gfxRefs.set('gs_btn', btn);
+  }}
+  if (!btn) return JSON.stringify({{err: 'slider handle not found'}});
+  try {{
+    return JSON.stringify({{bg: bg.toDataURL(), sl: sl.toDataURL(), fb: fb.toDataURL(), ref: 'gs_btn'}});
+  }} catch(e) {{ return JSON.stringify({{err: 'tainted canvas: ' + e.message}}); }}
+}})()"#
+        );
+        let out = page
+            .evaluate(&js)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let s = out.as_str().unwrap_or_default();
+        let v: serde_json::Value = serde_json::from_str(s)
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        if let Some(err) = v.get("err").and_then(|e| e.as_str()).map(|e| e.to_string()) {
+            return Err(rmcp::model::ErrorData::internal_error(err, None));
+        }
+        let b64 = |k: &str| -> Vec<u8> {
+            v.get(k)
+                .and_then(|x| x.as_str())
+                .and_then(|d| d.split(',').nth(1))
+                .map(|p| {
+                    use base64::Engine as _;
+                    base64::engine::general_purpose::STANDARD
+                        .decode(p)
+                        .unwrap_or_default()
+                })
+                .unwrap_or_default()
+        };
+        let bg = image::load_from_memory(&b64("bg"))
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?
+            .to_luma8();
+        let sl = image::load_from_memory(&b64("sl"))
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?
+            .to_rgba8();
+        let fb = image::load_from_memory(&b64("fb"))
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?
+            .to_luma8();
+        let drag_x = crate::geetest::slide_gap(&bg, &sl, &fb)
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        // 2. Human drag.
+        page.drag_ref("gs_btn", "", drag_x as f64, 0.0)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let _ = self.recorder.record(
+            &session_id,
+            "page_geetest_slide",
+            Some(&page_id),
+            serde_json::json!({ "drag_x": drag_x }),
+        );
+        Ok(text_result(serde_json::to_string_pretty(&serde_json::json!({
+            "drag_x": drag_x,
+            "dragged": true,
+        }))
+        .unwrap_or_default()))
+    }
+
+    #[tool(
+        description = "CAPTCHA OCR: classify the text of a normal image captcha (the distorted-text family) with the ddddocr model (CRNN+LSTM trained specifically on captcha text, 8210-char charset). 100% local — runs on onnxruntime inside the runtime. Takes the ref of the captcha <img> element (or the whole viewport) and returns the recognized text. Feed it into the answer field and submit. Far stronger than generic OCR on captcha fonts."
+    )]
+    async fn page_captcha_ocr(
+        &self,
+        Parameters(CaptchaOcrParams {
+            session_id,
+            page_id,
+            r#ref,
+        }): Parameters<CaptchaOcrParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let png = self.element_png(&session_id, &page_id, r#ref).await?;
+        let text = crate::ddddocr::classify_png(&png)
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let _ = self.recorder.record(
+            &session_id,
+            "page_captcha_ocr",
+            Some(&page_id),
+            serde_json::json!({ "chars": text.chars().count() }),
+        );
+        Ok(text_result(text))
+    }
+
+    #[tool(
+        description = "ROTATE CAPTCHA SOLVER: brute-force sweep + human replay. Rotate challenges ask to turn an image upright; standard demos rotate 15deg per button click and answer with a check button. The tool first sweeps every angle programmatically (instant JS clicks, ~30s), reads the visible feedback after each check (success keywords: pass/通过/正确/成功/verif/succeeded), then REPLAYS the winning rotation with real human mouse drags and the final check. Returns JSON {clicks, angle, status}. For fixed-image demos the sweep converges every time."
+    )]
+    async fn page_captcha_rotate(
+        &self,
+        Parameters(RotateParams {
+            session_id,
+            page_id,
+            rot_right_ref,
+            rot_left_ref,
+            check_ref,
+            reset_ref,
+        }): Parameters<RotateParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let page = session
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let js = format!(
+            r#"(async function() {{
+  window.__gfxRefs = window.__gfxRefs || new Map();
+  var rr = window.__gfxRefs.get({rr});
+  var rl = window.__gfxRefs.get({rl});
+  var ck = window.__gfxRefs.get({ck});
+  var rs = window.__gfxRefs.get({rs});
+  if (!rr || !rl || !ck || !rs) return JSON.stringify({{err: 'stale refs — rerun page_a11y and re-set refs'}});
+  var read = function() {{
+    var out = [];
+    document.querySelectorAll('[class*=alert],[class*=status],[class*=result],[class*=success],[class*=error],[class*=message],[class*=tip]').forEach(function(el){{
+      var t = (el.innerText||'').trim();
+      var st = getComputedStyle(el);
+      if (t && t.length < 70 && st.display !== 'none' && el.getBoundingClientRect().width > 0) out.push(t.slice(0,55));
+    }});
+    return Array.from(new Set(out)).join(' | ');
+  }};
+  var ok = function(t) {{ return /pass|通过|正确|成功|success|verif|solved/i.test(t) && !/错误|wrong|incorrect/i.test(t); }};
+  var history = [];
+  var winner = -1;
+  for (var k = 0; k < 24; k++) {{
+    rs.click();
+    await new Promise(function(r){{ setTimeout(r, 120); }});
+    for (var i = 0; i < k; i++) {{ rr.click(); }}
+    await new Promise(function(r){{ setTimeout(r, 120); }});
+    ck.click();
+    await new Promise(function(r){{ setTimeout(r, 500); }});
+    var t = read();
+    history.push({{k: k, text: t.slice(0,60)}});
+    if (t && ok(t) && winner < 0) winner = k;
+  }}
+  return JSON.stringify({{winner: winner, history: history.slice(-24)}});
+}})()"#,
+            rr = serde_json::to_string(&rot_right_ref).unwrap_or_default(),
+            rl = serde_json::to_string(&rot_left_ref).unwrap_or_default(),
+            ck = serde_json::to_string(&check_ref).unwrap_or_default(),
+            rs = serde_json::to_string(&reset_ref).unwrap_or_default(),
+        );
+        let out = page
+            .evaluate(&js)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let s = out.as_str().unwrap_or_default();
+        let v: serde_json::Value = serde_json::from_str(s)
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        if let Some(err) = v.get("err").and_then(|e| e.as_str()).map(|e| e.to_string()) {
+            return Err(rmcp::model::ErrorData::internal_error(err, None));
+        }
+        let winner = v.get("winner").and_then(|w| w.as_i64()).unwrap_or(-1);
+        if winner < 0 {
+            return Ok(text_result(serde_json::to_string_pretty(&serde_json::json!({
+                "solved": false,
+                "history": v.get("history"),
+            }))
+            .unwrap_or_default()));
+        }
+        // Human replay of the winning rotation. Re-resolve refs first:
+        // the JS sweep mutates the page (React re-renders), stale DOM nodes
+        // fail the engine's a11y ref validation.
+        let rejs = format!(
+            r#"(function() {{
+  window.__gfxRefs = window.__gfxRefs || new Map();
+  var btns = document.querySelectorAll('button');
+  btns.forEach(function(b) {{
+    var t = (b.innerText||'').trim();
+    if (t.indexOf('向右') >= 0) window.__gfxRefs.set({rr}, b);
+    if (t.indexOf('向左') >= 0) window.__gfxRefs.set({rl}, b);
+    if (t.indexOf('检查') >= 0) window.__gfxRefs.set({ck}, b);
+    if (t.indexOf('重置') >= 0) window.__gfxRefs.set({rs}, b);
+  }});
+  return 'OK';
+}})()"#,
+            rr = serde_json::to_string(&rot_right_ref).unwrap_or_default(),
+            rl = serde_json::to_string(&rot_left_ref).unwrap_or_default(),
+            ck = serde_json::to_string(&check_ref).unwrap_or_default(),
+            rs = serde_json::to_string(&reset_ref).unwrap_or_default(),
+        );
+        let _ = page.evaluate(&rejs).await;
+        page.drag_ref(&reset_ref, "", 0.0, 0.0)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        for _ in 0..winner {
+            page.drag_ref(&rot_right_ref, "", 0.0, 0.0)
+                .await
+                .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        }
+        page.drag_ref(&check_ref, "", 0.0, 0.0)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let _ = self.recorder.record(
+            &session_id,
+            "page_captcha_rotate",
+            Some(&page_id),
+            serde_json::json!({ "clicks": winner, "angle": winner * 15 }),
+        );
+        Ok(text_result(serde_json::to_string_pretty(&serde_json::json!({
+            "solved": true,
+            "clicks": winner,
+            "angle": winner * 15,
         }))
         .unwrap_or_default()))
     }

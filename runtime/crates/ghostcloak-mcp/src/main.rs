@@ -3,6 +3,7 @@
 use rmcp::service::serve_server;
 use rmcp::transport::stdio;
 mod captcha;
+mod ddddocr;
 mod geetest;
 mod liveview;
 mod ocr;
