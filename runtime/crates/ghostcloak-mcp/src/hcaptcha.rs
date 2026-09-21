@@ -194,10 +194,10 @@ impl Glm {
         // and ask the model for CELL NUMBERS — classification, not grounding.
         // Handles every click variant including non-COCO objects (screw,
         // chimney...) and reasoning challenges.
-        // hCaptcha layout in the 520x570 iframe: header ~0..130, content
-        // ~130..(h-50), buttons at the bottom. Grid 3x3 over the content.
-        let cont_y0 = (h as f64 * 0.23) as u32;
-        let cont_h = (h as f64 * 0.87) as u32 - cont_y0;
+        // MEASURED on fresh demo challenges (520x570 iframe): instruction
+        // banner y118-144, tile grid y144-465, buttons y501-520.
+        let cont_y0 = 144.min(h as u32 / 2);
+        let cont_h = (h as u32).saturating_sub(cont_y0 + 105); // up to y = h-105
         if let Ok((grid_png, rect)) = grid_overlay(png, 3, Some((0, cont_y0, w, cont_h))) {
             if let Ok(cells) = self.pick_cells(&grid_png, w, h, 3).await {
                 if !cells.is_empty() {
@@ -236,14 +236,23 @@ impl Glm {
             "This challenge image has a {grid}x{grid} numbered grid (labels 0-{} in yellow, top-left of each cell). Read the instruction and reply ONLY with the cell numbers that must be clicked, comma separated (e.g. 3,7), or none. Cell numbering: left to right, top to bottom starting at 0.",
             grid * grid - 1
         );
-        let payload = serde_json::json!({
-            "messages": [{"role": "user", "content": [
-                {"type": "image_url", "image_url": {"url": format!("data:image/png;base64,{b64}")}},
-                {"type": "text", "text": prompt}
-            ]}],
-            "max_tokens": 3000
+        // PRIMARY: llama-3.2-11b vision — decisive on grid classification
+        // (live-tested: "3, 7" vs GLM's rambling). GLM as fallback.
+        let llama_payload = serde_json::json!({
+            "image": b64,
+            "prompt": prompt
         });
-        let text = self.glm_call(&payload).await?;
+        let mut text = self.llama_call(&llama_payload).await.unwrap_or_default();
+        if text.trim().is_empty() || text.trim().eq_ignore_ascii_case("none") {
+            let payload = serde_json::json!({
+                "messages": [{"role": "user", "content": [
+                    {"type": "image_url", "image_url": {"url": format!("data:image/png;base64,{b64}")}},
+                    {"type": "text", "text": prompt}
+                ]}],
+                "max_tokens": 3000
+            });
+            text = self.glm_call(&payload).await?;
+        }
         let mut cells = Vec::new();
         for tok in text.split(|c: char| c == ',' || c == '\n' || c.is_whitespace()) {
             if let Ok(n) = tok.trim().parse::<u32>() {
@@ -282,6 +291,29 @@ impl Glm {
             return Err(anyhow!("no words parsed"));
         }
         Ok(words)
+    }
+
+    /// One llama-3.2-11b vision call: {image, prompt} -> result.response.
+    async fn llama_call(&self, payload: &serde_json::Value) -> Result<String> {
+        let client = reqwest::Client::new();
+        let url = format!(
+            "https://api.cloudflare.com/client/v4/accounts/{}/ai/run/@cf/meta/llama-3.2-11b-vision-instruct",
+            self.account
+        );
+        let resp = client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", self.key))
+            .json(payload)
+            .send()
+            .await
+            .context("llama request failed")?;
+        let d: serde_json::Value = resp.json().await.context("llama response parse")?;
+        Ok(d
+            .get("result")
+            .and_then(|r| r.get("response"))
+            .and_then(|c| c.as_str())
+            .unwrap_or_default()
+            .to_string())
     }
 
     async fn glm_call(&self, payload: &serde_json::Value) -> Result<String> {
