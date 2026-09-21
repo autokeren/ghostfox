@@ -14,6 +14,7 @@ use std::sync::OnceLock;
 use anyhow::{anyhow, Context, Result};
 use ocrs::{OcrEngine, OcrEngineParams, OcrInput};
 use rten::Model;
+use rten_tensor::Layout as _;
 
 const DETECTION_URL: &str =
     "https://huggingface.co/robertknight/ocrs/resolve/main/text-detection-ssfbcj81.rten";
@@ -119,7 +120,7 @@ fn ocr_input_and_lines(eng: &OcrEngine, png: &[u8]) -> Result<(OcrInput, Vec<Vec
 /// Returns the recognized text.
 pub async fn ocr_chinese_png(png: &[u8]) -> Result<String> {
     // 1. Load model + dictionary (cached)
-    static CH_MODEL: once_cell::sync::OnceLock<(rten::Model, Vec<String>)> = once_cell::sync::OnceLock::new();
+    static CH_MODEL: OnceLock<(rten::Model, Vec<String>)> = OnceLock::new();
     let (model, dict) = CH_MODEL.get_or_init(|| {
         let models_dir = models_dir();
         let model_path = models_dir.join("chinese_ocr").join("ch_rec_v4.onnx");
@@ -139,7 +140,7 @@ pub async fn ocr_chinese_png(png: &[u8]) -> Result<String> {
     // 2. Load image, resize to 48x320 (PaddleOCR input format)
     let img = image::load_from_memory(png).context("decoding PNG for Chinese OCR")?;
     let rgb = img.to_rgb8();
-    let resized = image::imageops::resize(&rgb, 320, 48, image::imageops::FilterType::Linear);
+    let resized = image::imageops::resize(&rgb, 320, 48, image::imageops::FilterType::Triangle);
 
     // 3. Convert to CHW float32, normalized to [-1, 1]
     let (w, h) = resized.dimensions();
@@ -155,21 +156,23 @@ pub async fn ocr_chinese_png(png: &[u8]) -> Result<String> {
     }
 
     // 4. Run the model
-    let input_tensor = rten::Tensor::from_data(
-        &[1, 3, h as i32, w as i32],
-        &chw,
-    ).context("building input tensor")?;
+    let input_tensor = rten::Value::from_shape(&[1usize, 3, h as usize, w as usize], chw)
+        .context("building input tensor")?;
 
+    let in_id = model.input_ids()[0];
+    let out_id = model.output_ids()[0];
     let outputs = model
-        .run_n(&[("x", &input_tensor)])
+        .run(vec![(in_id, input_tensor.into())], &[out_id], None)
         .context("running Chinese OCR model")?;
-    let output = outputs[0].view();
+    let output = outputs[0].as_view();
 
     // 5. Decode: argmax per timestep → dict lookup
-    let shape = output.shape();
-    let seq_len = shape[1] as usize;
-    let num_classes = shape[2] as usize;
-    let data = output.data().expect("output data");
+    let rten::ValueView::FloatTensor(tv) = &output else {
+        return Err(anyhow!("Chinese OCR output is not a float tensor"));
+    };
+    let seq_len = tv.size(1);
+    let num_classes = tv.size(2);
+    let data = tv.data().expect("output data");
 
     let mut result = String::new();
     let mut prev_char: Option<usize> = None;

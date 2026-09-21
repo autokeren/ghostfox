@@ -426,12 +426,20 @@ Verified:
 - Pure API flow (crack.py protocol): 2/2 success (1st try + retry loop)
 
 Two integration paths:
-1. BROWSER HANDS: page widget shows challenge -> grab `.geetest_item_wrap`
-   bg URL from DOM -> `solve_image(bytes)` -> click box centers via
-   page_drag (human mouse) -> `.geetest_commit`. Box coords are in the
-   raw 344x384 image; field = top 344px shown at 333px (scale 333/344,
-   strip excluded: sy = h/(H-40)).
-2. API EYES+HANDS (no browser): `solve_api(gt, challenge)` does
+1. NATIVE MCP TOOL (primary): `page_geetest_click` — params
+   {session_id, page_id, ref} where ref = the `.geetest_item_wrap`
+   element. The tool fetches the challenge image off the element's
+   background URL, runs the trained pair IN RUST (rten, ~0.5s), and
+   returns `clicks` in PAGE coordinates (already mapped, ready for
+   page_drag) + `boxes_raw`. Then click each point via page_drag and
+   drag `.geetest_commit`. Verified on real bilibili: attempt-1
+   "Verification Succeeded". The siamese ships DEQUANTIZED
+   (`siamese_float.onnx`): upstream is dynamic-quantized and rten's
+   ONNX importer silently mangles ConvInteger/MatMulInteger — always
+   regenerate via tools/geetest-click/dequant_siamese.py, never ship
+   the raw quantized model.
+2. API EYES+HANDS (no browser, Python fallback): `solve_api(gt,
+   challenge)` in tools/geetest-click does
    gettype->get_c_s->ajax->get_pic->verify with AES/RSA + mouse-path
    encoding. Image comes from api.geevisit.com/get.php — bypasses the
    in-page widget entirely (the error_01 "refresh too much" killer).

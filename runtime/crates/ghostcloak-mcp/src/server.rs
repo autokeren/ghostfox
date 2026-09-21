@@ -145,6 +145,14 @@ struct DragParams {
     }
 
     #[derive(Debug, Deserialize, JsonSchema)]
+    struct GeetestClickParams {
+        session_id: String,
+        page_id: String,
+        /// Ref of the .geetest_item_wrap element (carries the challenge background image).
+        r#ref: String,
+    }
+
+    #[derive(Debug, Deserialize, JsonSchema)]
     struct PagesParams {
         session_id: String,
     }
@@ -978,6 +986,104 @@ impl GhostcloakServer {
         Ok(text_result(
             serde_json::to_string_pretty(&boxes).unwrap_or_default(),
         ))
+    }
+
+    #[tool(
+        description = "GEETEST ICON-CLICK SOLVER: solve the GeeTest v3 word-click captcha (characters on a photo, click in the strip's order) from the live page. Fetches the challenge image off the element's background, runs the trained ONNX pair (YOLOv8s char detection + siamese order matching, 100% local CPU, ~0.5s), and returns click targets in page coordinates plus the raw boxes. Call AFTER the challenge popup is open. Then click each 'click' point via page_drag and press the geetest confirm button. Returns JSON {clicks: [{x, y}, ...] in page px, boxes_raw: [[x, y], ...] in image px, rect: {...}, img: {w, h}}."
+    )]
+    async fn page_geetest_click(
+        &self,
+        Parameters(GeetestClickParams {
+            session_id,
+            page_id,
+            r#ref,
+        }): Parameters<GeetestClickParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let page = session
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        // 1. Background image URL + element rect (CSS px).
+        let js = format!(
+            r#"(function() {{
+  var el = (window.__gfxRefs || new Map()).get({r});
+  if (!el || !el.isConnected) return 'STALE-REF';
+  var bg = getComputedStyle(el).backgroundImage;
+  var m = bg.match(/url\(["']?([^"')]+)["']?\)/);
+  var r = el.getBoundingClientRect();
+  return JSON.stringify({{url: m ? m[1] : '', x: r.x, y: r.y, w: r.width, h: r.height}});
+}})()"#,
+            r = serde_json::to_string(&r#ref).unwrap_or_default()
+        );
+        let out = page
+            .evaluate(&js)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let s = out.as_str().unwrap_or_default();
+        if s == "STALE-REF" {
+            return Err(rmcp::model::ErrorData::invalid_params(
+                format!("ref {} is stale — rerun page_a11y", r#ref),
+                None,
+            ));
+        }
+        let info: serde_json::Value = serde_json::from_str(s)
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let url = info.get("url").and_then(|v| v.as_str()).unwrap_or("");
+        if url.is_empty() {
+            return Err(rmcp::model::ErrorData::internal_error(
+                "element has no background image — is the challenge open?",
+                None,
+            ));
+        }
+        // 2. Fetch the challenge image.
+        let bytes = reqwest::get(url)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?
+            .bytes()
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?
+            .to_vec();
+        let img = image::load_from_memory(&bytes)
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let (iw, ih) = (img.width(), img.height());
+        // 3. Trained eyes: YOLO detection + siamese order.
+        let boxes = crate::geetest::solve_image(&bytes)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        // 4. Map box centers to page coords. The raw image = field (top ih-40 px)
+        //    + instruction strip (bottom 40 px); the element shows the field region.
+        let rx = info.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let ry = info.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let rw = info.get("w").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let rh = info.get("h").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let sx = if iw > 0 { rw / iw as f64 } else { 1.0 };
+        let sy = if ih > 40 { rh / (ih - 40) as f64 } else { 1.0 };
+        let clicks: Vec<serde_json::Value> = boxes
+            .iter()
+            .map(|b| {
+                serde_json::json!({
+                    "x": (rx + (b[0] as f64 + 31.0) * sx).round(),
+                    "y": (ry + (b[1] as f64 + 31.0) * sy).round(),
+                })
+            })
+            .collect();
+        let _ = self.recorder.record(
+            &session_id,
+            "page_geetest_click",
+            Some(&page_id),
+            serde_json::json!({ "clicks": boxes.len(), "img": [iw, ih] }),
+        );
+        Ok(text_result(serde_json::to_string_pretty(&serde_json::json!({
+            "clicks": clicks,
+            "boxes_raw": boxes,
+            "rect": { "x": rx, "y": ry, "w": rw, "h": rh },
+            "img": { "w": iw, "h": ih },
+        }))
+        .unwrap_or_default()))
     }
 
     #[tool(

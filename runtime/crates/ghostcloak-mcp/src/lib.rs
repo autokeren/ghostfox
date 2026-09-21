@@ -2,3 +2,4 @@
 
 pub mod recording;
 pub mod ocr;
+pub mod geetest;
