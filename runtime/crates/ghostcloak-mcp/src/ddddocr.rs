@@ -34,19 +34,44 @@ struct DdddOcr {
 
 static ENGINE: OnceLock<DdddOcr> = OnceLock::new();
 
-fn engine() -> Result<&'static DdddOcr> {
+async fn download(url: &str, to: &PathBuf) -> Result<()> {
+    let tmp = to.with_extension("part");
+    let resp = reqwest::get(url)
+        .await
+        .map_err(|e| anyhow!("model download failed ({url}): {e}"))?;
+    let bytes = resp.bytes().await.map_err(|e| anyhow!("read failed: {e}"))?;
+    tokio::fs::write(&tmp, &bytes).await?;
+    tokio::fs::rename(&tmp, to).await?;
+    Ok(())
+}
+
+async fn ensure_files() -> Result<(PathBuf, PathBuf)> {
+    let dir = models_dir();
+    tokio::fs::create_dir_all(&dir).await?;
+    let model_path = dir.join("common.onnx");
+    let charset_path = dir.join("charset.txt");
+    if !model_path.exists() {
+        download(
+            "https://github.com/autokeren/ghostfox/releases/download/v0.6.7/common.onnx",
+            &model_path,
+        )
+        .await?;
+    }
+    if !charset_path.exists() {
+        download(
+            "https://github.com/autokeren/ghostfox/releases/download/v0.6.7/charset.txt",
+            &charset_path,
+        )
+        .await?;
+    }
+    Ok((model_path, charset_path))
+}
+
+async fn engine() -> Result<&'static DdddOcr> {
     if let Some(e) = ENGINE.get() {
         return Ok(e);
     }
-    let dir = models_dir();
-    let model_path = dir.join("common.onnx");
-    let charset_path = dir.join("charset.txt");
-    if !model_path.exists() || !charset_path.exists() {
-        return Err(anyhow!(
-            "ddddocr model missing at {} — ship common.onnx + charset.txt with the distribution",
-            dir.display()
-        ));
-    }
+    let (model_path, charset_path) = ensure_files().await?;
     let session = Session::builder()
         .context("creating ort session builder")?
         .commit_from_file(&model_path)
@@ -60,8 +85,8 @@ fn engine() -> Result<&'static DdddOcr> {
 }
 
 /// Classify captcha text from PNG bytes.
-pub fn classify_png(png: &[u8]) -> Result<String> {
-    let eng = engine()?;
+pub async fn classify_png(png: &[u8]) -> Result<String> {
+    let eng = engine().await?;
     let img = image::load_from_memory(png).context("decoding captcha image")?;
     let (ow, oh) = (img.width(), img.height());
     if ow == 0 || oh == 0 {

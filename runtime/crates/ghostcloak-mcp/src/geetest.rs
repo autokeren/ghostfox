@@ -24,7 +24,9 @@ use rten::Model;
 use rten_tensor::Layout as _;
 
 const YOLO_URL: &str =
-    "https://raw.githubusercontent.com/ravizhan/geetest-v3-click-crack/master/yolov8s.onnx";
+    "https://github.com/autokeren/ghostfox/releases/download/v0.6.7/yolov8s.onnx";
+const SIAMESE_URL: &str =
+    "https://github.com/autokeren/ghostfox/releases/download/v0.6.7/siamese_float.onnx";
 /// The siamese ships dequantized (`siamese_float.onnx`) because the upstream
 /// model is dynamic-quantized (DynamicQuantizeLinear/ConvInteger/MatMulInteger)
 /// which rten's ONNX importer mishandles. Regenerate with
@@ -73,10 +75,7 @@ async fn ensure_models() -> Result<(PathBuf, PathBuf)> {
         download(YOLO_URL, &yolo).await?;
     }
     if !siam.exists() {
-        return Err(anyhow!(
-            "siamese_float.onnx missing at {} — ship it with the distribution or generate via tools/geetest-click/dequant_siamese.py",
-            siam.display()
-        ));
+        download(SIAMESE_URL, &siam).await?;
     }
     Ok((yolo, siam))
 }

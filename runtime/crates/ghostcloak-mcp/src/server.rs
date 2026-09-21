@@ -1221,7 +1221,7 @@ impl GhostcloakServer {
         }): Parameters<CaptchaOcrParams>,
     ) -> Result<CallToolResult, rmcp::model::ErrorData> {
         let png = self.element_png(&session_id, &page_id, r#ref).await?;
-        let text = crate::ddddocr::classify_png(&png)
+        let text = crate::ddddocr::classify_png(&png).await
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
         let _ = self.recorder.record(
             &session_id,
