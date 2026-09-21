@@ -484,6 +484,24 @@ or Chinese character model for better OCR accuracy.
 
 ---
 
+## 6b. THE 7 CAPTCHA FAMILIES — final E2E (2026-09-21)
+
+All seven families re-verified in one day. Evidence screenshots under
+recordings/zjyjgwue/screenshots/0001..0010.
+
+| # | Family | Target | Verdict | Method |
+|---|---|---|---|---|
+| 1 | GeeTest v3 slide | demos.geetest.com/slide-popup | 验证成功 | canvas bg-vs-fullbg diff, LARGEST blob = hole (JPEG-noise trap: use diff>40 + closing 5x5, not raw threshold), piece solid alpha>128 left edge, drag = hole_x0 - piece_x0 |
+| 2 | Rotate | 2captcha /demo/rotatecaptcha | 验证码通过！ | fixed-image sweep: reset -> rotate k*15deg -> check. Answer = 165deg (11 clicks). H/V edge heuristic is 4-way ambiguous (90deg period) — the SWEEP is deterministic |
+| 3 | Normal image captcha | 2captcha /demo/normal | 验证码通过！ | ddddocr classification (first try, "w9h5k") + type_ref + check |
+| 4 | Cloudflare Turnstile | 2captcha /demo/cloudflare-turnstile | response token (dummy sitekey) | behavioral: scrollIntoView + click checkbox; response appears with NO challenge. Honest note: demo uses Cloudflare's test sitekey (XXXX.DUMMY.TOKEN) — real-site proof still pending |
+| 5 | GeeTest icon-click | passport.bilibili.com (REAL) | Verification Succeeded | NATIVE MCP tool page_geetest_click (YOLOv8s + siamese_float, rten) — attempt 1 |
+| 6 | TikTok OAuth + email OTP | tiktok.com | logged in (Messages: 2) | prior session's popup OAuth + Gmail OTP chase; session persists |
+| 7 | GeeTest v4 radar/one-click | demos.geetest.com/fullpage | 验证成功 | radar click escalates to slide (we look suspicious after a day of solving) -> family-1 recipe solves it |
+
+Slide drag numbers vary per challenge (132 / 89 px measured today) —
+always re-derive from the current canvases, never cache.
+
 ## 6. Anti-patterns (all tried, all failed)
 
 - ❌ Building a new tool for every edge case (`archived_detector`, etc.) —
