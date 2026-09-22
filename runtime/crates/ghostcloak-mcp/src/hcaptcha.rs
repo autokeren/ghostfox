@@ -155,6 +155,24 @@ pub fn coco_detect(png: &[u8], targets: &[usize], min_conf: f32) -> Result<Vec<(
     Ok(kept)
 }
 
+/// Parse the expected click count from instruction words ("TWO icons").
+fn count_from_instruction(s: &str) -> usize {
+    let low = s.to_lowercase();
+    for (word, n) in [
+        ("two", 2usize),
+        ("three", 3),
+        ("four", 4),
+        ("2", 2),
+        ("3", 3),
+        ("4", 4),
+    ] {
+        if low.contains(word) {
+            return n;
+        }
+    }
+    0 // unknown -> accept whatever the model returns
+}
+
 /// Is the challenge content rendered yet? Low center-variance = blank.
 pub fn is_rendered(png: &[u8]) -> bool {
     let img = match image::load_from_memory(png) {
@@ -181,6 +199,15 @@ pub struct Glm {
     key: String,
 }
 
+/// A solved challenge round: either a list of clicks, or a DRAG gesture
+/// (press at `from`, release at `to`), plus the verify button.
+#[derive(Debug, Default)]
+pub struct Solved {
+    pub clicks: Vec<(f64, f64)>,
+    pub drag: Option<((f64, f64), (f64, f64))>,
+    pub verify: Option<(f64, f64)>,
+}
+
 impl Glm {
     pub fn new(account: String, key: String) -> Self {
         Self { account, key }
@@ -189,30 +216,137 @@ impl Glm {
     /// Ask the vision model ONLY for the instruction text (its strength),
     /// then let COCO YOLO do detection+localization (its strength).
     /// Returns (click_points, verify_point) in the crop's coordinates.
-    pub async fn solve_challenge(&self, png: &[u8], w: u32, h: u32) -> Result<(Vec<(f64, f64)>, Option<(f64, f64)>)> {
-        // PRIMARY: numbered-grid classification. Overlay a 4x4 labeled grid
-        // and ask the model for CELL NUMBERS — classification, not grounding.
-        // Handles every click variant including non-COCO objects (screw,
-        // chimney...) and reasoning challenges.
-        // MEASURED on fresh demo challenges (520x570 iframe): instruction
-        // banner y118-144, tile grid y144-465, buttons y501-520.
-        let cont_y0 = 144.min(h as u32 / 2);
-        let cont_h = (h as u32).saturating_sub(cont_y0 + 105); // up to y = h-105
-        if let Ok((grid_png, rect)) = grid_overlay(png, 3, Some((0, cont_y0, w, cont_h))) {
-            if let Ok(cells) = self.pick_cells(&grid_png, w, h, 3).await {
-                if !cells.is_empty() {
-                    let cw = rect.2 / 3.0;
-                    let chh = rect.3 / 3.0;
-                    let clicks: Vec<(f64, f64)> = cells
-                        .iter()
-                        .map(|&(r, c)| (rect.0 + (c as f64 + 0.5) * cw, rect.1 + (r as f64 + 0.5) * chh))
-                        .collect();
-                    tracing::info!(target: "ghostcloak::mcp", "hcaptcha GRID path: cells={:?} clicks={:?}", cells, clicks);
-                    return Ok((clicks, Some((w as f64 - 50.0, h as f64 - 30.0))));
+    pub async fn solve_challenge(&self, png: &[u8], w: u32, h: u32) -> Result<Solved> {
+        // ROUTER: detect the challenge's real layout, then use the strategy
+        // that fits it — numbered-cell classification for tile grids, direct
+        // object pointing for single-image / reference-panel variants.
+        match detect_layout(png) {
+            Ok(Layout::Grid { x, y, w: gw, h: gh, cols }) => {
+                let rows = cols; // square grids
+                if let Ok((grid_png, _rect)) =
+                    grid_overlay(png, cols, Some((x as u32, y as u32, gw as u32, gh as u32)))
+                {
+                    if let Ok(cells) = self.pick_cells(&grid_png, w, h, cols).await {
+                        if !cells.is_empty() {
+                            let cw = gw / cols as f64;
+                            let chh = gh / rows as f64;
+                            let clicks: Vec<(f64, f64)> = cells
+                                .iter()
+                                .map(|&(r, c)| (x + (c as f64 + 0.5) * cw, y + (r as f64 + 0.5) * chh))
+                                .collect();
+                            tracing::info!(target: "ghostcloak::mcp", "hcaptcha GRID path: layout=({:?},{:?},{:?},{:?},cols={}) cells={:?} clicks={:?}", x, y, gw, gh, cols, cells, clicks);
+                            return Ok(Solved { clicks, verify: Some((w as f64 - 50.0, h as f64 - 60.0)), drag: None });
+                        }
+                    }
                 }
             }
+            Ok(Layout::Image { y: cy, h: chh }) => {
+                // Read the instruction first: drag challenges need a
+                // gesture, not clicks.
+                let inst = self.read_instruction_raw(png).await.unwrap_or_default();
+                if inst.to_lowercase().contains("drag") {
+                    // GLM consensus FIRST: live-tested it finds the matching
+                    // shape + slot reliably ((95,213)->(248,249) repeatedly),
+                    // while llama point guesses are noise. Llama is the
+                    // fallback.
+                    if let Ok((from, to)) = self.glm_drag_consensus(png).await {
+                        let dist = ((from.0 - to.0).powi(2) + (from.1 - to.1).powi(2)).sqrt();
+                        if dist >= 60.0 {
+                            tracing::info!(target: "ghostcloak::mcp", "hcaptcha DRAG-GLM consensus: {from:?} -> {to:?} dist={dist}");
+                            return Ok(Solved {
+                                clicks: vec![],
+                                verify: Some((w as f64 - 50.0, h as f64 - 60.0)),
+                                drag: Some((from, to)),
+                            });
+                        }
+                    }
+                    for attempt in 0..3 {
+                        if let Ok((from, to)) = self.point_drag(png).await {
+                            let dist = ((from.0 - to.0).powi(2) + (from.1 - to.1).powi(2)).sqrt();
+                            if dist >= 60.0 {
+                                tracing::info!(target: "ghostcloak::mcp", "hcaptcha DRAG path (attempt {attempt}): {from:?} -> {to:?} dist={dist}");
+                                return Ok(Solved {
+                                    clicks: vec![],
+                                    verify: Some((w as f64 - 50.0, h as f64 - 60.0)),
+                                    drag: Some((from, to)),
+                                });
+                            }
+                        }
+                    }
+                    // A click cannot solve a drag — fail the round rather
+                    // than wasting it on the wrong gesture type.
+                    return Err(anyhow!("drag targets not found (instruction: {inst})"));
+                }
+                // Two-step reasoning: llama RESOLVES the instruction
+                // to concrete objects (e.g. "animals that eat the shown
+                // food" + grass photo -> cow, sheep), then COCO YOLO
+                // localizes them precisely.
+                if let Ok(words) = self.resolve_targets(png).await {
+                    let idxs = coco_indices(&words);
+                    if !idxs.is_empty() {
+                        if let Ok(boxes) = coco_detect(png, &idxs, 0.28) {
+                            if !boxes.is_empty() {
+                                let clicks: Vec<(f64, f64)> = boxes
+                                    .iter()
+                                    .take(6)
+                                    .map(|&(x, y2, _)| (x, y2.max(cy + 6.0).min(cy + chh - 6.0)))
+                                    .collect();
+                                tracing::info!(target: "ghostcloak::mcp", "hcaptcha REASON path: words={:?} clicks={:?}", words, clicks);
+                                return Ok(Solved { clicks, verify: Some((w as f64 - 50.0, h as f64 - 60.0)), drag: None });
+                            }
+                        }
+                    }
+                }
+                // GLM pointing ensemble: GLM reasons about icon fields
+                // (live-tested: its picks cluster; llama's are noise at this
+                // icon size). 4 calls, cluster 40px, consensus >= 2 votes.
+                let want = count_from_instruction(&inst);
+                let mut all: Vec<(f64, f64)> = Vec::new();
+                for _ in 0..4 {
+                    if let Ok(mut solved) = self.glm_point(png).await {
+                        if solved.drag.is_some() {
+                            return Ok(solved);
+                        }
+                        for (x, y2) in solved.clicks {
+                            all.push((x, y2.max(cy + 6.0).min(cy + chh - 6.0)));
+                        }
+                    }
+                }
+                let mut clusters: Vec<((f64, f64), usize)> = Vec::new();
+                for p in all {
+                    if let Some(c) = clusters
+                        .iter_mut()
+                        .find(|((cx, cy2), _)| (cx - p.0).abs() < 40.0 && (cy2 - p.1).abs() < 40.0)
+                    {
+                        let k = c.1 as f64;
+                        c.0 = (((c.0).0 * (k - 1.0) + p.0) / k, ((c.0).1 * (k - 1.0) + p.1) / k);
+                        c.1 += 1;
+                    } else {
+                        clusters.push((p, 1));
+                    }
+                }
+                let mut cons: Vec<((f64, f64), usize)> =
+                    clusters.iter().filter(|(_, v)| *v >= 2).cloned().collect();
+                if cons.is_empty() {
+                    cons = clusters;
+                }
+                cons.sort_by(|a, b| b.1.cmp(&a.1));
+                let take = if want > 0 { want.min(cons.len()) } else { cons.len().min(4) };
+                let clicks: Vec<(f64, f64)> = cons.iter().take(take).map(|(p, _)| *p).collect();
+                if !clicks.is_empty() {
+                    tracing::info!(target: "ghostcloak::mcp", "hcaptcha GLM-ENSEMBLE: want={want} clusters={:?}", cons);
+                    return Ok(Solved {
+                        clicks,
+                        verify: Some((w as f64 - 50.0, h as f64 - 60.0)),
+                        drag: None,
+                    });
+                }
+            }
+            Err(e) => {
+                tracing::warn!(target: "ghostcloak::mcp", "layout detect failed: {e}");
+            }
         }
-        // SECONDARY: COCO split-labor (GLM words -> YOLO boxes).
+        // LAST RESORT: COCO split-labor (GLM words -> YOLO boxes).
         if let Ok(words) = self.read_instruction(png).await {
             let idxs = coco_indices(&words);
             if !idxs.is_empty() {
@@ -220,7 +354,7 @@ impl Glm {
                     if !boxes.is_empty() {
                         let clicks: Vec<(f64, f64)> = boxes.iter().take(6).map(|(x, y, _)| (*x, *y)).collect();
                         tracing::info!(target: "ghostcloak::mcp", "hcaptcha COCO path: words={:?} clicks={:?}", words, clicks);
-                        return Ok((clicks, Some((w as f64 - 50.0, h as f64 - 30.0))));
+                        return Ok(Solved { clicks, verify: Some((w as f64 - 50.0, h as f64 - 60.0)), drag: None });
                     }
                 }
             }
@@ -264,6 +398,217 @@ impl Glm {
         cells.dedup();
         let _ = (w, h);
         Ok(cells)
+    }
+
+    /// Drag challenges: locate the shape to move and its destination.
+    async fn point_drag(&self, png: &[u8]) -> Result<((f64, f64), (f64, f64))> {
+        let b64 = base64::engine::general_purpose::STANDARD.encode(png);
+        let prompt = "This is a drag-the-shape captcha. There is a shape/object that must be dragged, and an empty spot (outline, hole, or matching slot) somewhere ELSE in the image where it must go. Reply with exactly two lines: first the CENTER pixel of the draggable shape as 'x1 y1', then the CENTER of the destination slot as 'x2 y2'. The two points are usually FAR apart. Nothing else.";
+        let payload = serde_json::json!({ "image": b64, "prompt": prompt });
+        let text = self.llama_call(&payload).await?;
+        // take the first two coordinate pairs
+        let mut pts: Vec<(f64, f64)> = Vec::new();
+        for line in text.lines().take(4) {
+            let nums: Vec<f64> = line
+                .split_whitespace()
+                .filter_map(|t| t.parse::<f64>().ok())
+                .collect();
+            if nums.len() >= 2 {
+                pts.push((nums[0].clamp(2.0, 518.0), nums[1].clamp(2.0, 568.0)));
+            }
+        }
+        if pts.len() < 2 {
+            return Err(anyhow!("drag: fewer than two points"));
+        }
+        Ok((pts[0], pts[1]))
+    }
+
+    /// One GLM pointing call on the full challenge crop.
+    async fn glm_point(&self, png: &[u8]) -> Result<Solved> {
+        let b64 = base64::engine::general_purpose::STANDARD.encode(png);
+        let prompt = "Read the instruction at the top of this captcha challenge. Then give the exact pixel coordinates (x, y) of the element(s) that satisfy it. Reply ONLY coordinate pairs, one per line: x y. If the instruction asks to DRAG something, reply with ONE line: D x1 y1 x2 y2 (source then destination).";
+        let payload = serde_json::json!({
+            "messages": [{"role": "user", "content": [
+                {"type": "image_url", "image_url": {"url": format!("data:image/png;base64,{b64}")}},
+                {"type": "text", "text": prompt}
+            ]}],
+            "max_tokens": 5000
+        });
+        let text = self.glm_call(&payload).await?;
+        let (clicks, verify, drag) = parse_clicks_full(&text, 520.0, 570.0);
+        Ok(Solved { clicks, drag, verify })
+    }
+
+    /// GLM drag ensemble: 3 calls, parse D-lines, cluster source and
+    /// destination separately, return the 2/3-majority pair.
+    async fn glm_drag_consensus(&self, png: &[u8]) -> Result<((f64, f64), (f64, f64))> {
+        let b64 = base64::engine::general_purpose::STANDARD.encode(png);
+        // Focused 2-part: shorter reasoning per call beats one long one
+        // (the 408 ceiling punishes deep single-shot analysis).
+        let _ = serde_json::json!({
+            "messages": [{"role": "user", "content": [
+                {"type": "image_url", "image_url": {"url": format!("data:image/png;base64,{b64}")}},
+                {"type": "text", "text": "Where is the EMPTY SLOT / target outline in this drag captcha? Reply with ONLY its center: x y"}
+            ]}],
+            "max_tokens": 6000
+        });
+        let prompt = "This is a drag-the-shape captcha. TWO QUESTIONS, answer each on its own line: 1) SLOT x y (center of the empty target slot/outline) 2) SHAPE x y (center of the draggable shape that matches the slot's pattern). Be concise, no long analysis.";
+        let payload = serde_json::json!({
+            "messages": [{"role": "user", "content": [
+                {"type": "image_url", "image_url": {"url": format!("data:image/png;base64,{b64}")}},
+                {"type": "text", "text": prompt}
+            ]}],
+            "max_tokens": 11000
+        });
+        let mut sources: Vec<(f64, f64)> = Vec::new();
+        let mut dests: Vec<(f64, f64)> = Vec::new();
+        for _ in 0..4 {
+            let Ok(text) = self.glm_call(&payload).await else { continue };
+            // Parse "SLOT x y" and "SHAPE x y" lines (also tolerates a
+            // combined "D x1 y1 x2 y2" line). Prose numbers are ignored:
+            // only lines that START with the keywords count.
+            let mut slot: Option<(f64, f64)> = None;
+            let mut shape: Option<(f64, f64)> = None;
+            for line in text.lines() {
+                let trimmed = line.trim().trim_start_matches("1)").trim_start_matches("2)").trim();
+                let upper = trimmed.to_uppercase();
+                let is_slot = upper.starts_with("SLOT");
+                let is_shape = upper.starts_with("SHAPE");
+                let is_d = trimmed.starts_with('D') && trimmed.split_whitespace().count() == 5;
+                let nums: Vec<f64> = trimmed
+                    .split(|c: char| c.is_whitespace())
+                    .filter_map(|t| t.trim_matches(|c: char| !c.is_ascii_digit() && c != '.').parse::<f64>().ok())
+                    .collect();
+                if is_slot && nums.len() >= 2 {
+                    slot = Some((nums[0], nums[1]));
+                } else if is_shape && nums.len() >= 2 {
+                    shape = Some((nums[0], nums[1]));
+                } else if is_d && nums.len() >= 4 {
+                    slot = Some((nums[2], nums[3]));
+                    shape = Some((nums[0], nums[1]));
+                }
+            }
+            if let Some(s) = slot {
+                dests.push(s);
+            }
+            if let Some(s) = shape {
+                sources.push(s);
+            }
+        }
+        if sources.is_empty() {
+            return Err(anyhow!("glm drag: no answers"));
+        }
+        let consensus = |pts: &[(f64, f64)]| -> (f64, f64) {
+            let mut clusters: Vec<((f64, f64), usize)> = Vec::new();
+            for p in pts {
+                if let Some(c) = clusters
+                    .iter_mut()
+                    .find(|((cx, cy), _)| (cx - p.0).abs() < 50.0 && (cy - p.1).abs() < 50.0)
+                {
+                    let k = c.1 as f64;
+                    c.0 = (((c.0).0 * (k - 1.0) + p.0) / k, ((c.0).1 * (k - 1.0) + p.1) / k);
+                    c.1 += 1;
+                } else {
+                    clusters.push((*p, 1));
+                }
+            }
+            clusters.sort_by(|a, b| b.1.cmp(&a.1));
+            clusters.first().map(|(p, _)| *p).unwrap_or(pts[0])
+        };
+        // source: require 2+ votes when possible (it's the critical pick)
+        let mut s_clusters: Vec<((f64, f64), usize)> = Vec::new();
+        for p in &sources {
+            if let Some(c) = s_clusters
+                .iter_mut()
+                .find(|((cx, cy), _)| (cx - p.0).abs() < 50.0 && (cy - p.1).abs() < 50.0)
+            {
+                c.0 = (c.0 .0, c.0 .1);
+                c.1 += 1;
+            } else {
+                s_clusters.push((*p, 1));
+            }
+        }
+        s_clusters.sort_by(|a, b| b.1.cmp(&a.1));
+        let src = s_clusters.first().map(|(p, _)| *p).unwrap_or(sources[0]);
+        Ok((src, consensus(&dests)))
+    }
+
+    /// Read just the instruction text (raw).
+    async fn read_instruction_raw(&self, png: &[u8]) -> Result<String> {
+        let b64 = base64::engine::general_purpose::STANDARD.encode(png);
+        let prompt = "Read the instruction in this captcha challenge. Reply with ONLY the instruction text, nothing else.";
+        let payload = serde_json::json!({ "image": b64, "prompt": prompt });
+        let text = self.llama_call(&payload).await?;
+        if text.trim().is_empty() {
+            return Err(anyhow!("empty instruction"));
+        }
+        Ok(text)
+    }
+
+    /// Two-step reasoning: resolve the instruction (which may reference a
+    /// shown example/food) into CONCRETE object names. E.g. "tap animals
+    /// that rely on the shown food source" + a grass photo -> cow, sheep.
+    async fn resolve_targets(&self, png: &[u8]) -> Result<Vec<String>> {
+        let b64 = base64::engine::general_purpose::STANDARD.encode(png);
+        let prompt = "Look at this captcha challenge. Read the instruction at the top. It may reference a reference image (a food source, an example object, etc). RESOLVE which concrete objects satisfy the instruction — for example, if the instruction asks for animals that eat the shown food, answer with the names of animals that eat that food. Reply with ONLY the English object name(s), comma separated, singular form.";
+        let payload = serde_json::json!({ "image": b64, "prompt": prompt });
+        let text = self.llama_call(&payload).await?;
+        if text.trim().is_empty() {
+            return Err(anyhow!("resolve: empty answer"));
+        }
+        let words: Vec<String> = text
+            .split(|c: char| c == ',' || c == '\n' || c == '.' || c.is_whitespace())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty() && s.len() < 30)
+            .take(6)
+            .collect();
+        if words.is_empty() {
+            return Err(anyhow!("resolve: no words"));
+        }
+        Ok(words)
+    }
+
+    /// Single-image challenges: one llama call — read the instruction and
+    /// list the pixel coordinates of every element to click.
+    async fn point_targets(&self, png: &[u8]) -> Result<Solved> {
+        let b64 = base64::engine::general_purpose::STANDARD.encode(png);
+        let prompt = "Read the instruction in this captcha challenge. If it asks to DRAG something somewhere, reply with ONE line: D x1 y1 x2 y2 (source then destination centers). Otherwise list the pixel coordinates (x, y) of EVERY element that must be clicked, one per line, format: x y. If there is a Verify/Submit button, output its center as the final line: V x y. Nothing else.";
+        let payload = serde_json::json!({ "image": b64, "prompt": prompt });
+        let text = self.llama_call(&payload).await?;
+        let (clicks, verify, drag) = parse_clicks_full(&text, 520.0, 570.0);
+        let solved = Solved { clicks, drag, verify };
+        Ok(solved)
+    }
+
+
+    /// Instrumented twin of solve_challenge: also returns the detected
+    /// layout and the raw model answer for debugging.
+    pub async fn solve_challenge_dbg(
+        &self,
+        png: &[u8],
+        w: u32,
+        h: u32,
+    ) -> Result<(Solved, String, String)> {
+        let layout = detect_layout(png).map(|l| match l {
+            Layout::Grid { x, y, w: gw, h: gh, cols } =>
+                format!("grid x={x:.0} y={y:.0} w={gw:.0} h={gh:.0} cols={cols}"),
+            Layout::Image { y, h: chh } => format!("image y={y:.0} h={chh:.0}"),
+        }).unwrap_or_else(|e| format!("detect-failed: {e}"));
+        let b64 = base64::engine::general_purpose::STANDARD.encode(png);
+        let raw = if let Ok(l) = detect_layout(png) {
+            match l {
+                Layout::Grid { .. } => {
+                    let prompt = "Read the instruction in this captcha challenge. What single object or category must be selected? Reply with ONLY the object name(s).";
+                    self.llama_call(&serde_json::json!({"image": b64, "prompt": prompt})).await.unwrap_or_default()
+                }
+                Layout::Image { .. } => {
+                    let prompt = "Read the instruction in this captcha challenge and reply with ONLY the instruction text, nothing else.";
+                    self.llama_call(&serde_json::json!({"image": b64, "prompt": prompt})).await.unwrap_or_default()
+                }
+            }
+        } else { String::new() };
+        let solved = self.solve_challenge(png, w, h).await?;
+        Ok((solved, layout, raw.chars().take(180).collect::<String>()))
     }
 
     /// GLM reads the instruction; returns the target object words.
@@ -351,7 +696,7 @@ impl Glm {
     }
 
     /// Legacy path: GLM enumerates click coordinates directly.
-    async fn solve_by_coords(&self, png: &[u8], w: u32, h: u32) -> Result<(Vec<(f64, f64)>, Option<(f64, f64)>)> {
+    async fn solve_by_coords(&self, png: &[u8], w: u32, h: u32) -> Result<Solved> {
         let b64 = base64::engine::general_purpose::STANDARD.encode(png);
         let prompt = format!(
             "Solve this captcha challenge ({w}x{h} pixels).\n\nRULE: your entire answer must be ONLY coordinate lines. No descriptions, no sentences.\n\nFor every element that must be clicked, output one line with its center pixel coordinates:\n<x> <y>\n\nIf there is a Verify or Submit button, output its center as the FINAL line:\nV <x> <y>\n\nExample answer:\n120 150\n240 320\nV 460 540"
@@ -442,22 +787,44 @@ impl Glm {
             let (sx, sy): (f64, f64) = all_verify.iter().fold((0.0, 0.0), |a, p| (a.0 + p.0, a.1 + p.1));
             Some((sx / all_verify.len() as f64, sy / all_verify.len() as f64))
         } else {
-            Some((w as f64 - 50.0, h as f64 - 30.0))
+            Some((w as f64 - 50.0, h as f64 - 60.0))
         };
         tracing::info!(target: "ghostcloak::mcp", "hcaptcha glm: clicks={:?} verify={:?}", clicks, verify);
-        Ok((clicks, verify))
+        Ok(Solved { clicks, verify, drag: None })
     }
 }
 
-/// Parse "<x> <y>" lines and a trailing "V <x> <y>" verify point.
-/// Coordinates are clamped to the image bounds. Near-duplicate points
-/// (within 30px) collapse into one.
-pub fn parse_clicks(s: &str, w: f64, h: f64) -> (Vec<(f64, f64)>, Option<(f64, f64)>) {
+/// Parse "<x> <y>" lines, a trailing "V <x> <y>" verify point, and an
+/// optional "D x1 y1 x2 y2" drag line. Coordinates clamped to bounds.
+/// Near-duplicate points (within 30px) collapse into one.
+pub fn parse_clicks_full(
+    s: &str,
+    w: f64,
+    h: f64,
+) -> (Vec<(f64, f64)>, Option<(f64, f64)>, Option<((f64, f64), (f64, f64))>) {
     let mut clicks: Vec<(f64, f64)> = Vec::new();
     let mut verify: Option<(f64, f64)> = None;
+    let mut drag: Option<((f64, f64), (f64, f64))> = None;
     for line in s.lines() {
         let mut parts = line.split_whitespace();
         let (a, b, c) = (parts.next(), parts.next(), parts.next());
+        let is_drag = matches!(a, Some(t) if t.eq_ignore_ascii_case("d") || t.eq_ignore_ascii_case("drag"));
+        if is_drag {
+            let mut rest = parts;
+            let (Some(x1), Some(y1), Some(x2), Some(y2)) =
+                (rest.next(), rest.next(), rest.next(), rest.next())
+            else {
+                continue;
+            };
+            let (Ok(x1f), Ok(y1f), Ok(x2f), Ok(y2f)) =
+                (x1.parse::<f64>(), y1.parse::<f64>(), x2.parse::<f64>(), y2.parse::<f64>())
+            else {
+                continue;
+            };
+            let clamp = |v: f64, max: f64| v.clamp(2.0, max - 2.0);
+            drag = Some(((clamp(x1f, w), clamp(y1f, h)), (clamp(x2f, w), clamp(y2f, h))));
+            continue;
+        }
         let is_verify = matches!(a, Some(t) if t.eq_ignore_ascii_case("v") || t.contains("erif") || t.contains("erify") || t.contains("ubmit"));
         let (x_tok, y_tok) = if is_verify {
             (b, c)
@@ -477,6 +844,12 @@ pub fn parse_clicks(s: &str, w: f64, h: f64) -> (Vec<(f64, f64)>, Option<(f64, f
             }
         }
     }
+    (clicks, verify, drag)
+}
+
+/// Legacy parser wrapper (no drag).
+pub fn parse_clicks(s: &str, w: f64, h: f64) -> (Vec<(f64, f64)>, Option<(f64, f64)>) {
+    let (clicks, verify, _) = parse_clicks_full(s, w, h);
     (clicks, verify)
 }
 
@@ -556,4 +929,126 @@ pub fn grid_overlay(png: &[u8], grid: u32, content: Option<(u32, u32, u32, u32)>
     let mut buf = std::io::Cursor::new(Vec::new());
     rgb.write_to(&mut buf, ImageFormat::Png).context("grid encode")?;
     Ok((buf.into_inner(), (ox as f64, oy as f64, w as f64, h as f64)))
+}
+
+/// Detected challenge layout from pixel band analysis.
+#[derive(Debug)]
+pub enum Layout {
+    /// 3x3-style tile grid with its real rect + column count.
+    Grid { x: f64, y: f64, w: f64, h: f64, cols: u32 },
+    /// Single image (click-on-object) or reference-panel variant: the
+    /// model must point at targets directly.
+    Image { y: f64, h: f64 },
+}
+
+/// Detect the challenge layout from solid-band pixel analysis:
+/// banner (solid row band), sub-banner, buttons, then column
+/// separators inside the tile area. Fresh-measured on the 520x570
+/// iframe: banner y118-144, tiles y144-465, buttons y501-520.
+pub fn detect_layout(png: &[u8]) -> Result<Layout> {
+    let img = image::load_from_memory(png).context("layout decode")?;
+    let g = img.to_luma8();
+    let (w, h) = g.dimensions();
+    if w < 20 || h < 20 {
+        return Err(anyhow!("challenge image too small"));
+    }
+    // row std
+    let mut row_std = vec![0f64; h as usize];
+    for y in 0..h as usize {
+        let mut sum = 0f64;
+        let mut sumsq = 0f64;
+        for x in 0..w as usize {
+            let v = g.get_pixel(x as u32, y as u32).0[0] as f64;
+            sum += v;
+            sumsq += v * v;
+        }
+        let n = w as f64;
+        row_std[y] = (sumsq / n - (sum / n) * (sum / n)).max(0.0).sqrt();
+    }
+    // solid bands (std < 9, run >= 4 rows)
+    let mut bands: Vec<(u32, u32)> = Vec::new();
+    let mut y = 0usize;
+    while y < h as usize {
+        if row_std[y] < 9.0 {
+            let start = y;
+            while y < h as usize && row_std[y] < 9.0 {
+                y += 1;
+            }
+            if y - start >= 4 {
+                bands.push((start as u32, y as u32));
+            }
+        } else {
+            y += 1;
+        }
+    }
+    // banner = first solid band starting >= 40px down, >= 10px tall
+    let banner = bands
+        .iter()
+        .find(|b| b.0 >= 40 && b.1 - b.0 >= 10)
+        .ok_or_else(|| anyhow!("no instruction banner band found"))?;
+    // sub-banner: next solid band well below the banner (>= 80px under it)
+    let sub = bands.iter().find(|b| b.0 > banner.1 + 80 && b.1 - b.0 >= 10);
+    let content_top = banner.1 + 2;
+    let content_bottom = sub.map(|b| b.0 - 2).unwrap_or(h.saturating_sub(55));
+    if content_bottom <= content_top + 20 {
+        return Err(anyhow!("degenerate content area"));
+    }
+    // column std within the content rows
+    let band_h = (content_bottom - content_top) as usize;
+    let mut col_std = vec![0f64; w as usize];
+    for x in 0..w as usize {
+        let mut sum = 0f64;
+        let mut sumsq = 0f64;
+        for y in (content_top as usize)..(content_bottom as usize) {
+            let v = g.get_pixel(x as u32, y as u32).0[0] as f64;
+            sum += v;
+            sumsq += v * v;
+        }
+        let n = band_h as f64;
+        col_std[x] = (sumsq / n - (sum / n) * (sum / n)).max(0.0).sqrt();
+    }
+    let mut colbands: Vec<(u32, u32)> = Vec::new();
+    let mut x = 0usize;
+    while x < w as usize {
+        if col_std[x] < 8.0 {
+            let start = x;
+            while x < w as usize && col_std[x] < 8.0 {
+                x += 1;
+            }
+            if x - start >= 3 {
+                colbands.push((start as u32, x as u32));
+            }
+        } else {
+            x += 1;
+        }
+    }
+    // reference-panel variant: a wide solid column on the left half
+    if colbands.iter().any(|b| b.1 - b.0 >= 80 && b.0 < w / 2) {
+        return Ok(Layout::Image { y: content_top as f64, h: (content_bottom - content_top) as f64 });
+    }
+    // thin vertical separators -> tile grid. Sanity: separators must sit
+    // away from the edges, be few (2-3), and leave a wide, tall content
+    // rect — otherwise it's an icon field and pointing is the strategy.
+    let seps: Vec<(u32, u32)> = colbands
+        .iter()
+        .filter(|b| b.1 - b.0 <= 12 && b.0 >= 40 && b.1 <= w.saturating_sub(40))
+        .cloned()
+        .collect();
+    if (2..=3).contains(&seps.len()) {
+        let gx0 = seps.first().map(|s| s.1).unwrap_or(0);
+        let gx1 = seps.last().map(|s| s.0).unwrap_or(w);
+        let gw = gx1.saturating_sub(gx0);
+        let gh = content_bottom.saturating_sub(content_top);
+        let cols = seps.len() as u32 + 1;
+        if gw as f64 >= w as f64 * 0.4 && gh as f64 >= h as f64 * 0.25 {
+            return Ok(Layout::Grid {
+                x: gx0 as f64,
+                y: content_top as f64,
+                w: gw as f64,
+                h: gh as f64,
+                cols,
+            });
+        }
+    }
+    Ok(Layout::Image { y: content_top as f64, h: (content_bottom - content_top) as f64 })
 }

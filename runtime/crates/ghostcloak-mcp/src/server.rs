@@ -1447,16 +1447,47 @@ impl GhostcloakServer {
                     .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
                 ready_png = b2.into_inner();
             }
-            let (clicks, verify) = glm
-                .solve_challenge(&ready_png, cropped.width(), cropped.height())
+            let (solved, layout, model_raw) = glm
+                .solve_challenge_dbg(&ready_png, cropped.width(), cropped.height())
                 .await
                 .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
             debug_rounds.push(serde_json::json!({
                 "round": round + 1,
                 "iframe": { "x": cx, "y": cy, "w": cw, "h": ch },
-                "clicks": clicks,
-                "verify": verify,
+                "layout": layout,
+                "model": model_raw,
+                "clicks": solved.clicks,
+                "drag": solved.drag,
+                "verify": solved.verify,
             }));
+            // DRAG challenge: press at source, human-drag to target.
+            if let Some((from, to)) = solved.drag {
+                let mk = format!(
+                    r#"(function() {{
+  window.__gfxRefs = window.__gfxRefs || new Map();
+  var d = document.createElement('div');
+  d.style.cssText = 'position:fixed;left:{fx}px;top:{fy}px;width:2px;height:2px;z-index:99999;pointer-events:none;';
+  document.body.appendChild(d);
+  window.__gfxRefs.set('hc_drag', d);
+  return 'OK';
+}})()"#,
+                    fx = cx + from.0,
+                    fy = cy + from.1
+                );
+                let _ = page.evaluate(&mk).await;
+                page.drag_ref("hc_drag", "", to.0 - from.0, to.1 - from.1)
+                    .await
+                    .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+                tokio::time::sleep(std::time::Duration::from_millis(2500)).await;
+                let out = page.evaluate(token_js).await.unwrap_or_default();
+                response_len = out.as_i64().unwrap_or(0);
+                if response_len > 0 {
+                    break;
+                }
+                continue;
+            }
+            let clicks = solved.clicks;
+            let verify = solved.verify;
 
             for (i, (px, py)) in clicks.iter().enumerate() {
                 let mk = format!(
