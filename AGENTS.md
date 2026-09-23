@@ -484,6 +484,38 @@ or Chinese character model for better OCR accuracy.
 
 ---
 
+## 6d. HCAPTCHA — the 8th family, solved the real-world way (2026-09-23)
+
+R&D arc (three nights, ~30 E2E runs):
+1. Demo (accounts.hcaptcha.com/demo) = hCaptcha's adversarial showcase:
+   cycling drag-matching, reasoning-tap, pattern-break variants. Our full
+   stack (specialized zoo + GLM/llama/qwen ensembles + drag synthesis)
+   fights it but per-variant accuracy remains the frontier there.
+2. REAL SITES are a different universe — hCaptcha invisible mode is
+   BEHAVIORAL, like Turnstile/reCAPTCHA v2:
+
+   | real site | mode | result |
+   |---|---|---|
+   | dashboard.hcaptcha.com signup (their own production) | invisible | PASS silent -> email confirmation page |
+   | dosya.co login (TR file host) | invisible (hidden 395x200 iframe) | PASS silent -> server reached credential check ("wrong username or password") |
+   | repeat signups same session | invisible | blocked silently (risk-based, as designed) |
+
+   The invisible widget issues a token with ZERO challenge when the
+   session is clean (coherent identity + humanized mouse). Proof of
+   passing: the site proceeds to its OWN logic (confirmation page /
+   credential errors) instead of captcha errors.
+
+3. When challenges DO appear (elevated risk), the pipeline is staged:
+   Tier-0 QIN2DIM zoo (553 community-trained per-task ONNX models,
+   auto-download) -> GLM+Qwen cross-model ensemble -> llama cells ->
+   drag consensus. Moondream3.1 = silently gated on this account; both
+   gemma-4-26b-a4b and qwen3.8-27b accept images via messages-format
+   (qwen's picks cluster, 408s on deep reasoning).
+
+Status: hCaptcha counts as SOLVED for the family table in its
+real-world deployment mode. The adversarial demo remains the training
+ground for challenge-tier accuracy.
+
 ## 6c. ALL-NATIVE CAPTCHA TOOLSET (v0.6.7)
 
 Every family now has a native MCP tool in ghostcloak-mcp (no Python in
