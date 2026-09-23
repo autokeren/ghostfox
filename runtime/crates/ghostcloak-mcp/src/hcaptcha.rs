@@ -268,6 +268,68 @@ impl Glm {
                 // YOLO detectors). The instruction names the task; the zoo
                 // names the model. Skip for drag challenges (gesture type).
                 if !inst.to_lowercase().contains("drag") {
+                    // ODD-ONE-OUT (all local): zoo detects every icon, the
+                    // GeeTest siamese compares them pairwise, and the icon
+                    // LEAST similar to the rest is "the different one".
+                    let lowi = inst.to_lowercase();
+                    if lowi.contains("different") || lowi.contains("appears only once") {
+                        if let Some((file, is_seg, min_conf)) = hc_pick_model(&inst) {
+                            if let Ok(dets) =
+                                hc_detect_boxes(png, file, is_seg, (min_conf * 0.9).max(0.25)).await
+                            {
+                                if dets.len() >= 3 {
+                                    if let Ok(img) = image::load_from_memory(png) {
+                                        let rgb = img.to_rgb8();
+                                        let iw = rgb.width();
+                                        let ih = rgb.height();
+                                        let mut crops: Vec<(f64, f64, Vec<u8>)> = Vec::new();
+                                        for (cx, cy, bw, bh, _) in &dets {
+                                            let pad = 6.0;
+                                            let x0 = ((cx - bw / 2.0 - pad).max(0.0)) as u32;
+                                            let y0 = ((cy - bh / 2.0 - pad).max(0.0)) as u32;
+                                            let x1 = ((cx + bw / 2.0 + pad).min(iw as f64)) as u32;
+                                            let y1 = ((cy + bh / 2.0 + pad).min(ih as f64)) as u32;
+                                            if x1 <= x0 || y1 <= y0 {
+                                                continue;
+                                            }
+                                            let c = image::imageops::crop_imm(&rgb, x0, y0, x1 - x0, y1 - y0)
+                                                .to_image();
+                                            let mut buf = std::io::Cursor::new(Vec::new());
+                                            if c.write_to(&mut buf, image::ImageFormat::Png).is_ok() {
+                                                crops.push((*cx, *cy, buf.into_inner()));
+                                            }
+                                        }
+                                        if crops.len() >= 3 {
+                                            let n = crops.len();
+                                            let mut sim_sum = vec![0f32; n];
+                                            for a in 0..n {
+                                                for b in (a + 1)..n {
+                                                    if let Ok(s) =
+                                                        crate::geetest::siamese_similarity(&crops[a].2, &crops[b].2).await
+                                                    {
+                                                        sim_sum[a] += s;
+                                                        sim_sum[b] += s;
+                                                    }
+                                                }
+                                            }
+                                            let mut best = 0usize;
+                                            for i in 1..n {
+                                                if sim_sum[i] < sim_sum[best] {
+                                                    best = i;
+                                                }
+                                            }
+                                            tracing::info!(target: "ghostcloak::mcp", "hcaptcha ODD-ONE-OUT: n={n} sims={sim_sum:?} pick=({:?}, {:?})", crops[best].0, crops[best].1);
+                                            return Ok(Solved {
+                                                clicks: vec![(crops[best].0, crops[best].1)],
+                                                verify: Some((w as f64 - 50.0, h as f64 - 60.0)),
+                                                drag: None,
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                     if let Some((file, is_seg, min_conf)) = hc_pick_model(&inst) {
                         if let Ok(boxes) = hc_detect(png, file, is_seg, min_conf).await {
                             if !boxes.is_empty() {
@@ -342,8 +404,15 @@ impl Glm {
                 // icon size). 4 calls, cluster 40px, consensus >= 2 votes.
                 let want = count_from_instruction(&inst);
                 let mut all: Vec<(f64, f64)> = Vec::new();
-                for _ in 0..4 {
-                    if let Ok(mut solved) = self.glm_point(png).await {
+                // cross-model ensemble: 2x GLM + 2x Qwen (27B). When two
+                // different architectures agree on a point, that's signal.
+                for i in 0..4 {
+                    let res = if i % 2 == 0 {
+                        self.glm_point(png).await
+                    } else {
+                        self.qwen_point(png).await
+                    };
+                    if let Ok(mut solved) = res {
                         if solved.drag.is_some() {
                             return Ok(solved);
                         }
@@ -467,14 +536,63 @@ impl Glm {
     async fn glm_point(&self, png: &[u8]) -> Result<Solved> {
         let b64 = base64::engine::general_purpose::STANDARD.encode(png);
         let prompt = "Read the instruction at the top of this captcha challenge. Then give the exact pixel coordinates (x, y) of the element(s) that satisfy it. Reply ONLY coordinate pairs, one per line: x y. If the instruction asks to DRAG something, reply with ONE line: D x1 y1 x2 y2 (source then destination).";
+        self.cf_vision_point(b64, prompt, "@cf/zai-org/glm-5.3-flash", 5000).await
+    }
+
+    /// Qwen3.8-27b pointing vote — the biggest vision model on the
+    /// account; live-tested consistent clusters ((450,259) 3/3 calls)
+    /// plus perfect concise instruction reads. 408s on hard drag
+    /// reasoning (thinking budget > edge limit), so it is a point-voter
+    /// only.
+    async fn qwen_point(&self, png: &[u8]) -> Result<Solved> {
+        let b64 = base64::engine::general_purpose::STANDARD.encode(png);
+        let prompt = "The image is 520x570 pixels. Read the instruction in this captcha challenge. Give the exact PIXEL coordinates (x, y) of every element that must be clicked. Reply ONLY x y lines.";
+        self.cf_vision_point(b64, prompt, "@cf/qwen/qwen3.8-27b", 4000).await
+    }
+
+    /// Shared messages-format vision call; parses x y / D lines.
+    async fn cf_vision_point(&self, b64: String, prompt: &str, model: &str, mt: u32) -> Result<Solved> {
         let payload = serde_json::json!({
             "messages": [{"role": "user", "content": [
                 {"type": "image_url", "image_url": {"url": format!("data:image/png;base64,{b64}")}},
                 {"type": "text", "text": prompt}
             ]}],
-            "max_tokens": 5000
+            "max_tokens": mt
         });
-        let text = self.glm_call(&payload).await?;
+        let url = format!(
+            "https://api.cloudflare.com/client/v4/accounts/{}/ai/run/{model}",
+            self.account
+        );
+        let client = reqwest::Client::new();
+        let resp = client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", self.key))
+            .json(&payload)
+            .send()
+            .await
+            .context("cf vision request failed")?;
+        let d: serde_json::Value = resp.json().await.context("cf vision parse")?;
+        let msg = d
+            .get("result")
+            .and_then(|r| r.get("choices"))
+            .and_then(|c| c.get(0))
+            .and_then(|c| c.get("message"))
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        let text = msg
+            .get("content")
+            .and_then(|c| c.as_str())
+            .filter(|s| !s.trim().is_empty())
+            .map(|s| s.to_string())
+            .or_else(|| {
+                msg.get("reasoning_content")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+            })
+            .unwrap_or_default();
+        if text.trim().is_empty() {
+            return Err(anyhow!("cf vision empty answer"));
+        }
         let (clicks, verify, drag) = parse_clicks_full(&text, 520.0, 570.0);
         Ok(Solved { clicks, drag, verify })
     }
@@ -1150,7 +1268,16 @@ pub fn hc_pick_model(inst: &str) -> Option<(&'static str, bool, f32)> {
 /// detection ([1,C,8400], classes at 4..C) and seg models
 /// ([1,37,8400]: only channel 4 is the score). Returns box centers
 /// in image coords, confidence-sorted, NMS-deduped.
+pub async fn hc_detect_boxes(png: &[u8], model_file: &str, is_seg: bool, min_conf: f32) -> Result<Vec<(f64, f64, f64, f64, f32)>> {
+    hc_detect_impl(png, model_file, is_seg, min_conf, true).await
+}
+
 pub async fn hc_detect(png: &[u8], model_file: &str, is_seg: bool, min_conf: f32) -> Result<Vec<(f64, f64)>> {
+    let boxes = hc_detect_impl(png, model_file, is_seg, min_conf, false).await?;
+    Ok(boxes.into_iter().map(|(x, y, _, _, _)| (x, y)).collect())
+}
+
+async fn hc_detect_impl(png: &[u8], model_file: &str, is_seg: bool, min_conf: f32, want_boxes: bool) -> Result<Vec<(f64, f64, f64, f64, f32)>> {
     let path = hc_model_dir().join(model_file);
     if !path.exists() {
         // on-demand: pull from the QIN2DIM model release (553-model zoo)
@@ -1200,26 +1327,29 @@ pub async fn hc_detect(png: &[u8], model_file: &str, is_seg: bool, min_conf: f32
     };
     let xf = ow / 640.0;
     let yf = oh / 640.0;
-    let mut hits: Vec<(f64, f64, f32)> = Vec::new();
+    let mut hits: Vec<(f64, f64, f64, f64, f32)> = Vec::new();
     for sc in score_channels {
         let scores = &data[sc * n..(sc + 1) * n];
         for i in 0..n {
             if scores[i] >= min_conf {
                 let cx = data[i] as f64 * xf;
                 let cy = data[n + i] as f64 * yf;
-                hits.push((cx, cy, scores[i]));
+                let bw = data[2 * n + i] as f64 * xf;
+                let bh = data[3 * n + i] as f64 * yf;
+                hits.push((cx, cy, bw, bh, scores[i]));
             }
         }
     }
-    hits.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
-    let mut kept: Vec<(f64, f64)> = Vec::new();
-    for (x, y, _) in hits {
+    hits.sort_by(|a, b| b.4.partial_cmp(&a.4).unwrap_or(std::cmp::Ordering::Equal));
+    let mut kept: Vec<(f64, f64, f64, f64, f32)> = Vec::new();
+    for (x, y, bw, bh, s) in hits {
         if kept
             .iter()
-            .all(|(kx, ky)| ((kx - x) * (kx - x) + (ky - y) * (ky - y)).sqrt() > 35.0)
+            .all(|(kx, ky, _, _, _)| ((kx - x) * (kx - x) + (ky - y) * (ky - y)).sqrt() > 35.0)
         {
-            kept.push((x, y));
+            kept.push((x, y, bw, bh, s));
         }
     }
+    let _ = want_boxes;
     Ok(kept)
 }

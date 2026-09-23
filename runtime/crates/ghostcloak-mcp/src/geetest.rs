@@ -82,7 +82,7 @@ async fn ensure_models() -> Result<(PathBuf, PathBuf)> {
 
 struct GtModels {
     yolo: Model,
-    siamese: Model,
+    siamese: std::sync::Mutex<Model>,
 }
 
 static MODELS: OnceLock<GtModels> = OnceLock::new();
@@ -96,7 +96,9 @@ async fn models() -> Result<&'static GtModels> {
     let siam_bytes = tokio::fs::read(&siam_path).await?;
     let m = GtModels {
         yolo: Model::load(yolo_bytes).context("loading yolov8s.onnx")?,
-        siamese: Model::load(siam_bytes).context("loading siamese.onnx")?,
+        siamese: std::sync::Mutex::new(
+            Model::load(siam_bytes).context("loading siamese.onnx")?,
+        ),
     };
     Ok(MODELS.get_or_init(|| m))
 }
@@ -263,13 +265,17 @@ pub async fn solve_image(img_bytes: &[u8]) -> Result<Vec<[i32; 2]>> {
             )
             .to_image();
             let d2 = siamese_prep(&crop);
-            let in1 = models.siamese.node_id("input").context("siamese input node")?;
-            let in2 = models.siamese.node_id("input.53").context("siamese input2 node")?;
-            let out_id = models.siamese.output_ids()[0];
-            let out = models
+            let mut session = models
                 .siamese
+                .lock()
+                .map_err(|_| anyhow!("siamese session poisoned"))?;
+            let in1 = session.node_id("input").context("siamese input node")?;
+            let in2 = session.node_id("input.53").context("siamese input2 node")?;
+            let out_id = session.output_ids()[0];
+            let out = session
                 .run(vec![(in1, d1.as_view().into()), (in2, d2.into())], &[out_id], None)
                 .context("siamese inference")?;
+            drop(session);
             let v = out[0].as_view();
             let sim = match &v {
                 rten::ValueView::FloatTensor(tv) => tv.data().and_then(|d| d.first().copied()).unwrap_or(0.0),
@@ -282,6 +288,35 @@ pub async fn solve_image(img_bytes: &[u8]) -> Result<Vec<[i32; 2]>> {
         }
     }
     Ok(result)
+}
+
+/// Public similarity helper: two PNG crops -> siamese sigmoid score
+/// (1.0 = identical glyph family). Used by the hCaptcha solver for
+/// odd-one-out comparisons: the icon with the LOWEST average
+/// similarity to the others is "the different one".
+pub async fn siamese_similarity(png1: &[u8], png2: &[u8]) -> Result<f32> {
+    let m = models().await?;
+    let img1 = image::load_from_memory(png1).context("sim decode 1")?;
+    let img2 = image::load_from_memory(png2).context("sim decode 2")?;
+    let d1 = siamese_prep(&img1.to_rgb8());
+    let d2 = siamese_prep(&img2.to_rgb8());
+    let mut session = m
+        .siamese
+        .lock()
+        .map_err(|_| anyhow!("siamese session poisoned"))?;
+    let in1 = session.node_id("input").context("siamese input node")?;
+    let in2 = session.node_id("input.53").context("siamese input2 node")?;
+    let out_id = session.output_ids()[0];
+    let out = session
+        .run(vec![(in1, d1.into()), (in2, d2.into())], &[out_id], None)
+        .context("siamese inference")?;
+    drop(session);
+    let v = out[0].as_view();
+    let raw = match &v {
+        rten::ValueView::FloatTensor(tv) => tv.data().and_then(|d| d.first().copied()).unwrap_or(0.0),
+        _ => 0.0,
+    };
+    Ok(1.0 / (1.0 + (-raw).exp()))
 }
 
 /// Binary closing: dilate then erode with an s x s square kernel.
