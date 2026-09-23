@@ -484,6 +484,32 @@ or Chinese character model for better OCR accuracy.
 
 ---
 
+## 6e. REAL-SITE PROOF MATRIX + the hunt notes (2026-09-24)
+
+Fully proven on production sites: GeeTest icon-click (bilibili 5x),
+hCaptcha (2 production sites, silent pass), TikTok OAuth+OTP.
+
+Normal captcha — KEY DISCOVERY: bilibili's production login embeds a
+SECOND-VERIFICATION image captcha (二次校验) in the DOM:
+`.captcha-img__img` + `.captcha-img__btn` (换一张) + input
+placeholder 输入图片中的内容, maxlength 5, inside `.dialog__body`.
+It activates when the login backend escalates (repeated credential
+failures / risk). Trigger blocked today by bilibili's login API rate
+limit (Timed out wall after ~10 attempts). NEXT SESSION: fresh
+identity -> 2-3 wrong-credential cycles -> the dialog opens -> the
+ddddocr native tool solves it (pipeline ready).
+
+Dead ends mapped (do not retry): buff.163.com login = NetEase Yidun
+(iframe dl.reg.163.com), NOT GeeTest; douyu.com = anti-bot shell page;
+4chan captcha not exposed pre-interaction; phpBB.com community uses
+"sortables" drag captcha, not image; e-hentai evals blocked by adult
+gate; iqiyi login button not found (page variant).
+
+GeeTest slide/v4 real-site: Chinese login pages (jd/douban) block our
+evals — need mobile UA or fresh identity next time.
+Turnstile real-key sites run it INVISIBLY by design (no UI).
+Rotate: practically extinct in production.
+
 ## 6d. HCAPTCHA — the 8th family, solved the real-world way (2026-09-23)
 
 R&D arc (three nights, ~30 E2E runs):
