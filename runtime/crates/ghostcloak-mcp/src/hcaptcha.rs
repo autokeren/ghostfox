@@ -170,6 +170,26 @@ fn count_from_instruction(s: &str) -> usize {
             return n;
         }
     }
+    // singular patterns: "the icon that is different", "appears only
+    // once", "click the X" -> exactly one pick.
+    for pat in [
+        "appears only once",
+        "that is different",
+        "that's different",
+        "which is different",
+        "is different",
+        "does not follow",
+        "doesn't follow",
+        "breaks the pattern",
+    ] {
+        if low.contains(pat) {
+            return 1;
+        }
+    }
+    // "click THE <x>" (singular article) -> 1
+    if low.contains("click the ") || low.contains("tap the ") {
+        return 1;
+    }
     0 // unknown -> accept whatever the model returns
 }
 
