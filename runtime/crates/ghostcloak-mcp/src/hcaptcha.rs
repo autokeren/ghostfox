@@ -244,6 +244,26 @@ impl Glm {
                 // Read the instruction first: drag challenges need a
                 // gesture, not clicks.
                 let inst = self.read_instruction_raw(png).await.unwrap_or_default();
+                // TIER 0: specialized zoo model (QIN2DIM-trained, per-task
+                // YOLO detectors). The instruction names the task; the zoo
+                // names the model. Skip for drag challenges (gesture type).
+                if !inst.to_lowercase().contains("drag") {
+                    if let Some((file, is_seg, min_conf)) = hc_pick_model(&inst) {
+                        if let Ok(boxes) = hc_detect(png, file, is_seg, min_conf).await {
+                            if !boxes.is_empty() {
+                                let want = count_from_instruction(&inst);
+                                let take = if want > 0 { want.min(boxes.len()) } else { boxes.len().min(5) };
+                                let clicks: Vec<(f64, f64)> = boxes.iter().take(take).cloned().collect();
+                                tracing::info!(target: "ghostcloak::mcp", "hcaptcha ZOO path: model={file} clicks={clicks:?}", file = file);
+                                return Ok(Solved {
+                                    clicks,
+                                    verify: Some((w as f64 - 50.0, h as f64 - 60.0)),
+                                    drag: None,
+                                });
+                            }
+                        }
+                    }
+                }
                 if inst.to_lowercase().contains("drag") {
                     // GLM consensus FIRST: live-tested it finds the matching
                     // shape + slot reliably ((95,213)->(248,249) repeatedly),
@@ -1051,4 +1071,135 @@ pub fn detect_layout(png: &[u8]) -> Result<Layout> {
         }
     }
     Ok(Layout::Image { y: content_top as f64, h: (content_bottom - content_top) as f64 })
+}
+
+/// hCaptcha challenge-model zoo — community-trained specialized
+/// detectors (QIN2DIM/hcaptcha-challenger, model-factory). Same trick
+/// as the GeeTest pair: specialized beats general VLM.
+/// (name, file, is_seg, min_conf)
+const HC_ZOO: &[(&str, &str, bool, f32)] = &[
+    ("appears only once", "appears_only_once_2309_yolov8s-seg.onnx", true, 0.55),
+    ("different", "appears_only_once_2309_yolov8s-seg.onnx", true, 0.55),
+    ("not follow", "appears_only_once_2309_yolov8s-seg.onnx", true, 0.55),
+    ("break the pattern", "appears_only_once_2309_yolov8s-seg.onnx", true, 0.55),
+    ("once", "appears_only_once_2309_yolov8s-seg.onnx", true, 0.55),
+    ("food", "can_be_eaten_2312_yolov8s.onnx", false, 0.35),
+    ("eaten", "can_be_eaten_2312_yolov8s.onnx", false, 0.35),
+    ("eat", "can_be_eaten_2312_yolov8s.onnx", false, 0.35),
+    ("head of the animal", "head_of_the_animal_2310_yolov8s.onnx", false, 0.40),
+    ("head of an animal", "head_of_the_animal_2310_yolov8s.onnx", false, 0.40),
+    ("animalhead", "animalhead2315_yolov8s.onnx", false, 0.40),
+    ("head of the", "animalhead2315_yolov8s.onnx", false, 0.40),
+    ("animal", "animal2309_yolov8s.onnx", false, 0.40),
+    ("nested smallest", "nested_smallest_bird2312.onnx", false, 0.40),
+    ("nested largest", "nested_largest_lion2309.onnx", false, 0.40),
+    ("nested colder", "nested_colder_bedroom2309.onnx", false, 0.40),
+    ("something you can eat", "something_you_can_eat2312.onnx", false, 0.35),
+    ("land vehicle", "land_vehicle2309.onnx", false, 0.35),
+    ("vehicle", "land_vehicle2309.onnx", false, 0.35),
+    ("observation wheel", "observation_wheel_2309_yolov8n.onnx", false, 0.40),
+    ("treasure", "treasurechest2309_yolov8n.onnx", false, 0.40),
+    ("chest", "treasurechest2309_yolov8n.onnx", false, 0.40),
+];
+
+fn hc_model_dir() -> PathBuf {
+    let home = std::env::var("GHOSTFOX_HOME").unwrap_or_else(|_| {
+        dirs::home_dir()
+            .map(|d| d.join(".ghostfox"))
+            .map(|d| d.to_string_lossy().into_owned())
+            .unwrap_or_else(|| ".ghostfox".into())
+    });
+    PathBuf::from(home).join("models").join("hcaptcha")
+}
+
+/// Pick the zoo model for an instruction (longest keyword match wins).
+pub fn hc_pick_model(inst: &str) -> Option<(&'static str, bool, f32)> {
+    let low = inst.to_lowercase();
+    let mut best: Option<(usize, &str, bool, f32)> = None;
+    for (kw, file, seg, conf) in HC_ZOO {
+        if low.contains(kw) {
+            if best.as_ref().map_or(true, |(len, _, _, _)| kw.len() > *len) {
+                best = Some((kw.len(), file, *seg, *conf));
+            }
+        }
+    }
+    best.map(|(_, f, s, c)| (f, s, c))
+}
+
+/// Run a zoo YOLO model on the challenge crop. Handles both plain
+/// detection ([1,C,8400], classes at 4..C) and seg models
+/// ([1,37,8400]: only channel 4 is the score). Returns box centers
+/// in image coords, confidence-sorted, NMS-deduped.
+pub async fn hc_detect(png: &[u8], model_file: &str, is_seg: bool, min_conf: f32) -> Result<Vec<(f64, f64)>> {
+    let path = hc_model_dir().join(model_file);
+    if !path.exists() {
+        // on-demand: pull from the QIN2DIM model release (553-model zoo)
+        let url = format!(
+            "https://github.com/QIN2DIM/hcaptcha-challenger/releases/download/model/{model_file}"
+        );
+        let resp = reqwest::get(&url).await.map_err(|e| anyhow!("zoo download failed: {e}"))?;
+        let bytes_dl = resp.bytes().await.map_err(|e| anyhow!("zoo download read: {e}"))?;
+        tokio::fs::write(&path, &bytes_dl)
+            .await
+            .with_context(|| format!("writing {}", path.display()))?;
+    }
+    let bytes = tokio::fs::read(&path).await?;
+    let model = Model::load(bytes).context("loading hc model")?;
+    let img = image::load_from_memory(png).context("hc detect decode")?;
+    let rgb = img.to_rgb8();
+    let (ow, oh) = (rgb.width() as f64, rgb.height() as f64);
+    let resized = image::imageops::resize(&rgb, 640, 640, FilterType::Triangle);
+    let (w, h) = (640usize, 640usize);
+    let pixels = resized.as_raw();
+    let mut chw = vec![0f32; 3 * w * h];
+    for (i, px) in pixels.chunks(3).enumerate() {
+        let x = i % w;
+        let y = i / w;
+        let base = w * h;
+        chw[0 * base + y * w + x] = px[0] as f32 / 255.0;
+        chw[1 * base + y * w + x] = px[1] as f32 / 255.0;
+        chw[2 * base + y * w + x] = px[2] as f32 / 255.0;
+    }
+    let input = rten::Value::from_shape(&[1usize, 3, h, w], chw).context("hc input tensor")?;
+    let in_id = model.input_ids()[0];
+    let out_id = model.output_ids()[0];
+    let outputs = model
+        .run(vec![(in_id, input.into())], &[out_id], None)
+        .context("hc inference")?;
+    let out = outputs[0].as_view();
+    let rten::ValueView::FloatTensor(tv) = &out else {
+        return Err(anyhow!("hc output not float"));
+    };
+    let n = tv.size(2); // 8400
+    let ch = tv.size(1);
+    let data = tv.data().context("hc output data")?;
+    let score_channels: Vec<usize> = if is_seg {
+        vec![4]
+    } else {
+        (4..ch).collect()
+    };
+    let xf = ow / 640.0;
+    let yf = oh / 640.0;
+    let mut hits: Vec<(f64, f64, f32)> = Vec::new();
+    for sc in score_channels {
+        let scores = &data[sc * n..(sc + 1) * n];
+        for i in 0..n {
+            if scores[i] >= min_conf {
+                let cx = data[i] as f64 * xf;
+                let cy = data[n + i] as f64 * yf;
+                hits.push((cx, cy, scores[i]));
+            }
+        }
+    }
+    hits.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+    let mut kept: Vec<(f64, f64)> = Vec::new();
+    for (x, y, _) in hits {
+        if kept
+            .iter()
+            .all(|(kx, ky)| ((kx - x) * (kx - x) + (ky - y) * (ky - y)).sqrt() > 35.0)
+        {
+            kept.push((x, y));
+        }
+    }
+    Ok(kept)
 }
