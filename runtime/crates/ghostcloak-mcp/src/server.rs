@@ -185,6 +185,22 @@ struct DragParams {
     }
 
     #[derive(Debug, Deserialize, JsonSchema)]
+    struct ConsoleParams {
+        session_id: String,
+        page_id: String,
+        /// Drain the buffer after reading (default: keep entries).
+        clear: Option<bool>,
+    }
+
+    #[derive(Debug, Deserialize, JsonSchema)]
+    struct ErrorsParams {
+        session_id: String,
+        page_id: String,
+        /// Drain the buffer after reading (default: keep entries).
+        clear: Option<bool>,
+    }
+
+    #[derive(Debug, Deserialize, JsonSchema)]
     struct RotateParams {
         session_id: String,
         page_id: String,
@@ -799,13 +815,16 @@ impl GhostcloakServer {
             .await
             .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
         let entries = page
-            .net_capture_list()
+            .net_read(false)
             .await
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
         let filtered: Vec<serde_json::Value> = entries
             .into_iter()
-            .filter(|(url, _)| filter.as_deref().is_none_or(|f| url.contains(f)))
-            .map(|(url, id)| serde_json::json!({ "url": url, "requestId": id }))
+            .filter(|e| {
+                filter
+                    .as_deref()
+                    .is_none_or(|f| e.get("url").and_then(|u| u.as_str()).unwrap_or("").contains(f))
+            })
             .collect();
         Ok(text_result(serde_json::to_string_pretty(&filtered).unwrap_or_default()))
     }
@@ -1672,6 +1691,74 @@ impl GhostcloakServer {
             "angle": winner * 15,
         }))
         .unwrap_or_default()))
+    }
+
+    #[tool(
+        description = "DEBUG CORTEX: read the page's console output (log/warning/error) captured at the PROTOCOL level — the page cannot hide or patch it. Invisible debugger for AI agents: reproduce the bug, read what the page logged. Optionally filter noise by clearing after read. Returns JSON [{kind, text, url, line, ts}]. Auto-starts capture on first call."
+    )]
+    async fn page_console(
+        &self,
+        Parameters(ConsoleParams {
+            session_id,
+            page_id,
+            clear,
+        }): Parameters<ConsoleParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let page = session
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let entries = page
+            .console_read(clear.unwrap_or(false))
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let _ = self.recorder.record(
+            &session_id,
+            "page_console",
+            Some(&page_id),
+            serde_json::json!({ "entries": entries.len() }),
+        );
+        Ok(text_result(
+            serde_json::to_string_pretty(&entries).unwrap_or_default(),
+        ))
+    }
+
+    #[tool(
+        description = "DEBUG CORTEX: read the page's UNCAUGHT JS EXCEPTIONS with stack traces, captured at the protocol level. The error console a developer opens in DevTools — as a tool. Returns JSON [{text, url, line, stack: [frames], ts}]. Auto-starts capture on first call."
+    )]
+    async fn page_errors(
+        &self,
+        Parameters(ErrorsParams {
+            session_id,
+            page_id,
+            clear,
+        }): Parameters<ErrorsParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let page = session
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let entries = page
+            .errors_read(clear.unwrap_or(false))
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let _ = self.recorder.record(
+            &session_id,
+            "page_errors",
+            Some(&page_id),
+            serde_json::json!({ "errors": entries.len() }),
+        );
+        Ok(text_result(
+            serde_json::to_string_pretty(&entries).unwrap_or_default(),
+        ))
     }
 
     #[tool(

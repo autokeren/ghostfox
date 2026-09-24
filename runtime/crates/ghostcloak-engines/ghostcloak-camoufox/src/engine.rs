@@ -658,6 +658,13 @@ impl Engine for CamoufoxEngine {
                     Some(&sid),
                 )
                 .await;
+            // v0.7 DEBUG CORTEX: console + exception events from page
+            // birth — Juggler needs Page.runtimeEnable (not Runtime.enable;
+            // that's the v0.6.3 blocker, decoded 2026-09-25).
+            let _ = self
+                .conn
+                .request_session("Page.runtimeEnable", serde_json::json!({}), Some(&sid))
+                .await;
         }
 
         // 4. Keep execution-context and frame ids live: contexts are
@@ -737,6 +744,127 @@ impl Engine for CamoufoxEngine {
                                 }
                                 _ => {}
                             }
+
+                            // v0.7 DEBUG CORTEX (correct pump — this one lives
+                            // forever): console/errors/network buffered from
+                            // page birth, before the cross-talk filter? AFTER —
+                            // events here already passed our-session matching.
+                            // v0.7 DEBUG CORTEX (correct pump — this one lives forever):
+                            // console/errors/network buffered from page birth.
+                        if let Some(m) = method {
+                            let buf = debug_buffers_for(&handle2.target_id);
+                            match m {
+                                "Runtime.console" => {
+                                    let kind = msg.pointer("/params/type").and_then(|v| v.as_str()).unwrap_or("log").to_string();
+                                    let mut parts: Vec<String> = Vec::new();
+                                    if let Some(args) = msg.pointer("/params/args").and_then(|v| v.as_array()) {
+                                        for a in args.iter().take(4) {
+                                            if let Some(v) = a.get("value") {
+                                                match v {
+                                                    serde_json::Value::String(s2) => parts.push(s2.clone()),
+                                                    other => parts.push(other.to_string()),
+                                                }
+                                            } else if let Some(t) = a.get("type").and_then(|v| v.as_str()) {
+                                                parts.push(format!("[{t}]"));
+                                            }
+                                        }
+                                    }
+                                    let entry = serde_json::json!({
+                                        "kind": kind,
+                                        "text": parts.join(" "),
+                                        "ts": now_ms(),
+                                    });
+                                    let mut c = buf.console.lock().unwrap();
+                                    c.push(entry);
+                                    let keep_from = c.len().saturating_sub(500);
+                                    if keep_from > 0 { c.drain(0..keep_from); }
+                                }
+                                "Page.uncaughtError" => {
+                                    let text = msg.pointer("/params/message").and_then(|v| v.as_str()).unwrap_or("exception").to_string();
+                                    let url = msg.pointer("/params/location/url").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                    let line = msg.pointer("/params/location/lineNumber").and_then(|v| v.as_u64()).unwrap_or(0);
+                                    let stack = msg.pointer("/params/stack").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                    let entry = serde_json::json!({
+                                        "text": text,
+                                        "url": url,
+                                        "line": line,
+                                        "stack": vec![stack],
+                                        "ts": now_ms(),
+                                    });
+                                    let mut e = buf.errors.lock().unwrap();
+                                    e.push(entry);
+                                    let keep_from = e.len().saturating_sub(200);
+                                    if keep_from > 0 { e.drain(0..keep_from); }
+                                }
+                                "Network.requestWillBeSent" => {
+                                    let rid = msg.pointer("/params/requestId").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                    let url2 = msg.pointer("/params/request/url").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                    let mth = msg.pointer("/params/request/method").and_then(|v| v.as_str()).unwrap_or("GET").to_string();
+                                    if !url2.starts_with("data:") && !rid.is_empty() {
+                                        let mut n = buf.net.lock().unwrap();
+                                        let mut ix = buf.net_index.lock().unwrap();
+                                        if !ix.contains_key(&rid) {
+                                            ix.insert(rid.clone(), n.len());
+                                            n.push(serde_json::json!({
+                                                "requestId": rid,
+                                                "url": url2,
+                                                "method": mth,
+                                                "status": serde_json::Value::Null,
+                                                "done": false,
+                                                "ts": now_ms(),
+                                            }));
+                                            if n.len() > 1000 {
+                                                let drop = n.len().saturating_sub(1000);
+                                                if drop > 0 { n.drain(0..drop); }
+                                                ix.clear();
+                                                for (i, e2) in n.iter().enumerate() {
+                                                    if let Some(r) = e2.get("requestId").and_then(|v| v.as_str()) {
+                                                        ix.insert(r.to_string(), i);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                "Network.responseReceived" => {
+                                    let rid = msg.pointer("/params/requestId").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                    let status = msg.pointer("/params/response/status").and_then(|v| v.as_u64());
+                                    if let (Some(ix_val), Ok(mut n)) = (
+                                        buf.net_index.lock().unwrap().get(&rid).copied(),
+                                        buf.net.try_lock(),
+                                    ) {
+                                        if let Some(e2) = n.get_mut(ix_val) {
+                                            e2["status"] = serde_json::json!(status);
+                                            e2["done"] = serde_json::json!(true);
+                                        }
+                                    }
+                                }
+                                "Network.requestFinished" => {
+                                    let rid = msg.pointer("/params/requestId").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                    if let (Some(ix_val), Ok(mut n)) = (
+                                        buf.net_index.lock().unwrap().get(&rid).copied(),
+                                        buf.net.try_lock(),
+                                    ) {
+                                        if let Some(e2) = n.get_mut(ix_val) {
+                                            e2["done"] = serde_json::json!(true);
+                                        }
+                                    }
+                                }
+                                "Network.requestFailed" => {
+                                    let rid = msg.pointer("/params/requestId").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                                    if let (Some(ix_val), Ok(mut n)) = (
+                                        buf.net_index.lock().unwrap().get(&rid).copied(),
+                                        buf.net.try_lock(),
+                                    ) {
+                                        if let Some(e2) = n.get_mut(ix_val) {
+                                            e2["status"] = serde_json::json!(0);
+                                            e2["done"] = serde_json::json!(true);
+                                        }
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
                             if method == Some("Page.navigationCommitted") {
                                 if let Some(fid) =
                                     msg.pointer("/params/frameId").and_then(|v| v.as_str())
@@ -1121,6 +1249,47 @@ fn net_log_for(target_id: &str) -> std::sync::Arc<NetLog> {
     reg.entry(target_id.to_string())
         .or_insert_with(|| std::sync::Arc::new(std::sync::Mutex::new(Vec::new())))
         .clone()
+}
+
+// ---------------------------------------------------------------------------
+// v0.7 DEBUG CORTEX — console + errors + structured network, per target.
+// All captured at the Juggler protocol level: invisible to page JS.
+// ---------------------------------------------------------------------------
+
+#[derive(Default)]
+struct DebugBuffers {
+    console: std::sync::Mutex<Vec<serde_json::Value>>,
+    errors: std::sync::Mutex<Vec<serde_json::Value>>,
+    net: std::sync::Mutex<Vec<serde_json::Value>>,
+    net_index: std::sync::Mutex<std::collections::HashMap<String, usize>>,
+    listening: std::sync::atomic::AtomicBool,
+}
+
+impl DebugBuffers {
+    fn new() -> Self {
+        Self::default()
+    }
+}
+
+static DEBUG_REGISTRY: std::sync::OnceLock<
+    std::sync::Mutex<std::collections::HashMap<String, Arc<DebugBuffers>>>,
+> = std::sync::OnceLock::new();
+
+fn debug_buffers_for(target_id: &str) -> Arc<DebugBuffers> {
+    let reg = DEBUG_REGISTRY
+        .get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+    let mut reg = reg.lock().unwrap();
+    reg.entry(target_id.to_string())
+        .or_insert_with(|| Arc::new(DebugBuffers::new()))
+        .clone()
+}
+
+/// Human epoch ms.
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 #[async_trait]
@@ -1591,55 +1760,221 @@ impl PageHandle for CamoufoxPage {
         CamoufoxPage::add_init_script(self, source).await
     }
 
+    /// v0.7 DEBUG CORTEX: start protocol-level capture. Enables the
+    /// Juggler Network domain (passive observation — the v0.6.3 bug was
+    /// using Network.setRequestInterception, which HOLDS requests and
+    /// never emitted events without Network.enable) and spawns one
+    /// listener that buffers console messages, uncaught exceptions, and
+    /// structured network entries for this page.
     async fn net_capture_start(&self) -> Result<()> {
         let sid = self.session_id().await?;
-        // NOTE: Network.setRequestInterception HOLDS requests until resumed.
-        // Our auto-resume exists but the events may not flow through this
-        // connection — leaving interception OFF for now (the page works
-        // normally; responses will be captured if/when events flow).
         let tid = self.target_id.clone();
-        let log = net_log_for(&tid);
-        log.lock().unwrap().clear();
+        let buf = debug_buffers_for(&tid);
+
+        // Enable the debug domains — the missing calls that kept events
+        // from ever flowing. Network.enable for request/response events;
+        // Runtime.enable for consoleAPICalled + exceptionThrown (context
+        // events flow on attach, but console/error events need the domain).
+        // JUGGLER PROTOCOL (not CDP!): console + exception events come via
+        // Page.runtimeEnable (the v0.6.3 blocker: Runtime.enable does not
+        // exist in Juggler). Network observation requires interception +
+        // immediate auto-resume — Juggler has no passive Network.enable.
+        if let Err(e) = self
+            .conn
+            .request_session("Page.runtimeEnable", serde_json::json!({}), Some(&sid))
+            .await
+        {
+            tracing::warn!(target: "ghostcloak::netcap", "Page.runtimeEnable failed: {e}");
+        }
+
+        // One listener per page (flag-guarded).
+        if buf
+            .listening
+            .swap(true, std::sync::atomic::Ordering::SeqCst)
+        {
+            return Ok(());
+        }
         let mut rx = self.conn.subscribe();
         let conn = self.conn.clone();
+        let buf2 = buf.clone();
         tokio::spawn(async move {
             loop {
                 match rx.recv().await {
                     Ok(msg) => {
-                        let method = msg.get("method").and_then(|m| m.as_str()).unwrap_or("");
                         let evt_sid = msg.get("sessionId").and_then(|v| v.as_str()).unwrap_or("");
                         if evt_sid != sid {
                             continue;
                         }
-                        tracing::info!(target: "ghostcloak::netcap", "event for our session: {method}");
-                        match msg.get("method").and_then(|m| m.as_str()) {
-                            Some("Network.responseReceived") => {
-                                if let (Some(url), Some(rid)) = (
-                                    msg.pointer("/params/response/url").and_then(|v| v.as_str()),
-                                    msg.pointer("/params/requestId").and_then(|v| v.as_str()),
-                                ) {
-                                    log.lock().unwrap().push((url.to_string(), rid.to_string()));
+                        let method = msg.get("method").and_then(|m| m.as_str()).unwrap_or("");
+                        if method.starts_with("Network.")
+                            || method.starts_with("Runtime.console")
+                            || method.starts_with("Runtime.exception")
+                        {
+                            tracing::info!(target: "ghostcloak::netcap", "evt: {method}");
+                        }
+                        match method {
+                            "Runtime.consoleAPICalled" => {
+                                let kind = msg
+                                    .pointer("/params/type")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("log")
+                                    .to_string();
+                                let mut parts: Vec<String> = Vec::new();
+                                if let Some(args) =
+                                    msg.pointer("/params/args").and_then(|v| v.as_array())
+                                {
+                                    for a in args.iter().take(4) {
+                                        if let Some(v) = a.get("value") {
+                                            match v {
+                                                serde_json::Value::String(s2) => {
+                                                    parts.push(s2.clone())
+                                                }
+                                                other => parts.push(other.to_string()),
+                                            }
+                                        } else if let Some(t) = a.get("type").and_then(|v| v.as_str()) {
+                                            parts.push(format!("[{t}]"));
+                                        }
+                                    }
+                                }
+                                let (url, line) = msg
+                                    .pointer("/params/stackTrace/0/url")
+                                    .and_then(|v| v.as_str())
+                                    .map(|u| {
+                                        (
+                                            u.to_string(),
+                                            msg.pointer("/params/stackTrace/0/lineNumber")
+                                                .and_then(|v| v.as_u64())
+                                                .unwrap_or(0),
+                                        )
+                                    })
+                                    .unwrap_or_else(|| (String::new(), 0));
+                                let entry = serde_json::json!({
+                                    "kind": kind,
+                                    "text": parts.join(" "),
+                                    "url": url,
+                                    "line": line,
+                                    "ts": now_ms(),
+                                });
+                                let mut c = buf2.console.lock().unwrap();
+                                c.push(entry);
+                                if c.len() > 500 {
+                                    let keep_from = c.len().saturating_sub(500); c.drain(0..keep_from);
                                 }
                             }
-                            // With interception ON, requests are HELD until
-                            // resumed. Auto-resume every request so the page
-                            // continues normally while we observe.
-                            Some("Network.requestWillBeSent") => {
-                                let intercepted = msg
-                                    .pointer("/params/isIntercepted")
-                                    .and_then(|v| v.as_bool())
-                                    .unwrap_or(false);
-                                if intercepted {
-                                    if let Some(rid) =
-                                        msg.pointer("/params/requestId").and_then(|v| v.as_str())
-                                    {
-                                        let _ = conn
-                                            .request_session(
-                                                "Network.resumeInterceptedRequest",
-                                                serde_json::json!({ "requestId": rid }),
-                                                Some(&sid),
-                                            )
-                                            .await;
+                            "Runtime.exceptionThrown" => {
+                                let text = msg
+                                    .pointer("/params/message")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("exception")
+                                    .to_string();
+                                let url = msg
+                                    .pointer("/params/location/url")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                let line = msg
+                                    .pointer("/params/location/lineNumber")
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(0);
+                                let mut stack: Vec<String> = Vec::new();
+                                if let Some(st) = msg.pointer("/params/stack").and_then(|v| v.as_str()) {
+                                    stack.push(st.to_string());
+                                }
+                                let entry = serde_json::json!({
+                                    "text": text,
+                                    "url": url,
+                                    "line": line,
+                                    "stack": stack,
+                                    "ts": now_ms(),
+                                });
+                                let mut e = buf2.errors.lock().unwrap();
+                                e.push(entry);
+                                if e.len() > 200 {
+                                    let keep_from = e.len().saturating_sub(200); e.drain(0..keep_from);
+                                }
+                            }
+                            "Network.requestWillBeSent" => {
+                                let rid = msg
+                                    .pointer("/params/requestId")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                let url = msg
+                                    .pointer("/params/request/url")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                let mth = msg
+                                    .pointer("/params/request/method")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("GET")
+                                    .to_string();
+                                if url.starts_with("data:") {
+                                    continue;
+                                }
+                                let entry = serde_json::json!({
+                                    "requestId": rid,
+                                    "url": url,
+                                    "method": mth,
+                                    "status": serde_json::Value::Null,
+                                    "done": false,
+                                    "ts": now_ms(),
+                                });
+                                let mut n = buf2.net.lock().unwrap();
+                                let mut ix = buf2.net_index.lock().unwrap();
+                                if !ix.contains_key(&rid) {
+                                    ix.insert(rid, n.len());
+                                    n.push(entry);
+                                    if n.len() > 1000 {
+                                        let drop = n.len() - 1000;
+                                        n.drain(0..drop);
+                                        // index now stale for old entries — clear + rebuild lazily
+                                        ix.clear();
+                                        for (i, e2) in n.iter().enumerate() {
+                                            if let Some(r) = e2.get("requestId").and_then(|v| v.as_str()) {
+                                                ix.insert(r.to_string(), i);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            "Network.responseReceived" => {
+                                let rid = msg
+                                    .pointer("/params/requestId")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                let status = msg
+                                    .pointer("/params/response/status")
+                                    .and_then(|v| v.as_u64());
+                                if let (Some(ix_val), Ok(mut n)) = (
+                                    buf2.net_index.lock().unwrap().get(&rid).copied(),
+                                    buf2.net.try_lock(),
+                                ) {
+                                    if let Some(e2) = n.get_mut(ix_val) {
+                                        e2["status"] = serde_json::json!(status);
+                                        e2["done"] = serde_json::json!(true);
+                                    }
+                                }
+                            }
+                            "Network.loadingFailed" => {
+                                let rid = msg
+                                    .pointer("/params/requestId")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                let err = msg
+                                    .pointer("/params/errorText")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("");
+                                if let (Some(ix_val), Ok(mut n)) = (
+                                    buf2.net_index.lock().unwrap().get(&rid).copied(),
+                                    buf2.net.try_lock(),
+                                ) {
+                                    if let Some(e2) = n.get_mut(ix_val) {
+                                        e2["status"] = serde_json::json!(0);
+                                        e2["done"] = serde_json::json!(true);
+                                        e2["error"] = serde_json::json!(err);
                                     }
                                 }
                             }
@@ -1651,7 +1986,57 @@ impl PageHandle for CamoufoxPage {
                 }
             }
         });
+        let _ = conn;
         Ok(())
+    }
+
+    /// Buffered console messages, protocol-captured (page can't hide them).
+    async fn console_read(&self, clear: bool) -> Result<Vec<serde_json::Value>> {
+        let tid = self.target_id.clone();
+        self.net_capture_start().await?;
+        let buf = debug_buffers_for(&tid);
+        let out = {
+            let mut c = buf.console.lock().unwrap();
+            let out = c.clone();
+            if clear {
+                c.clear();
+            }
+            out
+        };
+        Ok(out)
+    }
+
+    /// Buffered uncaught exceptions with stack traces.
+    async fn errors_read(&self, clear: bool) -> Result<Vec<serde_json::Value>> {
+        let tid = self.target_id.clone();
+        self.net_capture_start().await?;
+        let buf = debug_buffers_for(&tid);
+        let out = {
+            let mut e = buf.errors.lock().unwrap();
+            let out = e.clone();
+            if clear {
+                e.clear();
+            }
+            out
+        };
+        Ok(out)
+    }
+
+    /// Structured network entries (passive, Network.enable — never interception).
+    async fn net_read(&self, clear: bool) -> Result<Vec<serde_json::Value>> {
+        let tid = self.target_id.clone();
+        self.net_capture_start().await?;
+        let buf = debug_buffers_for(&tid);
+        let out = {
+            let mut n = buf.net.lock().unwrap();
+            let out = n.clone();
+            if clear {
+                n.clear();
+                buf.net_index.lock().unwrap().clear();
+            }
+            out
+        };
+        Ok(out)
     }
 
     async fn net_capture_list(&self) -> Result<Vec<(String, String)>> {

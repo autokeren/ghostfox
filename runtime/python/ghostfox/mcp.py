@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -48,7 +49,7 @@ class GhostfoxMCP:
             [str(self.runtime)],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
+            stderr=sys.stderr,  # v0.7: tracing visible in rc.log
             text=True,
             bufsize=1,
             env=self.env,

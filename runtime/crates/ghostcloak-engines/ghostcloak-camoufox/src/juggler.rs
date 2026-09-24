@@ -291,6 +291,9 @@ async fn reader_task(
                         let _ = tx.send(msg);
                     }
                 } else if let Some(method) = msg.get("method").and_then(|m| m.as_str()) {
+                    if std::env::var("JUGGLER_DUMP").is_ok() {
+                        tracing::info!(target: "ghostcloak::juggler", "DUMP {method}");
+                    }
                     tracing::trace!(target: "ghostcloak::juggler", "event: {method}");
                     // Fan out to subscribers (frame/context discovery).
                     let _ = events.send(msg);

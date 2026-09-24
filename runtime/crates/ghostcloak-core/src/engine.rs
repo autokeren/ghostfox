@@ -207,6 +207,35 @@ pub trait PageHandle: Send + Sync {
         ))
     }
 
+    /// v0.7 DEBUG CORTEX: buffered console messages (log/warning/error)
+    /// captured at the PROTOCOL level (Runtime.consoleAPICalled) — the
+    /// page cannot hide or patch it. `clear` drains the buffer.
+    async fn console_read(&self, clear: bool) -> Result<Vec<serde_json::Value>> {
+        let _ = clear;
+        Err(crate::error::GhostError::PageOp(
+            "console capture not supported by this engine".into(),
+        ))
+    }
+
+    /// v0.7 DEBUG CORTEX: buffered uncaught JS exceptions with stack
+    /// traces (Runtime.exceptionThrown). `clear` drains the buffer.
+    async fn errors_read(&self, clear: bool) -> Result<Vec<serde_json::Value>> {
+        let _ = clear;
+        Err(crate::error::GhostError::PageOp(
+            "error capture not supported by this engine".into(),
+        ))
+    }
+
+    /// v0.7 DEBUG CORTEX: structured network entries
+    /// [{requestId, url, method, status}] — request metadata + response
+    /// status, captured passively below the page. `clear` drains.
+    async fn net_read(&self, clear: bool) -> Result<Vec<serde_json::Value>> {
+        let _ = clear;
+        Err(crate::error::GhostError::PageOp(
+            "net capture not supported by this engine".into(),
+        ))
+    }
+
     /// v0.6.3: PROTOCOL-LEVEL network capture — start collecting every
     /// HTTP response for this page, BELOW the page (invisible to page JS).
     async fn net_capture_start(&self) -> Result<()> {
