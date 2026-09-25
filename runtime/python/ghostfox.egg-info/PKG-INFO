@@ -1,11 +1,11 @@
 Metadata-Version: 2.4
 Name: ghostfox
-Version: 0.2.0
-Summary: Ghostfox — the agent-native stealth browser you can own. Python client + engine installer for the Ghostfox MCP runtime.
+Version: 0.7.0
+Summary: Ghostfox — the agent-native stealth browser with 8 captcha solver families, debug cortex (console/errors/network), and MCP tools for AI agents.
 Author: autokeren
 License: MIT OR Apache-2.0
 Project-URL: Repository, https://github.com/autokeren/ghostfox
-Keywords: browser,stealth,anti-detect,mcp,ai-agents,scraping
+Keywords: browser,stealth,anti-detect,mcp,ai-agents,scraping,captcha,captcha-solver,geetest,hcaptcha,turnstile,debugging,console-capture
 Classifier: Programming Language :: Python :: 3
 Classifier: Topic :: Internet :: WWW/HTTP :: Browsers
 Requires-Python: >=3.10

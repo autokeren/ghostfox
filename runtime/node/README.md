@@ -1,3 +1,5 @@
+mcp-name: io.github.autokeren/ghostfox
+
 # ghostfox (npm)
 
 npm surface for the [Ghostfox](https://github.com/autokeren/ghostfox)

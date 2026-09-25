@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ghostfox"
-version = "0.7.0"
+version = "0.7.1"
 description = "Ghostfox — the agent-native stealth browser with 8 captcha solver families, debug cortex (console/errors/network), and MCP tools for AI agents."
 readme = "README.md"
 requires-python = ">=3.10"
