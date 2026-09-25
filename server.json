@@ -1,14 +1,25 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.autokeren/ghostfox",
-  "description": "Self-hosted stealth browser for AI agents: Firefox engine + Rust MCP runtime",
+  "description": "Self-hosted stealth browser for AI agents: Firefox engine + Rust MCP runtime. 8 captcha solver families + debug cortex (console/errors/network).",
   "repository": {
     "url": "https://github.com/autokeren/ghostfox",
     "source": "github"
   },
   "websiteUrl": "https://github.com/autokeren/ghostfox",
-  "version": "0.5.0",
-  "packages": [],
+  "version": "0.7.0",
+  "packages": [
+    {
+      "registry_type": "pypi",
+      "identifier": "ghostfox",
+      "version": "0.7.0"
+    },
+    {
+      "registry_type": "npm",
+      "identifier": "ghostfox",
+      "version": "0.7.0"
+    }
+  ],
   "transport": {
     "type": "stdio"
   }
