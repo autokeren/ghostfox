@@ -77,14 +77,14 @@ footer a:hover{color:var(--fg)}
 <div class="hero wrap">
   <div class="badge">AutoKeren Ecosystem</div>
   <h1>The Agent Browser<br>That Sees Everything</h1>
-  <p class="tag">Self-hosted stealth browser for AI agents. Own Firefox engine + Rust MCP runtime. Reads pages like a human, acts by semantic understanding, records every action as evidence.</p>
+  <p class="tag">Self-hosted stealth browser for AI agents. Own Firefox engine + Rust MCP runtime. Reads pages like a human, acts by semantic understanding — and solves the captchas that block everyone else. On-device, no cloud.</p>
   <div class="cta-row">
     <a href="#install" class="btn btn-primary">Install Now</a>
     <a href="https://autokeren.github.io/ghostfox/" class="btn btn-ghost" target="_blank">Read the Docs →</a>
   </div>
   <div class="stats">
-    <div class="stat"><div class="num">19</div><div class="lbl">MCP Tools</div></div>
-    <div class="stat"><div class="num">6</div><div class="lbl">Platforms</div></div>
+    <div class="stat"><div class="num">43</div><div class="lbl">MCP Tools</div></div>
+    <div class="stat"><div class="num">8</div><div class="lbl">Captcha Families</div></div>
     <div class="stat"><div class="num">500/500</div><div class="lbl">Identity Coherence</div></div>
     <div class="stat"><div class="num">100%</div><div class="lbl">Self-Hosted</div></div>
   </div>
@@ -95,6 +95,16 @@ footer a:hover{color:var(--fg)}
     <h2>Built for the Way <span class="hl">Agents Actually Work</span></h2>
     <p class="sub">Most agent browsers are blind. Ghostfox gives your AI semantic understanding — not just pixel coordinates or fragile CSS selectors.</p>
     <div class="grid">
+      <div class="card">
+        <div class="icon">🧩</div>
+        <h3>8 Captcha Families, Solved</h3>
+        <p>GeeTest slide, rotate & icon-click (custom-trained YOLO + siamese), OCR (ddddocr port), Turnstile, hCaptcha, TikTok — native MCP tools with on-device models. No paid captcha farms, no cloud. E2E-proven on production sites.</p>
+      </div>
+      <div class="card">
+        <div class="icon">🔍</div>
+        <h3>Debug Cortex</h3>
+        <p><code>page_console</code>, <code>page_errors</code>, <code>page_network_*</code> — the DevTools trio over MCP. When a page misbehaves, your agent reads console logs, stack traces and network bodies instead of guessing.</p>
+      </div>
       <div class="card">
         <div class="icon">👁️</div>
         <h3>Semantic Vision</h3>
@@ -175,7 +185,12 @@ footer a:hover{color:var(--fg)}
       curl -fsSL https://raw.githubusercontent.com/autokeren/ghostfox/main/install.sh | bash<br><br>
       <span class="cmt"># Or via package manager</span><br>
       pip install ghostfox  <span class="cmt"># Python</span><br>
-      npm install ghostfox   <span class="cmt"># Node.js</span>
+      npm install ghostfox   <span class="cmt"># Node.js</span><br><br>
+      <span class="cmt"># Or run it containerized</span><br>
+      docker run -i --rm ghcr.io/autokeren/ghostfox
+    </div>
+    <div style="text-align:center;margin-top:20px;font-size:.9rem;color:var(--dim);">
+      Also on the official <a href="https://registry.modelcontextprotocol.io/servers/io.github.autokeren/ghostfox">MCP Registry</a> — one-click add in registry-aware clients.
     </div>
     <div style="text-align:center;margin-top:20px;">
       <a class="btn btn-ghost" href="https://autokeren.github.io/ghostfox/" target="_blank" style="font-size:.85rem;">Full documentation →</a>
@@ -193,6 +208,8 @@ footer a:hover{color:var(--fg)}
         <tr><td>Self-hosted</td><td class="y">✓</td><td class="n">✗</td><td class="y">✓</td></tr>
         <tr><td>Open source</td><td class="y">✓ full stack</td><td class="n">✗</td><td class="y">✓</td></tr>
         <tr><td>Engine-level anti-detect</td><td class="y">✓ C++</td><td class="m">partnerships</td><td class="n">✗</td></tr>
+        <tr><td>Captcha solver suite</td><td class="y">✓ 8 families, on-device</td><td class="n">✗</td><td class="n">✗</td></tr>
+        <tr><td>Debug cortex (console/errors/network)</td><td class="y">✓</td><td class="n">✗</td><td class="n">✗</td></tr>
         <tr><td>Semantic vision (a11y)</td><td class="y">✓ + login_state</td><td class="n">✗</td><td class="m">basic</td></tr>
         <tr><td>Evidence recording</td><td class="y">✓</td><td class="n">✗</td><td class="n">✗</td></tr>
         <tr><td>Runtime</td><td class="y">Rust</td><td>—</td><td>Node</td></tr>
@@ -216,7 +233,7 @@ footer a:hover{color:var(--fg)}
 
 <footer class="wrap">
   <p><a href="https://github.com/autokeren/ghostfox">GitHub</a> · <a href="https://autokeren.github.io/ghostfox/">Docs</a> · <a href="https://developers.autokeren.com/">AutoKeren CLI</a> · <a href="https://registry.modelcontextprotocol.io">MCP Registry</a></p>
-  <p style="margin-top:8px;">Ghostfox v0.4.0 · engine MPL-2.0 · runtime MIT/Apache-2.0</p>
+  <p style="margin-top:8px;">Ghostfox v0.7 · engine MPL-2.0 · runtime MIT/Apache-2.0</p>
   <p style="margin-top:8px;">© 2026 AutoKeren. Standing on Camoufox, Firefox, and Playwright.</p>
 </footer>
 
