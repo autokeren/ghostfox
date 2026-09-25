@@ -8,15 +8,21 @@
 # The MCP server speaks stdio; for containerized use, mount a socket or run
 # it under an MCP gateway. For quick inspection, GHOSTFOX_LIVE_VIEW_PORT
 # serves the live view on the mapped port.
+#
+# Base is ubuntu:24.04 (noble): the prebuilt ghostcloak-mcp binary links
+# against the onnxruntime static libs from `ort` download-binaries, which
+# require glibc >= 2.38 / libstdc++ from GCC 13 — bookworm (glibc 2.36)
+# cannot satisfy them.
 
-FROM debian:bookworm-slim AS runtime
+FROM ubuntu:24.04 AS runtime
 
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl unzip \
-        libgtk-3-0 libdbus-glib-1-2 libxt6 libasound2 \
+        libgtk-3-0t64 libdbus-glib-1-2 libxt6 libasound2t64 \
         libx11-xcb1 libxcomposite1 libxdamage1 libxrandr2 \
         libxss1 libxcursor1 libxinerama1 \
+        libstdc++6 libssl3t64 \
     && rm -rf /var/lib/apt/lists/*
 
 # Engine + runtime from the matching GitHub release (pinned by build arg).

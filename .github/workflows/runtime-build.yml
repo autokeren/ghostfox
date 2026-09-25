@@ -1,0 +1,60 @@
+name: runtime-build
+
+# Builds the Rust MCP runtime (ghostcloak-mcp) as a release asset.
+#
+# Why a container build? The binary links onnxruntime static libs from
+# `ort` download-binaries, which require glibc >= 2.38 / GCC 13 libstdc++.
+# Building inside ubuntu:24.04 guarantees a binary that also runs inside
+# the ubuntu:24.04 Docker image (Dockerfile) and on modern hosts.
+# The asset name must be exactly "ghostcloak-mcp" — the Dockerfile and
+# the Python SDK (ghostfox.install_runtime()) both look for that name.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build ghostcloak-mcp inside ubuntu:24.04
+        run: |
+          docker run --rm \
+            -v "$PWD/runtime:/src:ro" \
+            -v /tmp/gf-cargo:/cargo \
+            -v /tmp/gf-target:/target \
+            -v /tmp/gf-out:/out \
+            -e CARGO_HOME=/cargo \
+            ubuntu:24.04 \
+            bash -c '
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update -qq >/dev/null 2>&1
+              apt-get install -y -qq --no-install-recommends \
+                curl ca-certificates build-essential pkg-config libssl-dev >/dev/null 2>&1
+              export PATH="/cargo/bin:$PATH"
+              if [ ! -x /cargo/bin/cargo ]; then
+                curl -sSf https://sh.rustup.rs -o /tmp/rustup.sh
+                sh /tmp/rustup.sh -y --default-toolchain stable --profile minimal --no-modify-path >/dev/null 2>&1
+              fi
+              rustup default stable >/dev/null 2>&1
+              mkdir -p /work
+              (cd /src && tar --exclude=./target -cf - .) | tar -xf - -C /work
+              cd /work
+              cargo build --release -p ghostcloak-mcp --target-dir /target 2>&1 | tail -5
+              strip /target/release/ghostcloak-mcp
+              cp /target/release/ghostcloak-mcp /out/ghostcloak-mcp
+            '
+          sudo chown "$(id -u):$(id -g)" /tmp/gf-out/ghostcloak-mcp
+          ls -la /tmp/gf-out/ghostcloak-mcp
+
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: /tmp/gf-out/ghostcloak-mcp
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
