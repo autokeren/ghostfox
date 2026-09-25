@@ -1,6 +1,6 @@
 {
   "name": "ghostfox",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "The agent-native stealth browser with 8 captcha solver families + debug cortex \u2014 MCP launcher + installer for Ghostfox (fingerprint-coherent Firefox engine + Rust MCP runtime).",
   "license": "MIT OR Apache-2.0",
   "repository": {
@@ -25,5 +25,6 @@
   },
   "files": [
     "bin/"
-  ]
+  ],
+  "mcpName": "io.github.autokeren/ghostfox"
 }

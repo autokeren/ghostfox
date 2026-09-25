@@ -7,12 +7,12 @@
     "source": "github"
   },
   "websiteUrl": "https://github.com/autokeren/ghostfox",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "ghostfox",
-      "version": "0.7.1",
+      "version": "0.7.2",
       "transport": {
         "type": "stdio"
       }
@@ -20,7 +20,7 @@
     {
       "registryType": "npm",
       "identifier": "ghostfox",
-      "version": "0.7.1",
+      "version": "0.7.2",
       "transport": {
         "type": "stdio"
       }
