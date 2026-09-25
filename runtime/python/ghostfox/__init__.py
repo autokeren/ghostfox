@@ -12,5 +12,5 @@ the Python world gets the same one-command story as ``pip install browser-use``.
 from .mcp import GhostfoxMCP, McpError
 from .engine import install_engine, engine_home
 
-__version__ = "0.2.0"
+__version__ = "0.7.0"
 __all__ = ["GhostfoxMCP", "McpError", "install_engine", "engine_home"]
