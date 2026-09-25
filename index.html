@@ -58,7 +58,7 @@
     <b style="color:var(--fg)">stealth when you need it, evidence for everything it does.</b></p>
   <div class="badges">
     <a href="https://github.com/autokeren/ghostfox"><img src="https://img.shields.io/badge/github-autokeren%2Fghostfox-8b5cf6" alt="GitHub"></a>
-    <a href="https://github.com/autokeren/ghostfox/releases"><img src="https://img.shields.io/badge/release-v0.2.0-22c55e" alt="release"></a>
+    <a href="https://github.com/autokeren/ghostfox/releases"><img src="https://img.shields.io/badge/release-v0.7-22c55e" alt="release"></a>
     <a href="https://github.com/autokeren/ghostfox/tree/main/engine"><img src="https://img.shields.io/badge/engine-Firefox%20152-f97316" alt="engine"></a>
     <a href="https://github.com/autokeren/ghostfox/blob/main/LICENSE-MIT"><img src="https://img.shields.io/badge/runtime-MIT%2FApache--2.0-blue" alt="runtime license"></a>
   </div>
@@ -87,6 +87,8 @@
     <tr><td>Open source</td><td class="yes">✓ (engine + runtime)</td><td class="no">✗</td><td class="yes">✓</td><td class="no">✗</td></tr>
     <tr><td>MCP-native</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">✗</td></tr>
     <tr><td>Engine-level anti-detect</td><td class="yes">✓ C++ / Firefox</td><td class="mid">vendor partnerships</td><td class="no">✗</td><td class="yes">✓ (closed)</td></tr>
+    <tr><td>Captcha solvers</td><td class="yes">✓ 8 families, on-device</td><td class="no">✗</td><td class="no">✗</td><td class="no">✗</td></tr>
+    <tr><td>Debug cortex (console/errors/network)</td><td class="yes">✓</td><td class="no">✗</td><td class="no">✗</td><td class="no">✗</td></tr>
     <tr><td>Coherent, audited identities</td><td class="yes">✓ 500/500</td><td class="no">✗</td><td class="no">✗</td><td class="mid">partial</td></tr>
     <tr><td>Session evidence &amp; replay</td><td class="yes">✓</td><td class="no">✗</td><td class="no">✗</td><td class="no">✗</td></tr>
     <tr><td>Runtime language</td><td class="yes">Rust</td><td>—</td><td>Node</td><td>—</td></tr>
@@ -123,12 +125,17 @@ curl -fsSL https://raw.githubusercontent.com/autokeren/ghostfox/main/install.sh 
   }
 }</code></pre>
   <p>Or Python: <code>pip install ghostfox</code> ·
-     Or Docker: <code>docker run ghcr.io/autokeren/ghostfox</code></p>
+     Or npm: <code>npx ghostfox mcp</code> ·
+     Or Docker: <code>docker run -i --rm ghcr.io/autokeren/ghostfox</code> ·
+     Listed on the <a href="https://registry.modelcontextprotocol.io/servers/io.github.autokeren/ghostfox">MCP Registry</a></p>
   <div class="grid">
     <div class="card"><h3>See &amp; understand</h3><p><b>page_a11y</b> — semantic snapshot with refs, roles, names, live values, login_state. Pierces shadow DOM + iframes. Then <b>page_read_ref</b> for full values, <b>page_wait_for</b> for element readiness, <b>page_screenshot</b> for pixels.</p></div>
     <div class="card"><h3>Act by ref</h3><p><b>page_click_ref · page_type_ref · page_upload_file</b> — no CSS selectors. Rich editors (Lexical, Draft) handled via editor-native paste paths with fire-then-verify receipts. Every mutation returns proof it landed.</p></div>
     <div class="card"><h3>Identity &amp; evidence</h3><p><b>identity_generate · identity_audit · session_evidence</b> — coherent personas (Windows · macOS · Linux · <b>Android</b>), audited before use. Every session writes an append-only event log, snapshots, screenshots and the identity used. Replay what your agent did.</p></div>
     <div class="card"><h3>Session health</h3><p><b>login_state</b> in every a11y snapshot — agents detect dead sessions before acting, not after. Plus <b>captcha_solve</b> for when you're challenged anyway.</p></div>
+    <div class="card"><h3>Captcha suite</h3><p><b>page_geetest_click · page_geetest_slide · page_captcha_rotate · page_captcha_ocr · page_hcaptcha</b> — 8 families solved with on-device models (custom-trained YOLOv8s + siamese, ddddocr OCR port, hCaptcha model zoo). E2E-proven on production sites: bilibili, hCaptcha-protected signups, TikTok.</p></div>
+    <div class="card"><h3>Debug cortex</h3><p><b>page_console · page_errors · page_network_start/read/body</b> — the DevTools trio over MCP. Console logs, uncaught exceptions with stacks, and request/response capture with body fetch. When a page breaks, your agent finds out why.</p></div>
+    <div class="card"><h3>Vision helpers</h3><p><b>page_vision · page_ocr · page_match_image · page_pixels · page_contrast</b> — optional cross-model checks for grid puzzles and layout questions. Wire any vision-capable model; the native solvers run fully local.</p></div>
   </div>
 </section>
 
@@ -151,6 +158,10 @@ curl -fsSL https://raw.githubusercontent.com/autokeren/ghostfox/main/install.sh 
     <tr><td>Live-target probe (4 targets, datacenter IP)</td><td class="yes">4/4 OK, 0 gated</td></tr>
     <tr><td>bot.sannysoft.com</td><td class="yes">webdriver clean · WebGL=Mozilla · UA coherent</td></tr>
     <tr><td>MCP round-trip E2E</td><td class="yes">create → open → fill → submit → evidence</td></tr>
+    <tr><td>GeeTest icon-click, production (bilibili)</td><td class="yes">6/6 "Verification Succeeded" (YOLO + siamese, CPU)</td></tr>
+    <tr><td>hCaptcha, production signups</td><td class="yes">2 real sites passed (behavioral + layout router)</td></tr>
+    <tr><td>TikTok OAuth + OTP</td><td class="yes">live session maintained</td></tr>
+    <tr><td>Docker image E2E</td><td class="yes">session → open → snapshot inside container</td></tr>
   </table>
   <p class="muted">Methodology and honest caveats (datacenter IP bias, the expected "Chrome missing" row):
   <a href="https://github.com/autokeren/ghostfox/blob/main/runtime/docs/benchmark-2026-09-08.md">runtime/docs/benchmark</a>.</p>
@@ -162,13 +173,13 @@ curl -fsSL https://raw.githubusercontent.com/autokeren/ghostfox/main/install.sh 
   <p><code>engine/</code> is MPL-2.0 (Firefox → <a href="https://github.com/daijro/camoufox">Camoufox</a> by daijro → Ghostfox).
      <code>runtime/</code> is MIT OR Apache-2.0. Plus LibreWolf (patch tooling lineage) and
      Playwright (the Juggler protocol).</p>
-  <p class="muted">Pre-alpha research tool. Do not use against targets you don't have permission to test.</p>
+  <p class="muted">v0.7 — alpha. Research / testing tool. Do not use against targets you don't have permission to test.</p>
 </section>
 
 </div>
 <footer class="wrap">
   ghostfox · <a href="https://github.com/autokeren/ghostfox">github.com/autokeren/ghostfox</a> ·
-  v0.2.0 · MCP registry: io.github.autokeren/ghostfox
+  v0.7 · MCP registry: io.github.autokeren/ghostfox
 </footer>
 </body>
 </html>
