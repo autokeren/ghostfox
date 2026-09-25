@@ -34,9 +34,17 @@ RUN curl -fsSL "https://api.github.com/repos/${GHOSTFOX_REPO}/releases/tags/${GH
  && RUNTIME_URL=$(grep -o '"browser_download_url": *"[^"]*ghostcloak-mcp"' /tmp/rel.json | head -1 | sed 's/.*"\(https[^"]*\)"/\1/') \
  && test -n "${ENGINE_URL:-}" && test -n "${RUNTIME_URL:-}" \
  && curl -fL --retry 3 "$ENGINE_URL" -o /tmp/engine.zip \
- && mkdir -p /opt/ghostfox \
+ && mkdir -p /opt/ghostfox/engine \
  && unzip -q /tmp/engine.zip -d /tmp/engine-unpack \
- && mv /tmp/engine-unpack/ghostfox /opt/ghostfox/engine \
+ \
+# The engine zip has no top-level dir: its files land directly in the
+# unpack dir. Support both layouts (flat, or wrapped in ghostfox/).
+ && if [ -d /tmp/engine-unpack/ghostfox ]; then \
+        mv /tmp/engine-unpack/ghostfox/* /opt/ghostfox/engine/; \
+    else \
+        mv /tmp/engine-unpack/* /opt/ghostfox/engine/; \
+    fi \
+ && chmod +x /opt/ghostfox/engine/ghostfox-bin \
  && mkdir -p /opt/ghostfox/mcp \
  && curl -fL --retry 3 "$RUNTIME_URL" -o /opt/ghostfox/mcp/ghostcloak-mcp \
  && chmod +x /opt/ghostfox/mcp/ghostcloak-mcp \
