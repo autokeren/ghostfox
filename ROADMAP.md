@@ -4,35 +4,52 @@
 > wall ourselves and built the fix. The order is: reliability first, then
 > autonomy, then platform.
 
+> **Where we actually are (2026-09):** version numbers diverged from this
+> plan — things shipped earlier than scheduled. Shipped so far: v0.5
+> behavioral layer + safety gates (v0.6.x: human mouse bezier/tremor,
+> humanized typing, `confirm_action`, `page_a11y` suspicious-elements
+> flagging), **v0.6.7 native captcha toolset** (8 families incl. YOLO
+> icon-click, ddddocr OCR, hCaptcha zoo — E2E on production sites),
+> **v0.7 debug cortex** (console/errors/network capture), and the
+> distribution layer (PyPI, npm, Docker/GHCR, MCP Registry listing).
+> Sections below keep the original plan; done items are checked off
+> where they landed.
+
 ---
 
 ## v0.5.0 — "Behave Like a Human" (Q4 2026)
 **Theme: Anti-detect that goes beyond fingerprints — into behavior.**
 
 ### Behavioral Authenticity Engine
-- [ ] **Keystroke dynamics** — randomized typing speed per character (80-200ms),
+- [x] **Keystroke dynamics** — randomized typing speed per character (80-200ms),
        occasional pauses between words, thinking delays before form submission
-- [ ] **Mouse path organicity** — curved movement between points (not teleport),
+       *(shipped v0.6.x: humanized typing)*
+- [x] **Mouse path organicity** — curved movement between points (not teleport),
        overshoot + correction, idle drift
+       *(shipped v0.6.x: bezier + tremor + landing scatter)*
 - [ ] **Reading rhythm** — scroll pauses at content blocks, back-scroll,
        variable dwell time per element before acting
-- [ ] **Session cadence** — random micro-delays between actions (500ms-3s),
+- [x] **Session cadence** — random micro-delays between actions (500ms-3s),
        occasional tab switches, natural reading patterns
+       *(shipped v0.6.x: session cadence pass)*
 
 ### Safety Gates
-- [ ] **Confirmation gates** — irreversible actions ("Submit Order", "Delete",
+- [x] **Confirmation gates** — irreversible actions ("Submit Order", "Delete",
        "Send Email") require explicit `confirm_action` tool call
+       *(shipped: `confirm_action` tool)*
 - [ ] **Danger zone detection** — `page_a11y` flags financial/medical/legal
        pages: `"sensitivity": "high"` → agent knows to slow down
 - [ ] **Rate-limit recovery** — detect 429/Cloudflare/captcha interstitials,
        auto-backoff with exponential + jitter, notify agent with context
+       *(playbook exists in AGENTS.md; auto-backoff not yet a runtime feature)*
 
 ### Prompt Injection Defense
 - [ ] **Hidden content detection** — flag `display:none`, `opacity:0`,
        `font-size:0`, off-screen text in `page_a11y` output
-- [ ] **Injection pattern matching** — known attack phrases ("ignore previous
+- [x] **Injection pattern matching** — known attack phrases ("ignore previous
        instructions", "download from", "enter your") marked as
        `"suspicious_content": true`
+       *(shipped: `suspicious_elements` in `page_a11y`)*
 - [ ] **Content sanitization** — `page_a11y` strips hidden/invisible text from
        `name` and `value` fields, reports what was stripped
 
@@ -62,8 +79,9 @@
        by block-detection) with continuity guard (don't rotate mid-session)
 
 ### Modal & Interruption Handling
-- [ ] **Auto-dismissal** — detect cookie banners, newsletter popups, "Are you
+- [x] **Auto-dismissal** — detect cookie banners, newsletter popups, "Are you
        18+" overlays → dismiss or accept based on session config
+       *(shipped: `page_dismiss_modal`)*
 - [ ] **Interruption recovery** — if a modal appears mid-action, snapshot it,
        record in evidence, dismiss, verify original action state preserved
 
