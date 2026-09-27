@@ -10,6 +10,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import platform
 import shutil
 import sys
 import urllib.request
@@ -32,6 +33,19 @@ def engine_home() -> Path:
     return root / "engine"
 
 
+def _linux_assets() -> tuple[str, str]:
+    """(engine asset substring, runtime asset name) for this Linux arch."""
+    mach = platform.machine().lower()
+    if mach == "x86_64":
+        return "lin.x86_64", "ghostcloak-mcp"
+    if mach in ("aarch64", "arm64"):
+        return "lin.arm64", "ghostcloak-mcp-arm64"
+    raise RuntimeError(
+        "prebuilt engine/runtime are Linux x86_64/arm64 only "
+        "(from-source builds for other platforms: see the repo README)"
+    )
+
+
 def install_engine(dest: Path | None = None, quiet: bool = False) -> Path:
     """Download and unpack the latest prebuilt engine. Returns its path."""
     dest = dest or engine_home()
@@ -44,12 +58,13 @@ def install_engine(dest: Path | None = None, quiet: bool = False) -> Path:
     assets = {
         a["name"]: a["browser_download_url"] for a in rel.get("assets", [])
     }
+    engine_pat, _ = _linux_assets()
     url = next(
-        (u for n, u in assets.items() if "lin.x86_64" in n and n.endswith(".zip")),
+        (u for n, u in assets.items() if engine_pat in n and n.endswith(".zip")),
         None,
     )
     if not url:
-        raise RuntimeError(f"no Linux x86_64 engine asset in release {rel.get('tag_name')}")
+        raise RuntimeError(f"no Linux {engine_pat} engine asset in release {rel.get('tag_name')}")
 
     if not quiet:
         print(f"downloading {url.split('/')[-1]} ...", file=sys.stderr)
@@ -73,13 +88,14 @@ def install_engine(dest: Path | None = None, quiet: bool = False) -> Path:
 
 
 def install_runtime(dest: Path | None = None, quiet: bool = False) -> Path:
-    """Download the prebuilt ``ghostcloak-mcp`` runtime binary (Linux x86_64)."""
+    """Download the prebuilt ``ghostcloak-mcp`` runtime binary (Linux x86_64/arm64)."""
     dest = dest or engine_home().parent / "mcp" / "ghostcloak-mcp"
     if dest.exists():
         return dest
+    _, runtime_asset = _linux_assets()
     rel = _latest_release()
     url = next(
-        (a["browser_download_url"] for a in rel.get("assets", []) if a["name"] == "ghostcloak-mcp"),
+        (a["browser_download_url"] for a in rel.get("assets", []) if a["name"] == runtime_asset),
         None,
     )
     if not url:

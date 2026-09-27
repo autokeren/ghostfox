@@ -4,7 +4,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/autokeren/ghostfox/main/install.sh | bash
 #
 # What it does:
-#   1. Downloads the prebuilt Ghostfox engine (Linux x86_64) from Releases
+#   1. Downloads the prebuilt Ghostfox engine (Linux x86_64/arm64) from Releases
 #   2. Installs the ghostcloak-mcp runtime (prebuilt binary, or builds from
 #      source with cargo when the prebuilt one can't run)
 #   3. Prints the MCP client configuration
@@ -16,11 +16,15 @@ REPO="autokeren/ghostfox"
 DEST="${GHOSTFOX_HOME_ROOT:-$HOME/.ghostfox}"
 OS="$(uname -s)"
 ARCH="$(uname -m)"
+case "$OS/$ARCH" in
+    Linux/x86_64)  ENGINE_ARCH="x86_64"; RUNTIME_ASSET="ghostcloak-mcp" ;;
+    Linux/aarch64) ENGINE_ARCH="arm64";   RUNTIME_ASSET="ghostcloak-mcp-arm64" ;;
+    *) die "prebuilt engine currently Linux x86_64/arm64 only (from-source builds for other platforms: see the repo README)" ;;
+esac
 
 say() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
-[ "$OS" = "Linux" ] && [ "$ARCH" = "x86_64" ] || die "prebuilt engine currently Linux x86_64 only (from-source builds for other platforms: see the repo README)"
 
 mkdir -p "$DEST"
 
@@ -30,10 +34,10 @@ if [ -x "$DEST/engine/ghostfox-bin" ]; then
 else
     say "fetching latest release info"
     ASSET_URL="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
-        | grep -o '"browser_download_url": *"[^"]*lin\.x86_64\.zip"' \
+        | grep -o "\"browser_download_url\": *\"[^\"]*lin\\.$ENGINE_ARCH\\.zip\"" \
         | head -1 | sed 's/.*"\(https[^"]*\)"/\1/')" \
         || die "could not resolve the latest release (network?)"
-    [ -n "${ASSET_URL:-}" ] || die "no Linux x86_64 asset on the latest release"
+    [ -n "${ASSET_URL:-}" ] || die "no Linux $ENGINE_ARCH asset on the latest release"
     say "downloading engine ($(basename "$ASSET_URL")) — ~650MB"
     curl -fL --retry 3 -o /tmp/ghostfox-engine.zip "$ASSET_URL"
     say "unpacking to $DEST/engine"
@@ -61,7 +65,7 @@ MCP_BIN="$DEST/mcp/ghostcloak-mcp"
 if [ ! -x "$MCP_BIN" ]; then
     say "fetching runtime release info"
     RUNTIME_URL="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
-        | grep -o '"browser_download_url": *"[^"]*ghostcloak-mcp[^"]*"' \
+        | grep -o "\"browser_download_url\": *\"[^\"]*/$RUNTIME_ASSET\"" \
         | head -1 | sed 's/.*"\(https[^"]*\)"/\1/')" || true
     if [ -n "${RUNTIME_URL:-}" ] && curl -fsSL --retry 2 -o /tmp/ghostcloak-mcp "$RUNTIME_URL"; then
         mkdir -p "$DEST/mcp"

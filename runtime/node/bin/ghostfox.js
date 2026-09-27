@@ -67,7 +67,8 @@ async function install() {
   const assets = Object.fromEntries(rel.assets.map((a) => [a.name, a.browser_download_url]));
 
   if (!fs.existsSync(MCP_BIN)) {
-    const url = assets["ghostcloak-mcp"];
+    const rtAsset = os.platform() === "linux" && os.arch() === "arm64" ? "ghostcloak-mcp-arm64" : "ghostcloak-mcp";
+    const url = assets[rtAsset];
     if (!url) throw new Error("no prebuilt runtime asset on the latest release — build it from source (see the repo README)");
     log("downloading ghostcloak-mcp runtime...");
     fs.mkdirSync(path.dirname(MCP_BIN), { recursive: true });
