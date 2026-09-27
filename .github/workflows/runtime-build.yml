@@ -60,11 +60,14 @@ jobs:
               strip /target/release/ghostcloak-mcp
               cp /target/release/ghostcloak-mcp /out/ghostcloak-mcp
             '
-          sudo chown "$(id -u):$(id -g)" /tmp/gf-out/ghostcloak-mcp
-          mv /tmp/gf-out/ghostcloak-mcp "/tmp/gf-out/${{ matrix.asset }}"
+          sudo chown -R "$(id -u):$(id -g)" /tmp/gf-out
+          if [ "${{ matrix.asset }}" != "ghostcloak-mcp" ]; then
+            mv /tmp/gf-out/ghostcloak-mcp "/tmp/gf-out/${{ matrix.asset }}"
+          fi
           ls -la "/tmp/gf-out/${{ matrix.asset }}"
 
       - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: /tmp/gf-out/${{ matrix.asset }}
