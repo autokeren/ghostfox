@@ -5,6 +5,23 @@ All notable changes to ghostcloak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] — 2026-09-27
+
+Linux arm64 support end-to-end.
+
+### Added
+- `ghostcloak-mcp-arm64` release asset — the runtime builds natively on
+  `ubuntu-24.04-arm` runners (onnxruntime prebuilts link cleanly on aarch64).
+- Arch-aware installers: `install.sh`, Python `install_engine()` /
+  `install_runtime()` and the npm installer all pick `lin.arm64` +
+  `ghostcloak-mcp-arm64` on Linux aarch64 (engine zips already shipped
+  since v0.7.0; the runtime was the missing half).
+- `runtime-build.yml` now runs an x86_64 + arm64 matrix on tag pushes.
+
+### Fixed
+- `install.sh` runtime download could match the `-arm64` asset on x86_64
+  (substring grep); now exact-matches the asset for the host arch.
+
 ## [0.1.0] — 2026-09-03
 
 First public release. Rust-native agent browser runtime with a patched-Firefox engine.
