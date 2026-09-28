@@ -86,11 +86,22 @@ Here is what actually works, in order:
    them. Synthetic JS `beforeinput`/paste are rejected.
 5. **Verify, then submit** with `page_click_ref` on the submit button.
 
-### Punctuation caveat (current engine build)
-`page_type` reliably inserts letters, digits, spaces, and `Enter`.
-Punctuation (`. , - : ! ?`) is not inserted by key events in this build —
-write comment text in a natural punctuation-free style (completely normal on
-Reddit/X), using `Enter` for paragraph breaks.
+### Typing fidelity (v0.8.1 runtime — FIXED)
+`page_type` now synthesizes Playwright-canonical key events: every
+printable ASCII char carries its real DOM `code`/`keyCode` pair from the
+US layout (`Digit0`, `Period`, `Minus`, `Slash`, shift variants, ...),
+and chars outside the layout (em-dash, CJK, emoji) go through Juggler's
+dedicated `Page.insertText`. Verified end-to-end: 123/123 chars in a
+plain `contenteditable` + `<input>`, and the full v0.8.0 launch text —
+digits, `—`, URL, all punctuation — landed intact in X's Lexical
+composer (223/223, Post button armed).
+
+History (so you don't distrust old runs): before v0.8.1 the runtime
+fabricated `code` values like `Key0`/`Key.` — invalid codes that
+Firefox's TextInputProcessor treats as non-printable, so digits and
+punctuation were silently eaten in Lexical-based editors. The old
+workaround was punctuation-free, worded-out-numbers text; that constraint
+is gone — type naturally now.
 
 ---
 

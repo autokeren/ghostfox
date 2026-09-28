@@ -1569,82 +1569,88 @@ impl PageHandle for CamoufoxPage {
         }
         let sid = self.session_id().await?;
         // Type per-character via key events — what a human produces.
+        // v0.8.1: Playwright-canonical key synthesis. Every printable ASCII
+        // char is dispatched with its REAL DOM `code` + `keyCode` pair from
+        // the US layout (Digit0/Period/Minus/Slash/...). The previous build
+        // fabricated `code` values like "Key0"/"Key." — invalid codes, which
+        // Firefox's TextInputProcessor treats as non-printable: letters
+        // (Key{A} happens to be valid) inserted, digits and punctuation were
+        // silently eaten in Lexical-based editors (X, Facebook, Notion).
+        // Chars outside the layout (em-dash, unicode, emoji) go through
+        // Juggler's dedicated `Page.insertText` instead — the old
+        // keyDown/char payload trio never existed in this Juggler
+        // (valid types are lowercase `keydown`/`keyup` only) and was
+        // discarded with `Unknown type`.
+        //
         // v0.5.3: HUMANIZED CADENCE — random inter-key delays with pauses at
         // spaces/newlines and occasional "thinking" pauses. Machine-gun
         // typing (sub-ms between chars) is a bot detection signal on sites
         // that profile keystroke dynamics (X, Reddit).
-        use rand::Rng;
-        let key = |c: char| -> (u32, String, String) {
-            // (keyCode, code, key) for printable ASCII.
-            let code = format!("Key{}", c.to_ascii_uppercase());
-            (c.to_ascii_uppercase() as u32, code, c.to_string())
-        };
         for ch in text.chars() {
-            let spec = match ch {
-                '\n' => Some(("Enter".to_string(), 13u32, "Enter".to_string())),
-                '\r' => continue, // normalize CRLF: \n carries the Enter
-                '\t' => Some(("Tab".to_string(), 9u32, "Tab".to_string())),
-                ' ' => Some((" ".to_string(), 32u32, "Space".to_string())),
-                _ => {
-                    let (kc, code, k) = key(ch);
-                    Some((k, kc, code))
-                }
-            };
-            let Some((k, kc, code)) = spec else { continue };
-            // Printable non-alphanumeric chars (punctuation etc.) don't
-            // insert via keydown/keyup in this engine build. The standard
-            // CDP insertion path is a keyDown carrying a "text" field (plus
-            // a "char" event for engines that model it); send both forms
-            // for punctuation. Letters/digits/space insert fine with the
-            // plain key events.
-            let needs_text_insert = !k.chars().all(|c| c.is_ascii_alphanumeric());
-            for ty in ["keydown", "keyup"] {
-                let _ = self
-                    .conn
-                    .request_session(
-                        "Page.dispatchKeyEvent",
-                        serde_json::json!({
-                            "type": ty,
-                            "key": k,
-                            "keyCode": kc,
+            let dispatch_key =
+                |key: String, code: &'static str, key_code: u32, text: Option<String>| {
+                    // keydown (with optional text payload — Playwright-canonical),
+                    // then keyup. Errors are ignored like the old build: a dead
+                    // channel mid-typing surfaces on the next page op.
+                    let conn = self.conn.clone();
+                    let sid = sid.clone();
+                    async move {
+                        let mut payload = serde_json::json!({
+                            "type": "keydown",
+                            "key": key,
+                            "keyCode": key_code,
                             "location": 0,
                             "code": code,
                             "repeat": false,
-                        }),
-                        Some(&sid),
-                    )
-                    .await;
-            }
-            if needs_text_insert {
-                let payloads = [
-                    serde_json::json!({
-                        "type": "keyDown",
-                        "key": k,
-                        "keyCode": kc,
-                        "location": 0,
-                        "code": code,
-                        "repeat": false,
-                        "text": k,
-                    }),
-                    serde_json::json!({
-                        "type": "char",
-                        "text": k,
-                        "key": k,
-                    }),
-                    serde_json::json!({
-                        "type": "keyUp",
-                        "key": k,
-                        "keyCode": kc,
-                        "location": 0,
-                        "code": code,
-                        "repeat": false,
-                    }),
-                ];
-                for payload in payloads {
-                    let _ = self
-                        .conn
-                        .request_session("Page.dispatchKeyEvent", payload, Some(&sid))
-                        .await;
+                        });
+                        if let Some(t) = text {
+                            payload["text"] = serde_json::json!(t);
+                        }
+                        let _ = conn
+                            .request_session("Page.dispatchKeyEvent", payload, Some(&sid))
+                            .await;
+                        let _ = conn
+                            .request_session(
+                                "Page.dispatchKeyEvent",
+                                serde_json::json!({
+                                    "type": "keyup",
+                                    "key": key,
+                                    "keyCode": key_code,
+                                    "location": 0,
+                                    "code": code,
+                                    "repeat": false,
+                                }),
+                                Some(&sid),
+                            )
+                            .await;
+                    }
+                };
+            match ch {
+                '\r' => continue, // normalize CRLF: \n carries the Enter
+                '\n' => {
+                    dispatch_key("Enter".into(), "Enter", 13, None).await;
+                }
+                '\t' => {
+                    dispatch_key("Tab".into(), "Tab", 9, None).await;
+                }
+                _ => {
+                    if let Some((code, kc)) = crate::keyboard::describe(ch) {
+                        // Printable ASCII: real key event with text payload
+                        // (text === key -> TextInputProcessor.keydown path,
+                        // exactly what Playwright's ffInput sends).
+                        dispatch_key(ch.to_string(), code, kc, Some(ch.to_string())).await;
+                    } else {
+                        // Outside the US layout (em-dash, CJK, emoji, ...):
+                        // Juggler's dedicated insertion method.
+                        let _ = self
+                            .conn
+                            .request_session(
+                                "Page.insertText",
+                                serde_json::json!({ "text": ch.to_string() }),
+                                Some(&sid),
+                            )
+                            .await;
+                    }
                 }
             }
             // Humanized cadence between keystrokes:
@@ -1653,6 +1659,7 @@ impl PageHandle for CamoufoxPage {
             //  - 5% "thinking" pause (+150-450ms)
             // (RNG scoped here — ThreadRng is !Send, must not live across awaits.)
             let delay = {
+                use rand::Rng;
                 let mut rng = rand::rng();
                 let mut d = 45 + rng.random_range(0..65u64);
                 if ch == ' ' {

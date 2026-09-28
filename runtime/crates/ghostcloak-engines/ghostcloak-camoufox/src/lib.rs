@@ -14,6 +14,7 @@ pub mod a11y;
 pub mod config;
 pub mod engine;
 pub mod juggler;
+pub mod keyboard;
 
 pub use engine::CamoufoxEngine;
 
