@@ -137,6 +137,21 @@ impl JugglerConnection {
         self.request_session(method, params, None).await
     }
 
+    /// Same as [`request`], but with an explicit response timeout. The
+    /// FIRST request on a fresh connection (Browser.enable) must tolerate
+    /// slow engine boots: under load the engine needs tens of seconds to
+    /// reach final-ui-startup, where the juggler dispatcher comes alive.
+    /// A fixed 20s timeout turns every slow boot into a spurious
+    /// "engine dead" report.
+    pub async fn request_long(
+        &self,
+        method: &str,
+        params: serde_json::Value,
+        timeout: std::time::Duration,
+    ) -> Result<serde_json::Value> {
+        self.request_session_t(method, params, None, timeout).await
+    }
+
     /// Same as [`request`], but routed to a target's session. Page/Runtime/
     /// Network commands only exist inside a session; Browser commands use
     /// the root session (no id).
@@ -145,6 +160,23 @@ impl JugglerConnection {
         method: &str,
         params: serde_json::Value,
         session_id: Option<&str>,
+    ) -> Result<serde_json::Value> {
+        self.request_session_t(
+            method,
+            params,
+            session_id,
+            std::time::Duration::from_secs(20),
+        )
+        .await
+    }
+
+    /// request_session with an explicit response deadline.
+    pub async fn request_session_t(
+        &self,
+        method: &str,
+        params: serde_json::Value,
+        session_id: Option<&str>,
+        timeout: std::time::Duration,
     ) -> Result<serde_json::Value> {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
         let mut msg = serde_json::json!({
@@ -180,7 +212,7 @@ impl JugglerConnection {
             // Requests on a wedged page (heavy workers, redirect storms)
             // must not pin the caller forever. Late responses land in the
             // pending map and are dropped.
-            _ = tokio::time::sleep(std::time::Duration::from_secs(20)) => {
+            _ = tokio::time::sleep(timeout) => {
                 self.pending.lock().await.remove(&id);
                 return Err(GhostError::Protocol(format!("juggler: timeout waiting for {method}")));
             }

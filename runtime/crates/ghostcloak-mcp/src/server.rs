@@ -357,6 +357,20 @@ fn default_true() -> bool {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+struct PageA11yParams {
+    session_id: String,
+    page_id: String,
+    /// Source: false (default) = the JS DOM walk (actionable refs via
+    /// click_ref/type_ref). true = the engine's NATIVE accessibility tree
+    /// (trusted — page scripts cannot tamper; shadow DOM, iframes and
+    /// ARIA semantics handled by Gecko itself; richer states). Native refs
+    /// are observation handles: identify elements / diff / anchor recipes —
+    /// act via role+name anchors (page_extract) or the walk source.
+    #[serde(default)]
+    native: bool,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct RecipeRecordParams {
     session_id: String,
     /// Recipe name (a-zA-Z0-9-_). Overwrites an existing recipe with the same name on save.
@@ -743,10 +757,11 @@ impl GhostcloakServer {
     )]
     async fn page_a11y(
         &self,
-        Parameters(PageRefParams {
+        Parameters(PageA11yParams {
             session_id,
             page_id,
-        }): Parameters<PageRefParams>,
+            native,
+        }): Parameters<PageA11yParams>,
     ) -> Result<CallToolResult, rmcp::model::ErrorData> {
         let session = self
             .session(&session_id)
@@ -756,10 +771,17 @@ impl GhostcloakServer {
             .page(&page_id)
             .await
             .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
-        let snap = page
-            .a11y_snapshot()
-            .await
-            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let snap = if native {
+            let tree = page
+                .a11y_tree_native()
+                .await
+                .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+            native_a11y_flatten(tree)
+        } else {
+            page.a11y_snapshot()
+                .await
+                .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?
+        };
         self.cache_a11y(&page_id, snap.clone()).await;
         let _ = self.recorder.record(
             &session_id,
@@ -3268,6 +3290,131 @@ impl GhostcloakServer {
                     .join("\n"),
             ))
         }
+    }
+}
+
+/// Map a Gecko native role string (nsAccessibilityService::GetStringRole)
+/// to our simplified agent roles; None = skip (structural/static).
+fn map_native_role(role: &str) -> Option<String> {
+    Some(match role {
+        "pushbutton" | "toggle button" => "button".to_string(),
+        "entry" | "password text" => "textbox".to_string(),
+        "link" => "link".to_string(),
+        "heading" => "heading".to_string(),
+        "check button" => "checkbox".to_string(),
+        "radio button" => "radio".to_string(),
+        "combobox" => "combobox".to_string(),
+        "slider" => "slider".to_string(),
+        "listitem" => "listitem".to_string(),
+        "menu item" => "menuitem".to_string(),
+        "pagetab" => "tab".to_string(),
+        "option" => "option".to_string(),
+        "treeitem" => "treeitem".to_string(),
+        "gridcell" => "gridcell".to_string(),
+        "switch" => "switch".to_string(),
+        "progress bar" => "progressbar".to_string(),
+        "spin button" => "spinbutton".to_string(),
+        "text leaf" | "text container" | "document" | "paragraph" | "section" | "region"
+        | "group" | "unknown" | "panel" | "root frame" | "root pane" | "caption" | "label"
+        | "menu bar" | "menubar" | "status bar" => return None,
+        other => other.to_string(),
+    })
+}
+
+/// Flatten the native AX tree into the agent snapshot shape. Refs are
+/// assigned in deterministic DFS order (n1..n) — observation handles for
+/// native mode: identify elements, diff snapshots, anchor recipes. Acting
+/// still goes through role+name anchors or the walk source's refs.
+fn native_a11y_flatten(raw: serde_json::Value) -> ghostcloak_core::engine::A11ySnapshot {
+    use ghostcloak_core::engine::A11yElement;
+    let tree = raw.get("tree").cloned().unwrap_or(raw);
+    let mut elements: Vec<A11yElement> = Vec::new();
+    let mut counter: usize = 0;
+
+    fn walk(node: &serde_json::Value, out: &mut Vec<A11yElement>, counter: &mut usize) {
+        let role_str = node.get("role").and_then(|v| v.as_str()).unwrap_or("");
+        let Some(role) = map_native_role(role_str) else {
+            if let Some(children) = node.get("children").and_then(|c| c.as_array()) {
+                for child in children {
+                    walk(child, out, counter);
+                }
+            }
+            return;
+        };
+        let name = node.get("name").and_then(|v| v.as_str()).unwrap_or("");
+        let interactive = matches!(
+            role.as_str(),
+            "button"
+                | "textbox"
+                | "link"
+                | "checkbox"
+                | "radio"
+                | "combobox"
+                | "slider"
+                | "listitem"
+                | "menuitem"
+                | "tab"
+                | "option"
+                | "treeitem"
+                | "switch"
+        ) || node
+            .get("focusable")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let heading = role == "heading";
+        if interactive || heading {
+            *counter += 1;
+            let checked = node.get("checked").and_then(|v| match v {
+                serde_json::Value::Bool(b) => Some(*b),
+                _ => None,
+            });
+            let el = A11yElement {
+                r#ref: format!("n{}", counter),
+                role: role.clone(),
+                name: name.to_string(),
+                value: node
+                    .get("value")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string),
+                checked,
+                disabled: node.get("disabled").and_then(|v| v.as_bool()),
+                suspicious: None,
+                tag: node.get("tag").and_then(|v| v.as_str()).map(str::to_string),
+                expanded: node.get("expanded").and_then(|v| v.as_bool()),
+                required: node.get("required").and_then(|v| v.as_bool()),
+                visibility: None,
+                scroll_pages: None,
+                own: None,
+                description: node
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string),
+            };
+            out.push(el);
+        }
+        if let Some(children) = node.get("children").and_then(|c| c.as_array()) {
+            for child in children {
+                walk(child, out, counter);
+            }
+        }
+    }
+    walk(&tree, &mut elements, &mut counter);
+
+    ghostcloak_core::engine::A11ySnapshot {
+        elements,
+        login_state: "unknown".into(),
+        page_url: String::new(),
+        page_title: String::new(),
+        danger_zone: None,
+        suspicious_elements: 0,
+        page_archived: None,
+        own_elements: 0,
+        username: None,
+        below_viewport: 0,
+        max_scroll_pages: 0,
+        notifications: Vec::new(),
+        rate_limit_seconds: None,
     }
 }
 

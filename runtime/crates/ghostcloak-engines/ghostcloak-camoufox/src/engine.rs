@@ -150,6 +150,16 @@ impl CamoufoxEngine {
 
         if opts.headless {
             cmd.arg("--headless");
+            // A headless engine must never touch the user's desktop
+            // stack: DISPLAY/WAYLAND_DISPLAY make headless Firefox connect
+            // the X/Wayland server for graphics init, which on a live
+            // remote-desktop session (VNC/NoMachine/X2Go) couples the
+            // engine to the user's session. Headless means desktop-free.
+            // NOTE: LD_PRELOAD is deliberately NOT stripped — some
+            // environments route required libs through it; stripping broke
+            // engines on a NoMachine host.
+            cmd.env_remove("DISPLAY");
+            cmd.env_remove("WAYLAND_DISPLAY");
         }
         if let Some(proxy) = &opts.proxy {
             // Firefox-style: each proxy type is its own flag on the command
@@ -498,10 +508,15 @@ impl Engine for CamoufoxEngine {
     ) -> Result<Arc<dyn PageHandle>> {
         // 1. Enable the browser-side dispatcher (required before anything
         //    else; attachToDefaultContext is mandatory, not optional).
+        // Bootstrap request: the engine may still be reaching
+        // final-ui-startup (window creation) under load — give it up to
+        // 120s instead of the default 20s, which spuriously failed slow
+        // boots on busy hosts.
         self.conn
-            .request(
+            .request_long(
                 "Browser.enable",
                 serde_json::json!({ "attachToDefaultContext": true }),
+                std::time::Duration::from_secs(120),
             )
             .await?;
 
@@ -1725,6 +1740,21 @@ impl PageHandle for CamoufoxPage {
         let snap: ghostcloak_core::engine::A11ySnapshot = serde_json::from_str(&json)
             .map_err(|e| GhostError::PageOp(format!("a11y parse: {e}")))?;
         Ok(snap)
+    }
+
+    /// Native a11y observation via the engine's own accessibility tree —
+    /// the trusted source (page scripts cannot tamper; shadow DOM, iframes
+    /// and ARIA semantics handled by Gecko itself). Speaks the existing
+    /// Juggler `Page.getFullAXTree` (the ariaSnapshot plumbing Playwright
+    /// uses), which our engine build already carries.
+    async fn a11y_tree_native(&self) -> Result<serde_json::Value> {
+        let sid = self.session_id().await?;
+        let res = self
+            .conn
+            .request_session("Page.getFullAXTree", serde_json::json!({}), Some(&sid))
+            .await
+            .map_err(|e| GhostError::Protocol(format!("getFullAXTree: {e}")))?;
+        Ok(res)
     }
 
     async fn read_ref_full(&self, r: &str) -> Result<String> {

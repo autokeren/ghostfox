@@ -173,6 +173,14 @@ pub trait PageHandle: Send + Sync {
             "a11y_snapshot not supported by this engine".into(),
         ))
     }
+    /// NATIVE observation: the engine's own accessibility tree (trusted —
+    /// page scripts cannot tamper), raw JSON from the Juggler
+    /// Page.getFullAXTree protocol. Engines without native a11y error.
+    async fn a11y_tree_native(&self) -> Result<serde_json::Value> {
+        Err(crate::error::GhostError::PageOp(
+            "native a11y tree not supported by this engine".into(),
+        ))
+    }
     /// Act on an element by its ref from a11y_snapshot.
     async fn click_ref(&self, r: &str) -> Result<()> {
         let _ = r;
