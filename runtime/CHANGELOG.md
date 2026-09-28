@@ -5,6 +5,43 @@ All notable changes to ghostcloak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — target v0.8.2
+
+The agent-reliability release: observation, determinism, evidence.
+
+### Added
+- `page_extract` (tool #43): typed, token-efficient a11y filtering —
+  agents ask for what they need ({key: {role, name, text, tag, first}})
+  instead of paying for full-snapshot dumps.
+- Recipes (#44-47): `recipe_record` / `recipe_save` / `recipe_list` /
+  `recipe_replay` — record a successful flow, replay it deterministically
+  without an LLM in the loop. Ref-based steps capture SEMANTIC anchors
+  (role + accessible name) so replays survive DOM churn; strict mode
+  escalates with {failed_at, anchor, hint} for the LLM to take over.
+- Universal action receipts: `page_click_ref` / `page_type_ref` return
+  Act→Observe→Compare evidence — cached-before snapshot diffed against a
+  fresh walk (500ms settle), plus target/url/url_changed/login_state.
+  Graceful degradation when no cached before exists.
+- `page_diff` (tool #48): the standalone observeDiff primitive — what
+  changed since the last snapshot, capped at 40 entries.
+- `page_a11y(native=true)`: observation from the engine's OWN
+  accessibility tree via the existing Juggler `Page.getFullAXTree`
+  (the ariaSnapshot plumbing). Trusted source — page scripts cannot
+  tamper; shadow DOM, iframes and ARIA semantics handled by Gecko
+  itself. Richer states (focused/required/checked/expanded/disabled/
+  level/tag). Native refs (n1..n) are observation handles; acting goes
+  through role+name anchors or the walk source. Phase 1 of the
+  Gecko-native agent runtime.
+
+### Changed
+- Juggler bootstrap: the first `Browser.enable` on a fresh connection
+  now waits up to 120s (was a fixed 20s) — engine boots legitimately
+  take tens of seconds on loaded hosts; the old cap reported every slow
+  boot as dead.
+- Headless engine spawns strip `DISPLAY`/`WAYLAND_DISPLAY` so they
+  never couple to a live desktop session. `LD_PRELOAD` is deliberately
+  NOT stripped (required libs route through it on some hosts).
+
 ## [0.8.1] — 2026-09-28
 
 Typing fixed everywhere.

@@ -1,6 +1,7 @@
 # Ghostfox Journey
 
 Dev-log, todolist dan arah jalan. Satu dokumen buat lihat sudah sejauh apa dan mau ke mana.
+Per-version user-facing changes: [`runtime/CHANGELOG.md`](../runtime/CHANGELOG.md).
 (Dipelihara dari run nyata — kalau ada wall yang kepecahain, catat di sini; agent berikutnya mewarisi mata kita.)
 
 ---
@@ -46,10 +47,10 @@ Runtime Rust pertama + engine fork Camoufox. MCP round-trip E2E jalan.
 - v0.8.2-in-progress (commits): `page_extract` (tool 43), recipes record/replay (44-47), universal receipts + `page_diff` (48), **native a11y observation** (`page_a11y native=true` via `Page.getFullAXTree` — trusted source, bawaan engine!), 120s juggler bootstrap, headless X-isolation.
 
 ### Pelajaran lapangan (hard-won, jangan diulang)
-- **CPU contention palsu**: engine "mati" Browser.enable → ternyata render ffmpeg 4 core + userns probe fork hang under load. Fix: bootstrap 120s + knob `MOZ_ASSUME_USER_NS=0`.
+- **CPU contention palsu**: engine "mati" Browser.enable → ternyata render berat di host yang sama + userns probe fork hang under load. Fix: bootstrap 120s + knob `MOZ_ASSUME_USER_NS=0`.
 - **LD_PRELOAD jangan di-strip** dari child: lib yang dibutuhin bisa kelewat (mesin NoMachine). `DISPLAY`/`WAYLAND_DISPLAY` boleh (headless = desktop-free).
 - Juggler valid types cuma `keydown`/`keyup` lowercase — payload "keyDown"/"char" dibuang diam-diam (`Unknown type`).
-- Desktop user itu hidup: jangan spawn window headful di display dia, jangan pkill sembarangan, tanya dulu.
+- Display itu wilayah orang: jangan spawn window headful di display yang dipake manusia, jangan pkill sembarangan — tanya dulu.
 
 ---
 
@@ -124,7 +125,7 @@ Origin allowlist, confirmation enforced, redacted evidence.
 **Yang paling "ghostfox banget" dulu**: cookie heartbeat + visual stability — dua-duanya
 nyambung langsung ke pengalaman lapangan (session ke-revoke diam-diam, sleep-guessing).
 
-**Kemerdekaan bertahap dari upstream** (strategi): patch stack formalisasi → satu siklus update Firefox kita kerjain sendiri → cherry-pick camoufox selagi open → hard-fork trigger ditentukan dari awal (closed / stale >2 bulan).
+**Kemerdekaan bertahap dari upstream** (strategi): patch stack formalisasi → satu siklus update Firefox kita kerjain sendiri → cherry-pick camoufox selagi open → kriteria hard-fork ditentukan dari awal (internal).
 
 ## Yang gak kita lakuin
 
