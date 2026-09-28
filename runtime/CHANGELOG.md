@@ -5,6 +5,21 @@ All notable changes to ghostcloak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] — 2026-09-28
+
+Typing fixed everywhere.
+
+### Fixed
+- `page_type` now synthesizes Playwright-canonical key events. The old
+  build fabricated DOM `code` values ("Key0", "Key.") that Firefox's
+  TextInputProcessor reads as non-printable — digits and punctuation
+  were silently eaten in Lexical-based editors (X, Facebook, Notion).
+  Every printable ASCII char now carries its real US-layout code/keyCode
+  pair (91-entry table ported 1:1 from Playwright's usKeyboardLayout),
+  and non-layout chars (em-dash, CJK, emoji) use Juggler `Page.insertText`.
+  Verified: 123/123 chars locally, 223/223 in X's Lexical composer with
+  the Post button armed.
+
 ## [0.8.0] — 2026-09-27
 
 Linux arm64 support end-to-end.
