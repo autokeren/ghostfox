@@ -474,9 +474,14 @@ pub fn slide_gap(
 mod tests {
     use super::*;
 
+    /// Local debug harness — runs only when the dev fixture is present.
     #[tokio::test]
     async fn debug_solve_known_image() {
-        let bytes = std::fs::read("/tmp/opencode/ga.png").expect("read test image");
+        let path = std::path::Path::new("/tmp/opencode/ga.png");
+        if !path.exists() {
+            return;
+        }
+        let bytes = std::fs::read(path).expect("read test image");
         let boxes = solve_image(&bytes).await.expect("solve");
         println!("RUST BOXES: {:?}", boxes);
         println!("EXPECTED:   [[55, 36], [205, 12], [161, 86], [147, 255]]");
