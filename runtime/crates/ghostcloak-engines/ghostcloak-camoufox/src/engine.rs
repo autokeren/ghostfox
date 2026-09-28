@@ -1748,13 +1748,25 @@ impl PageHandle for CamoufoxPage {
     /// Juggler `Page.getFullAXTree` (the ariaSnapshot plumbing Playwright
     /// uses), which our engine build already carries.
     async fn a11y_tree_native(&self) -> Result<serde_json::Value> {
-        let sid = self.session_id().await?;
-        let res = self
-            .conn
-            .request_session("Page.getFullAXTree", serde_json::json!({}), Some(&sid))
-            .await
-            .map_err(|e| GhostError::Protocol(format!("getFullAXTree: {e}")))?;
-        Ok(res)
+        // KNOWN ENGINE BLOCKER (spike finding, 2026-09-28): in the current
+        // engine build, Page.getFullAXTree deadlocks when a11y was not
+        // already initialized at startup — the call runs synchronously on
+        // the main thread and the lazy a11y init needs the main-thread
+        // event loop it is blocking (re-entrancy deadlock). Reproduced
+        // headless in pristine Docker: >240s, no response.
+        //
+        // The fix lands engine-side: force a11y on at engine startup
+        // (accessibility.force_disabled=0 + a startup-init hook in the
+        // juggler additions) so the tree exists BEFORE any pipe request.
+        // Until then: fail fast with a clear error instead of wedging
+        // the session silently.
+        let _ = self.session_id().await?;
+        Err(GhostError::PageOp(
+            "native a11y unavailable in this engine build: the a11y tree \
+             must be initialized at engine startup (engine PR pending) — \
+             use the default JS-walk source"
+                .into(),
+        ))
     }
 
     async fn read_ref_full(&self, r: &str) -> Result<String> {
