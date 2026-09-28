@@ -13,7 +13,9 @@
 > **v0.7 debug cortex** (console/errors/network capture), and the
 > distribution layer (PyPI, npm, Docker/GHCR, MCP Registry listing).
 > Sections below keep the original plan; done items are checked off
-> where they landed.
+> where they landed. The active engineering horizons (the C++ arc:
+> an AI's five senses at the Gecko level) live in
+> [docs/JOURNEY.md](docs/JOURNEY.md).
 
 ---
 

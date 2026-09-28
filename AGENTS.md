@@ -653,6 +653,32 @@ camofox-browser, ...):
 announcement) was published by the Ghostfox runtime itself, using a
 session migrated from a Camoufox-lineage browser this way.*
 
+## 9. The agent-reliability toolset (v0.8.2 era) — use these first
+
+- **`page_extract(fields)`** — before dumping a full `page_a11y`, ask for
+  exactly what you need: `{"search": {"role":"textbox","name":"Search"},
+  "post": {"role":"button","name":"Post"}}`. Token-cheap, deterministic,
+  same shadow-DOM-piercing walk. `first: false` returns all matches.
+- **Native observation** — `page_a11y {"native": true}` reads the engine's
+  OWN accessibility tree (page scripts cannot tamper; richer states:
+  focused/required/checked/expanded/disabled). Native refs (n1..n) are
+  OBSERVATION handles: identify elements, anchor recipes, diff. Acting:
+  resolve role+name via page_extract, or use the default JS-walk refs.
+- **Action receipts** — `page_click_ref` / `page_type_ref` return evidence,
+  not "clicked": {target, url, url_changed, login_state, changes[]}.
+  READ `changes` after every action: it tells you what actually happened
+  (form appeared? error added? navigation?). This replaces most re-snapshot
+  round trips.
+- **`page_diff`** — what changed since the last snapshot, without an action
+  in between. Capped at 40 entries.
+- **Recipes** — repeat flows WITHOUT an LLM: `recipe_record(name)` → act →
+  `recipe_save()`. Later: `recipe_replay(name)` re-resolves each semantic
+  anchor (role+name) against a FRESH snapshot per step — survives DOM
+  churn. strict (default) stops with {failed_at, anchor, hint} = your cue
+  to take over manually; strict=false skips and reports.
+  Refs are ephemeral, anchors are forever — prefer recording from ref-based
+  actions so anchors get captured.
+
 ---
 
 *This playbook is maintained from real runs. When you find a new wall and

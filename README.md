@@ -102,6 +102,14 @@ vision-capable model (Cloudflare Workers AI, GLM, Qwen, ...) as
 cross-checks for grid puzzles and layout questions. Keys are optional;
 the native solvers above run fully local.
 
+**Native-sourced observation — `page_a11y {"native": true}`** reads the
+engine's OWN accessibility tree (Gecko's `DocAccessible` walk — the
+ariaSnapshot plumbing), so page scripts cannot tamper with what you see:
+shadow DOM, iframes and ARIA semantics handled by Gecko itself, richer
+states (focused/required/checked/expanded/disabled/level). Native refs
+are observation handles; acting goes through role+name anchors or the
+JS-walk source.
+
 **Eyes for agents — `page_a11y`.** One call returns every visible interactive
 element with a stable ref, semantic role, accessible name, live value —
 **piercing shadow DOM and same-origin iframes**, so web-component UIs
@@ -225,6 +233,7 @@ see [engine/README.md](engine/README.md) — `make dir && make build`.
 runtime/   Rust: ghostcloak-{core,fingerprint,mcp,eval}     (MIT OR Apache-2.0)
 engine/    Browser fork: patches, branding, build system    (MPL-2.0)
 AGENTS.md  The agent playbook — how AI agents drive Ghostfox like a human
+docs/JOURNEY.md  The dev-log, todo list and the road ahead (the five senses)
 ````
 
 Two directories, two licenses, one product. The runtime speaks

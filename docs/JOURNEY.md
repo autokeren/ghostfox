@@ -1,134 +1,190 @@
 # Ghostfox Journey
 
-Dev-log, todolist dan arah jalan. Satu dokumen buat lihat sudah sejauh apa dan mau ke mana.
+The dev-log, todo list, and the road ahead — one document to see how far
+we've come and where we're going. (Maintained from real runs — when a wall
+gets solved, it gets written down here; the next agent inherits our eyes.)
+
 Per-version user-facing changes: [`runtime/CHANGELOG.md`](../runtime/CHANGELOG.md).
-(Dipelihara dari run nyata — kalau ada wall yang kepecahain, catat di sini; agent berikutnya mewarisi mata kita.)
 
 ---
 
-## Perjalanan (yang sudah terlewati)
+## The journey (what's behind us)
 
-### v0.1.0 — 2026-09-03 · Lahir
-Runtime Rust pertama + engine fork Camoufox. MCP round-trip E2E jalan.
+### v0.1.0 — 2026-09-03 · Born
+First Rust runtime + Camoufox engine fork. MCP round-trip E2E working.
 
-### v0.5.x — awal Sep · "Behave like a human"
-- Human mouse: jalur bezier + tremor + overshoot, landing scatter.
-- Humanized typing cadence (profil keystroke dynamics, bukan machine-gun).
+### v0.5.x — early Sep · "Behave like a human"
+- Human mouse: bezier paths + tremor + overshoot, landing scatter.
+- Humanized typing cadence (keystroke-dynamics profile, not machine-gun).
 - `confirm_action` gate, `suspicious_elements` (prompt-injection flagging).
-- Identity generator: coherent presets (platform/screen/GPU/fonts yang emang sepaket) + `identity_audit` — 500/500 lolos.
-- Android personas: touch points di-patch level C++ (dead di upstream).
+- Identity generator: coherent device presets (platform/screen/GPU/fonts
+  that actually ship together) + `identity_audit` — 500/500 pass.
+- Android personas: touch points patched at the C++ level (dead upstream).
 
-### v0.6.x — pertengahan Sep · Mata & bukti
-- `page_a11y` semantic walker: shadow DOM + iframe, refs, live values, `login_state`, evidence recording per sesi.
-- Juggler dipelajari dalam-dalam: nama event ≠ CDP (`Runtime.console`, `Page.uncaughtError`), hook harus di permanent pump.
+### v0.6.x — mid Sep · Eyes & evidence
+- `page_a11y` semantic walker: shadow DOM + iframes, refs, live values,
+  `login_state`, per-session evidence recording.
+- Juggler internals mapped: event names ≠ CDP (`Runtime.console`,
+  `Page.uncaughtError`), hooks must live in the permanent pump.
 
-### v0.6.7 — 2026-09-21 · Captcha toolset all-native
-- 7 family captcha E2E di tempat nyata: GeeTest slide/rotate/icon-click, normal-OCR, Turnstile, TikTok.
-- **bilibili icon-click 6/6** "Verification Succeeded" — YOLOv8s + siamese ter-dekuantisasi jalan di rten (CPU).
-- ddddocr CRNN di-port ke onnxruntime (tanpa Python).
-- Pelajaran penting: model quantized dinamis rusak DIAM-DIAM di rten (semua output 1.0) — selalu dekuantisasi.
+### v0.6.7 — 2026-09-21 · The all-native captcha toolset
+- 7 captcha families E2E in production: GeeTest slide/rotate/icon-click,
+  normal OCR, Turnstile, TikTok.
+- **bilibili icon-click 6/6 "Verification Succeeded"** — YOLOv8s +
+  dequantized siamese running in rten (CPU).
+- ddddocr CRNN ported to onnxruntime (zero Python at solve time).
+- Key lesson: dynamically-quantized models fail SILENTLY in rten (all-1.0
+  outputs) — always dequantize.
 
-### v0.7.0 — 2026-09-25 · Debug cortex + distribusi
-- `page_console` / `page_errors` / `page_network_start/read/body` — DevTools trio via MCP.
-- Rilis 4 kanal: PyPI, npm, Docker (GHCR), **MCP Registry resmi** (`io.github.autokeren/ghostfox`).
-- **Ghostfox posting sendiri** launch announcement-nya di page LinkedIn ghostfox — session portability dari Camoufox-lineage (cookie inject + skema cookies.sqlite Firefox 152: `expiry` itu MILIDETIK, `schemeMap` 256).
-- PELAJARAN PALING MAHAL: identitas HARUS match device asal session. Pakai token valid dengan fingerprint beda dari jarak jauh = "impossible login" → LinkedIn revoke SEMUA session (termasuk browser asal). Fix: identity match, documented di AGENTS.md §8.
-- Upstream: PR #782 ke daijro/camoufox (zombie-target fix di TargetRegistry.js) — MERGEABLE, nunggu aset build beta.31 maintainer.
+### v0.7.0 — 2026-09-25 · Debug cortex + distribution
+- `page_console` / `page_errors` / `page_network_start/read/body` — the
+  DevTools trio over MCP.
+- Four distribution channels: PyPI, npm, Docker (GHCR), and the official
+  **MCP Registry** (`io.github.autokeren/ghostfox`).
+- **Ghostfox posted its own launch announcement** on the ghostfox LinkedIn
+  page — session portability from a Camoufox-lineage browser (cookie
+  injection + the Firefox 152 cookies.sqlite schema: `expiry` is
+  MILLISECONDS, `schemeMap` 256).
+- THE MOST EXPENSIVE LESSON: the identity must match the session's origin
+  device. Using a valid token behind a different fingerprint from a distant
+  IP = "impossible login" → LinkedIn revoked ALL sessions (including the
+  origin browser). Fix: identity matching, documented in AGENTS.md §8.
+- Upstream: PR #782 to daijro/camoufox (zombie-target fix in
+  TargetRegistry.js) — MERGEABLE, waiting on maintainer beta.31 build assets.
 
 ### v0.8.0 — 2026-09-27 · arm64 + landscape check
-- Linux arm64 end-to-end: asset `ghostcloak-mcp-arm64` (runner native arm), installer arch-aware di pip/npm/install.sh. Engine `lin.arm64` udah ada sejak v0.7.0.
-- Survey pasar: space-nya MELEDAJ (browser-use 116k★, vercel agent-browser 43k★, obscura 28k★...). Moat kita: engine ownership + proof corpus + agent UX + canonical. README dapat section "The moat".
-- Riset: WebGPU atomic fingerprinting = frontier deteksi 2026. Ditemukan: `dom.webgpu.enabled` compile-time — persona Windows/Mac-ARM kita LEAK (FF152 asli punya WebGPU, kita gak). Ini PR engine berikutnya.
+- Linux arm64 end-to-end: `ghostcloak-mcp-arm64` asset (native arm runner),
+  arch-aware installers in pip/npm/install.sh. The `lin.arm64` engine zip
+  has shipped since v0.7.0.
+- Market survey: the space EXPLODED (browser-use 116k★, Vercel
+  agent-browser 43k★, obscura 28k★...). Our moat: engine ownership + proof
+  corpus + agent UX + canonical distribution. README gained "The moat".
+- Research: WebGPU atomic fingerprinting is 2026's detection frontier.
+  Found: `dom.webgpu.enabled` is compile-time — our Windows/Mac-ARM
+  personas LEAK (real FF152 has WebGPU, we don't). That's the next engine PR.
 
-### v0.8.1 — 2026-09-28 · Typing fix + arah baru
-- **Typing diperbaiki total**: akar masalah `code` DOM palsu ("Key0"/"Key." → TextInputProcessor anggap non-printable → digit & tanda baca diam-diam dimakan di Lexical). Fix: port usKeyboardLayout Playwright 1:1 (91 entri) + `Page.insertText` buat unicode. 223/223 di composer X.
-- **Arsitektur baru disepakati**: Ghostfox = Gecko-native agent browser — observe/act/verify di level engine, receipts semua aksi, AI tetap di luar C++.
-- **Local engine build loop** jalan: full build 26 menit di mesin dev (`/home/ubuntu/gf-engine/`). Iterasi patch dari 2 jam (CI) jadi menit-an.
-- v0.8.2-in-progress (commits): `page_extract` (tool 43), recipes record/replay (44-47), universal receipts + `page_diff` (48), **native a11y observation** (`page_a11y native=true` via `Page.getFullAXTree` — trusted source, bawaan engine!), 120s juggler bootstrap, headless X-isolation.
+### v0.8.1 — 2026-09-28 · Typing fix + the new direction
+- **Typing fixed at the root**: fake DOM `code` values ("Key0"/"Key." —
+  Firefox's TextInputProcessor reads them as non-printable, so digits and
+  punctuation were silently eaten in Lexical editors). Fix: Playwright's
+  usKeyboardLayout ported 1:1 (91 entries) + `Page.insertText` for
+  unicode. 223/223 in X's composer.
+- **New architecture agreed**: Ghostfox = a Gecko-native agent browser —
+  observe/act/verify at the engine level, receipts on every action, AI
+  reasoning stays OUT of C++.
+- **Local engine build loop** achieved: full build in 26 minutes on the
+  dev box. Patch iteration went from 2h (CI round-trips) to minutes.
+- v0.8.2-in-progress (committed): `page_extract` (tool 43), recipes
+  record/replay (44-47), universal receipts + `page_diff` (48), **native
+  a11y observation** (`page_a11y native=true` via `Page.getFullAXTree` —
+  the trusted source, already in the engine!), 120s juggler bootstrap,
+  headless X-isolation.
 
-### Pelajaran lapangan (hard-won, jangan diulang)
-- **CPU contention palsu**: engine "mati" Browser.enable → ternyata render berat di host yang sama + userns probe fork hang under load. Fix: bootstrap 120s + knob `MOZ_ASSUME_USER_NS=0`.
-- **LD_PRELOAD jangan di-strip** dari child: lib yang dibutuhin bisa kelewat (mesin NoMachine). `DISPLAY`/`WAYLAND_DISPLAY` boleh (headless = desktop-free).
-- Juggler valid types cuma `keydown`/`keyup` lowercase — payload "keyDown"/"char" dibuang diam-diam (`Unknown type`).
-- Display itu wilayah orang: jangan spawn window headful di display yang dipake manusia, jangan pkill sembarangan — tanya dulu.
+### Field lessons (hard-won — don't repeat)
+- **Fake engine deaths from CPU contention**: Browser.enable "timeouts"
+  were actually heavy renders on the same host + the userns fork-probe
+  hanging under load. Fix: 120s bootstrap + the `MOZ_ASSUME_USER_NS=0`
+  operator knob.
+- **Never strip LD_PRELOAD from children**: required libs can route
+  through it (a NoMachine host died from this). `DISPLAY`/`WAYLAND_DISPLAY`
+  are safe to strip (headless means desktop-free).
+- Juggler's valid key event types are lowercase `keydown`/`keyup` only —
+  "keyDown"/"char" payloads are silently discarded (`Unknown type`).
+- A display belongs to a human: never spawn headful windows on a display
+  someone is using, never pkill broadly — ask first.
 
 ---
 
-## Status hari ini
+## Status today
 
-- **48 MCP tools** (CI hijau, clippy 0-0, test suite green)
-- Kanal: PyPI 0.8.1 · npm 0.8.1 · GHCR 0.8.0 · MCP Registry 0.8.0 → semua live
-- Bukti nyata: bilibili 6/6 · hCaptcha 2 production site · TikTok OTP · LinkedIn self-post · Docker E2E
-- Traction dini: ~215 install/hari (PyPI+npm) sebelum campaign besar; 5 stars, 2 forks, 129 unik cloner
+- **48 MCP tools** (CI green, clippy 0-0, test suite green)
+- Channels: PyPI 0.8.1 · npm 0.8.1 · GHCR 0.8.0 · MCP Registry — all live
+- Production proofs: bilibili 6/6 · hCaptcha on 2 real signups · TikTok
+  OAuth+OTP · the LinkedIn self-post · Docker E2E
+- Early traction: ~215 installs/day (PyPI+npm) before any real campaign;
+  5 stars, 2 forks, 129 unique cloners
 
-## TODO aktif (urutan eksekusi)
+## Active todo (execution order)
 
-- [ ] **E2E native a11y** (blocked: mesin lagi dipake render) → **cut v0.8.2** (48 tools)
-- [ ] **X post v0.8** (draft siap — rate limit keburu cleared?) + repost Show HN timing Senin
-- [ ] Streamable HTTP transport (rmcp punya; fork panzx bukti demand — remote use case gulutux)
-- [ ] Network interception spike (verifikasi Juggler route/setInterception 1 hari → build 3-5 hari)
-- [ ] WebGPU v1 persona spoofing (nutup leak persona Win/Mac-ARM; 2 jam per iterasi build)
-- [ ] PR #782: monitor upstream beta.31 assets
+- [ ] **Native a11y E2E** (blocked: host busy with renders) → **cut v0.8.2**
+- [ ] **X post v0.8** (draft ready — rate limit cleared?) + Show HN repost at US prime time
+- [ ] Streamable HTTP transport (rmcp has it; the fork proved demand)
+- [ ] Network interception spike (verify Juggler route/setInterception — 1 day, then 3-5 days to build)
+- [ ] WebGPU v1 persona spoofing (close the Win/Mac-ARM leak; 2h per build cycle)
+- [ ] PR #782: watch for upstream beta.31 assets
 
-## Horizon — C++ arc: panca indra AI di level Gecko
+## Horizon — the C++ arc: an AI's five senses at the Gecko level
 
-**Prinsip**: AI jangan masuk C++. C++ = sensor + actuator deterministik. Otak di runtime/MCP.
-Framing: setiap milestone = satu "indra" yang dibuka untuk agen.
+**Principle**: AI never goes into C++. C++ is the deterministic sensor +
+actuator. The brain lives in the runtime/MCP.
+Framing: every milestone unlocks one more "sense" for the agent.
 
-### M1 — 👁 Penglihatan terstruktur ✅ (wiring done)
-`Page.getFullAXTree` + flatten → `page_a11y native=true` — trusted a11y tree.
-Tinggal: E2E + actionable native refs (ref registry ala backendNodeId).
+### M1 — 👁 Structured sight ✅ (wiring done)
+`Page.getFullAXTree` + flatten → `page_a11y native=true` — the trusted a11y
+tree. Remaining: E2E + actionable native refs (a backendNodeId-style registry).
 
-### M2 — ✋ Peraba: native click/type broker
-`semantic_click(ref)` — resolve accessible → **rect layout NATIVE** (JS bisa bohong soal
-`getBoundingClientRect`; sites hook rect buat racun klik — koordinat mouse yang gak bisa
-dibohongin) → hit-test → trusted events. Drag captcha paling diuntungkan: gap→target presisi.
+### M2 — ✋ Touch: the native click/type broker
+`semantic_click(ref)` — resolve the accessible → the NATIVE layout rect
+(JS can lie about `getBoundingClientRect`; sites hook rects to poison
+clicks — mouse coordinates that cannot be fooled) → hit-test → trusted
+events. Drag captchas benefit most: precise gap→target geometry.
 
 ### M2.5 — 🥷 Stealth pixel extraction
-`Agent.captureSurface`: baca piksel dari compositor/backing store TANPA `toDataURL`
-(yang bisa di-hook site buat deteksi exfiltrasi) → captcha suite jadi satu-satunya yang
-stealth dari sisi akuisisi data. Kombinasi unik yang gak dimiliki kompetitor wrapper-based
-(mereka SEMUA lewat toDataURL/CDP screenshot yang bisa di-hook). PR kecil di juggler
-additions + compositor hook.
+`Agent.captureSurface`: read pixels from the compositor/backing store
+WITHOUT `toDataURL` (which sites can hook to detect exfiltration) → the
+captcha suite becomes the only one that's stealth at the data-acquisition
+layer. A combination no wrapper-based competitor can have — they ALL go
+through hookable toDataURL/CDP screenshots. Small PR in the juggler
+additions + a compositor hook.
 
-### M3 — 👂 Pendengaran: update inkremental + whisper stream
-- AccEvent diff (`Agent.observeDiff`) — a11y tree sebagai stream, bukan full snapshot.
-- **DOM mutation whisper**: tiap perubahan DOM = event (bukan polling).
-- **WebSocket frames**: network full-duplex (HTTP udah; WS buat challenge/config makin umum).
+### M3 — 👂 Hearing: incremental updates + whisper streams
+- AccEvent diff (`Agent.observeDiff`) — the a11y tree as a stream, not
+  full snapshots.
+- **DOM mutation whispers**: every DOM change as an event (no polling).
+- **WebSocket frames**: full-duplex network (HTTP done; WS carries
+  challenge/config more and more).
 
-### M3.5 — 👃 Penciuman: paint & timing sense
-- **Visual-stability events** (RefreshDriver/compositor observer): "tunggu sampai
-  VISUALLY siap" — bunuh semua `sleep(3)` arbiter di playbook. Ini pengganti
-  page_wait_for yang sejati.
+### M3.5 — 👃 Smell: paint & timing sense
+- **Visual-stability events** (RefreshDriver/compositor observer):
+  "wait until VISUALLY ready" — kills every arbitrary `sleep(3)` in the
+  playbook. The true successor to page_wait_for.
 - **Timing sense**: DNS/TLS/TTFB per request, long-task events.
-- **Jank detector**: main-thread sibuk → jangan klik dulu (page "rasanya" berat).
+- **Jank detector**: main thread busy → don't click yet (the page
+  "feels" heavy).
 
-### M4 — 🧍 Proprioception: state tubuh browser
+### M4 — 🧍 Proprioception: browser body state
 - Load state, dialogs, downloads, **focus/selection**.
-- **Caret/selection/IME state**: agent "merasa" posisi jarinya di editor —
-  receipts typing jadi nyata (caret pindah ke mana setelah 1000 chars? selection
-  range native, JS gak bisa bohong soal ini).
-- **Cookie/session heartbeat**: event "auth cookie berubah/kehapus" → deteksi
-  matinya session LEBIH AWAL. Pelajaran LinkedIn (revoked diam-diam) jadi
-  gak bakal keulang — kita TAU di detik kejadian.
-- **Frame stream + visual diff** (screencast exposure): agent "lihat" animasi
-  masih jalan apa udah selesai.
+- **Caret/selection/IME state**: the agent "feels" where its fingers are
+  in an editor — typing receipts become real (where did the caret land
+  after 1000 chars? native selection range, JS can't lie about it).
+- **Cookie/session heartbeat**: an event when auth cookies change/get
+  deleted → session death detected EARLY. The LinkedIn lesson (silent
+  revocation) can't repeat — we'd know the second it happens.
+- **Frame stream + visual diff** (screencast exposure): the agent "sees"
+  whether an animation is still running or actually finished.
 
 ### M4.5 — 🩺 Self-health
-- **Memory/CPU per-tab**: agent multi-tab "merasa" tab yang bocor → close.
-- Crash content-process → event → auto-recovery (self-healing sessions).
+- **Per-tab memory/CPU**: a multi-tab agent "feels" the leaking tab → closes it.
+- Content-process crash → event → auto-recovery (self-healing sessions).
 
 ### M5 — 🛡 Policy layer
-Origin allowlist, confirmation enforced, redacted evidence.
+Origin allowlists, enforced confirmations, redacted evidence.
 
-**Urutan eksekusi**: M1 E2E → v0.8.2 → M2 (+M2.5 bareng) → M3/M3.5 → M4/M4.5 → M5.
-**Yang paling "ghostfox banget" dulu**: cookie heartbeat + visual stability — dua-duanya
-nyambung langsung ke pengalaman lapangan (session ke-revoke diam-diam, sleep-guessing).
+**Execution order**: M1 E2E → v0.8.2 → M2 (+M2.5 together) → M3/M3.5 →
+M4/M4.5 → M5.
+**The most "ghostfox" ones first**: cookie heartbeat + visual stability —
+both connect directly to field experience (the silently-revoked session,
+sleep-guessing in the playbook).
 
-**Kemerdekaan bertahap dari upstream** (strategi): patch stack formalisasi → satu siklus update Firefox kita kerjain sendiri → cherry-pick camoufox selagi open → kriteria hard-fork ditentukan dari awal (internal).
+## Progressive independence from upstream (strategy)
 
-## Yang gak kita lakuin
+Formalize the patch stack → do one full Firefox update cycle ourselves →
+cherry-pick Camoufox while it stays open → hard-fork criteria agreed
+upfront (internal).
 
-- Tanam AI reasoning ke C++ (deterministic sensor/actuator doang)
-- God-tool "do anything" — primitives kecil di atas native solid
-- Ganti prioritas anti-detect (itu moat kita — dua kaki: reliability + survival)
+## What we don't do
+
+- Embed AI reasoning in C++ (deterministic sensors/actuators only)
+- God-tools that "do anything" — small primitives on solid natives
+- De-prioritize anti-detect (it's the moat — two legs: reliability +
+  survival)
