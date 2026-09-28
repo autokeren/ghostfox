@@ -185,12 +185,12 @@ origin device** (platform, timezone, locale, screen) — a session that
 suddenly changes identity looks like an impossible login and anti-fraud
 systems revoke it. Proven flow, see `AGENTS.md` §8.
 
-**Full tool surface (42 tools):**
+**Full tool surface (43 tools):**
 
 | Category | Tools |
 |---|---|
 | **Session** | `session_create` · `session_pages` · `session_me` |
-| **See** | `page_a11y` (semantic + login_state + shadow DOM/iframe) · `page_snapshot` · `page_screenshot` · `page_read_ref` (full value) |
+| **See** | `page_a11y` (semantic + login_state + shadow DOM/iframe) · `page_extract` (typed, token-efficient a11y filters) · `page_snapshot` · `page_screenshot` · `page_read_ref` (full value) |
 | **Wait** | `page_wait_for` (poll until visible) · `page_dismiss_modal` |
 | **Act** | `page_click_ref` · `page_type_ref` · `page_click` · `page_type` · `page_fill` · `page_press` · `page_drag` · `page_move_to` · `page_upload_file` · `page_init_script` |
 | **Captcha** | `captcha_solve` · `page_geetest_slide` · `page_geetest_click` · `page_captcha_rotate` · `page_captcha_ocr` · `page_hcaptcha` |

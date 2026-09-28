@@ -331,6 +331,40 @@ struct PageRefParams {
     page_id: String,
 }
 
+/// Filter for one extraction field. All specified conditions are ANDed.
+/// Matching is case-insensitive; `name` matches by substring.
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ExtractSpec {
+    /// Exact ARIA-ish role: "textbox", "button", "link", "heading", ...
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    role: Option<String>,
+    /// Substring match against the accessible name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+    /// Substring match against the element's live value (inputs/editors).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    text: Option<String>,
+    /// Substring match against the HTML tag name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tag: Option<String>,
+    /// true (default): return the first match in DOM order. false: all matches.
+    #[serde(default = "default_true")]
+    first: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct PageExtractParams {
+    session_id: String,
+    page_id: String,
+    /// Map of output key -> filter spec, e.g.
+    /// {"search": {"role":"textbox","name":"Search"}, "signin": {"role":"button","name":"Sign in"}}
+    fields: std::collections::BTreeMap<String, ExtractSpec>,
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 struct PageClickParams {
     session_id: String,
@@ -602,6 +636,102 @@ impl GhostcloakServer {
         );
         Ok(text_result(
             serde_json::to_string_pretty(&snap).unwrap_or_default(),
+        ))
+    }
+
+    #[tool(
+        description = "Extract specific elements into a compact typed JSON — the token-efficient alternative to dumping the full page_a11y. Pass a fields map: {output_key: {role, name, text, tag, first}}. Each filter ANDs its conditions (case-insensitive substring). Runs the same semantic walk as page_a11y (shadow DOM piercing, live values) but returns ONLY what you asked for: {output_key: {ref, role, name, value} | [matches...] | null} plus a tiny meta block (login_state, page_url). Example: page_extract(fields={'search': {'role':'textbox','name':'Search'}, 'post': {'role':'button','name':'Post'}}) → act on the returned refs with page_click_ref/page_type_ref."
+    )]
+    async fn page_extract(
+        &self,
+        Parameters(PageExtractParams {
+            session_id,
+            page_id,
+            fields,
+        }): Parameters<PageExtractParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let page = session
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let snap = page
+            .a11y_snapshot()
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+
+        let eq_ci = |a: &str, b: &str| a.eq_ignore_ascii_case(b);
+        let contains_ci =
+            |haystack: &str, needle: &str| haystack.to_lowercase().contains(&needle.to_lowercase());
+
+        let mut out = serde_json::Map::new();
+        for (key, spec) in &fields {
+            let matches: Vec<&ghostcloak_core::engine::A11yElement> = snap
+                .elements
+                .iter()
+                .filter(|el| {
+                    spec.role
+                        .as_deref()
+                        .map(|r| eq_ci(&el.role, r))
+                        .unwrap_or(true)
+                        && spec
+                            .name
+                            .as_deref()
+                            .map(|n| contains_ci(&el.name, n))
+                            .unwrap_or(true)
+                        && spec
+                            .text
+                            .as_deref()
+                            .map(|t| contains_ci(el.value.as_deref().unwrap_or(""), t))
+                            .unwrap_or(true)
+                        && spec
+                            .tag
+                            .as_deref()
+                            .map(|t| contains_ci(el.tag.as_deref().unwrap_or(""), t))
+                            .unwrap_or(true)
+                })
+                .collect();
+            let hits: Vec<_> = if spec.first {
+                matches.into_iter().take(1).collect()
+            } else {
+                matches
+            };
+            let render = |el: &ghostcloak_core::engine::A11yElement| {
+                serde_json::json!({
+                    "ref": el.r#ref,
+                    "role": el.role,
+                    "name": el.name,
+                    "value": el.value,
+                    "disabled": el.disabled,
+                })
+            };
+            let val = if spec.first {
+                hits.first()
+                    .map(|el| render(el))
+                    .unwrap_or(serde_json::Value::Null)
+            } else {
+                serde_json::Value::Array(hits.iter().map(|el| render(el)).collect())
+            };
+            out.insert(key.clone(), val);
+        }
+        let result = serde_json::json!({
+            "meta": {
+                "login_state": snap.login_state,
+                "page_url": snap.page_url,
+            },
+            "fields": serde_json::Value::Object(out),
+        });
+        let _ = self.recorder.record(
+            &session_id,
+            "page_extract",
+            Some(&page_id),
+            serde_json::json!({ "fields": fields.len() }),
+        );
+        Ok(text_result(
+            serde_json::to_string_pretty(&result).unwrap_or_default(),
         ))
     }
 
