@@ -185,7 +185,7 @@ origin device** (platform, timezone, locale, screen) — a session that
 suddenly changes identity looks like an impossible login and anti-fraud
 systems revoke it. Proven flow, see `AGENTS.md` §8.
 
-**Full tool surface (43 tools):**
+**Full tool surface (42 tools):**
 
 | Category | Tools |
 |---|---|

@@ -226,8 +226,7 @@ impl CamoufoxEngine {
                         }
                     }
                     if method == Some("Browser.detachedFromTarget") {
-                        if let Some(tid) =
-                            msg.pointer("/params/targetId").and_then(|v| v.as_str())
+                        if let Some(tid) = msg.pointer("/params/targetId").and_then(|v| v.as_str())
                         {
                             engine_for_listener.targets.lock().await.remove(tid);
                         }
@@ -276,7 +275,10 @@ impl CamoufoxEngine {
     /// v0.6.2: Attach to an EXISTING browser target (popup/tab opened by
     /// the site — OAuth windows, payment flows). Returns a fully live
     /// page handle using the recorded session + context.
-    pub async fn attach_target(&self, target_id: &str) -> Result<Arc<dyn ghostcloak_core::engine::PageHandle>> {
+    pub async fn attach_target(
+        &self,
+        target_id: &str,
+    ) -> Result<Arc<dyn ghostcloak_core::engine::PageHandle>> {
         let sid = self
             .targets
             .lock()
@@ -751,120 +753,180 @@ impl Engine for CamoufoxEngine {
                             // events here already passed our-session matching.
                             // v0.7 DEBUG CORTEX (correct pump — this one lives forever):
                             // console/errors/network buffered from page birth.
-                        if let Some(m) = method {
-                            let buf = debug_buffers_for(&handle2.target_id);
-                            match m {
-                                "Runtime.console" => {
-                                    let kind = msg.pointer("/params/type").and_then(|v| v.as_str()).unwrap_or("log").to_string();
-                                    let mut parts: Vec<String> = Vec::new();
-                                    if let Some(args) = msg.pointer("/params/args").and_then(|v| v.as_array()) {
-                                        for a in args.iter().take(4) {
-                                            if let Some(v) = a.get("value") {
-                                                match v {
-                                                    serde_json::Value::String(s2) => parts.push(s2.clone()),
-                                                    other => parts.push(other.to_string()),
+                            if let Some(m) = method {
+                                let buf = debug_buffers_for(&handle2.target_id);
+                                match m {
+                                    "Runtime.console" => {
+                                        let kind = msg
+                                            .pointer("/params/type")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("log")
+                                            .to_string();
+                                        let mut parts: Vec<String> = Vec::new();
+                                        if let Some(args) =
+                                            msg.pointer("/params/args").and_then(|v| v.as_array())
+                                        {
+                                            for a in args.iter().take(4) {
+                                                if let Some(v) = a.get("value") {
+                                                    match v {
+                                                        serde_json::Value::String(s2) => {
+                                                            parts.push(s2.clone())
+                                                        }
+                                                        other => parts.push(other.to_string()),
+                                                    }
+                                                } else if let Some(t) =
+                                                    a.get("type").and_then(|v| v.as_str())
+                                                {
+                                                    parts.push(format!("[{t}]"));
                                                 }
-                                            } else if let Some(t) = a.get("type").and_then(|v| v.as_str()) {
-                                                parts.push(format!("[{t}]"));
                                             }
                                         }
+                                        let entry = serde_json::json!({
+                                            "kind": kind,
+                                            "text": parts.join(" "),
+                                            "ts": now_ms(),
+                                        });
+                                        let mut c = buf.console.lock().unwrap();
+                                        c.push(entry);
+                                        let keep_from = c.len().saturating_sub(500);
+                                        if keep_from > 0 {
+                                            c.drain(0..keep_from);
+                                        }
                                     }
-                                    let entry = serde_json::json!({
-                                        "kind": kind,
-                                        "text": parts.join(" "),
-                                        "ts": now_ms(),
-                                    });
-                                    let mut c = buf.console.lock().unwrap();
-                                    c.push(entry);
-                                    let keep_from = c.len().saturating_sub(500);
-                                    if keep_from > 0 { c.drain(0..keep_from); }
-                                }
-                                "Page.uncaughtError" => {
-                                    let text = msg.pointer("/params/message").and_then(|v| v.as_str()).unwrap_or("exception").to_string();
-                                    let url = msg.pointer("/params/location/url").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                    let line = msg.pointer("/params/location/lineNumber").and_then(|v| v.as_u64()).unwrap_or(0);
-                                    let stack = msg.pointer("/params/stack").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                    let entry = serde_json::json!({
-                                        "text": text,
-                                        "url": url,
-                                        "line": line,
-                                        "stack": vec![stack],
-                                        "ts": now_ms(),
-                                    });
-                                    let mut e = buf.errors.lock().unwrap();
-                                    e.push(entry);
-                                    let keep_from = e.len().saturating_sub(200);
-                                    if keep_from > 0 { e.drain(0..keep_from); }
-                                }
-                                "Network.requestWillBeSent" => {
-                                    let rid = msg.pointer("/params/requestId").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                    let url2 = msg.pointer("/params/request/url").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                    let mth = msg.pointer("/params/request/method").and_then(|v| v.as_str()).unwrap_or("GET").to_string();
-                                    if !url2.starts_with("data:") && !rid.is_empty() {
-                                        let mut n = buf.net.lock().unwrap();
-                                        let mut ix = buf.net_index.lock().unwrap();
-                                        if !ix.contains_key(&rid) {
-                                            ix.insert(rid.clone(), n.len());
-                                            n.push(serde_json::json!({
-                                                "requestId": rid,
-                                                "url": url2,
-                                                "method": mth,
-                                                "status": serde_json::Value::Null,
-                                                "done": false,
-                                                "ts": now_ms(),
-                                            }));
-                                            if n.len() > 1000 {
-                                                let drop = n.len().saturating_sub(1000);
-                                                if drop > 0 { n.drain(0..drop); }
-                                                ix.clear();
-                                                for (i, e2) in n.iter().enumerate() {
-                                                    if let Some(r) = e2.get("requestId").and_then(|v| v.as_str()) {
-                                                        ix.insert(r.to_string(), i);
+                                    "Page.uncaughtError" => {
+                                        let text = msg
+                                            .pointer("/params/message")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("exception")
+                                            .to_string();
+                                        let url = msg
+                                            .pointer("/params/location/url")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("")
+                                            .to_string();
+                                        let line = msg
+                                            .pointer("/params/location/lineNumber")
+                                            .and_then(|v| v.as_u64())
+                                            .unwrap_or(0);
+                                        let stack = msg
+                                            .pointer("/params/stack")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("")
+                                            .to_string();
+                                        let entry = serde_json::json!({
+                                            "text": text,
+                                            "url": url,
+                                            "line": line,
+                                            "stack": vec![stack],
+                                            "ts": now_ms(),
+                                        });
+                                        let mut e = buf.errors.lock().unwrap();
+                                        e.push(entry);
+                                        let keep_from = e.len().saturating_sub(200);
+                                        if keep_from > 0 {
+                                            e.drain(0..keep_from);
+                                        }
+                                    }
+                                    "Network.requestWillBeSent" => {
+                                        let rid = msg
+                                            .pointer("/params/requestId")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("")
+                                            .to_string();
+                                        let url2 = msg
+                                            .pointer("/params/request/url")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("")
+                                            .to_string();
+                                        let mth = msg
+                                            .pointer("/params/request/method")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("GET")
+                                            .to_string();
+                                        if !url2.starts_with("data:") && !rid.is_empty() {
+                                            let mut n = buf.net.lock().unwrap();
+                                            let mut ix = buf.net_index.lock().unwrap();
+                                            if !ix.contains_key(&rid) {
+                                                ix.insert(rid.clone(), n.len());
+                                                n.push(serde_json::json!({
+                                                    "requestId": rid,
+                                                    "url": url2,
+                                                    "method": mth,
+                                                    "status": serde_json::Value::Null,
+                                                    "done": false,
+                                                    "ts": now_ms(),
+                                                }));
+                                                if n.len() > 1000 {
+                                                    let drop = n.len().saturating_sub(1000);
+                                                    if drop > 0 {
+                                                        n.drain(0..drop);
+                                                    }
+                                                    ix.clear();
+                                                    for (i, e2) in n.iter().enumerate() {
+                                                        if let Some(r) = e2
+                                                            .get("requestId")
+                                                            .and_then(|v| v.as_str())
+                                                        {
+                                                            ix.insert(r.to_string(), i);
+                                                        }
                                                     }
                                                 }
                                             }
                                         }
                                     }
-                                }
-                                "Network.responseReceived" => {
-                                    let rid = msg.pointer("/params/requestId").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                    let status = msg.pointer("/params/response/status").and_then(|v| v.as_u64());
-                                    if let (Some(ix_val), Ok(mut n)) = (
-                                        buf.net_index.lock().unwrap().get(&rid).copied(),
-                                        buf.net.try_lock(),
-                                    ) {
-                                        if let Some(e2) = n.get_mut(ix_val) {
-                                            e2["status"] = serde_json::json!(status);
-                                            e2["done"] = serde_json::json!(true);
+                                    "Network.responseReceived" => {
+                                        let rid = msg
+                                            .pointer("/params/requestId")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("")
+                                            .to_string();
+                                        let status = msg
+                                            .pointer("/params/response/status")
+                                            .and_then(|v| v.as_u64());
+                                        if let (Some(ix_val), Ok(mut n)) = (
+                                            buf.net_index.lock().unwrap().get(&rid).copied(),
+                                            buf.net.try_lock(),
+                                        ) {
+                                            if let Some(e2) = n.get_mut(ix_val) {
+                                                e2["status"] = serde_json::json!(status);
+                                                e2["done"] = serde_json::json!(true);
+                                            }
                                         }
                                     }
-                                }
-                                "Network.requestFinished" => {
-                                    let rid = msg.pointer("/params/requestId").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                    if let (Some(ix_val), Ok(mut n)) = (
-                                        buf.net_index.lock().unwrap().get(&rid).copied(),
-                                        buf.net.try_lock(),
-                                    ) {
-                                        if let Some(e2) = n.get_mut(ix_val) {
-                                            e2["done"] = serde_json::json!(true);
+                                    "Network.requestFinished" => {
+                                        let rid = msg
+                                            .pointer("/params/requestId")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("")
+                                            .to_string();
+                                        if let (Some(ix_val), Ok(mut n)) = (
+                                            buf.net_index.lock().unwrap().get(&rid).copied(),
+                                            buf.net.try_lock(),
+                                        ) {
+                                            if let Some(e2) = n.get_mut(ix_val) {
+                                                e2["done"] = serde_json::json!(true);
+                                            }
                                         }
                                     }
-                                }
-                                "Network.requestFailed" => {
-                                    let rid = msg.pointer("/params/requestId").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                                    if let (Some(ix_val), Ok(mut n)) = (
-                                        buf.net_index.lock().unwrap().get(&rid).copied(),
-                                        buf.net.try_lock(),
-                                    ) {
-                                        if let Some(e2) = n.get_mut(ix_val) {
-                                            e2["status"] = serde_json::json!(0);
-                                            e2["done"] = serde_json::json!(true);
+                                    "Network.requestFailed" => {
+                                        let rid = msg
+                                            .pointer("/params/requestId")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("")
+                                            .to_string();
+                                        if let (Some(ix_val), Ok(mut n)) = (
+                                            buf.net_index.lock().unwrap().get(&rid).copied(),
+                                            buf.net.try_lock(),
+                                        ) {
+                                            if let Some(e2) = n.get_mut(ix_val) {
+                                                e2["status"] = serde_json::json!(0);
+                                                e2["done"] = serde_json::json!(true);
+                                            }
                                         }
                                     }
+                                    _ => {}
                                 }
-                                _ => {}
                             }
-                        }
                             if method == Some("Page.navigationCommitted") {
                                 if let Some(fid) =
                                     msg.pointer("/params/frameId").and_then(|v| v.as_str())
@@ -897,9 +959,8 @@ impl Engine for CamoufoxEngine {
                                     .or_else(|| msg.pointer("/params/targetId"))
                                     .and_then(|v| v.as_str());
                                 if tid == Some(handle2.target_id.as_str()) {
-                                    if let Some(sid) = msg
-                                        .pointer("/params/sessionId")
-                                        .and_then(|v| v.as_str())
+                                    if let Some(sid) =
+                                        msg.pointer("/params/sessionId").and_then(|v| v.as_str())
                                     {
                                         *handle2.session_id.lock().await = Some(sid.to_string());
                                     }
@@ -986,7 +1047,10 @@ impl Engine for CamoufoxEngine {
         Ok(out)
     }
 
-    async fn attach_target(&self, target_id: &str) -> Result<Arc<dyn ghostcloak_core::engine::PageHandle>> {
+    async fn attach_target(
+        &self,
+        target_id: &str,
+    ) -> Result<Arc<dyn ghostcloak_core::engine::PageHandle>> {
         CamoufoxEngine::attach_target(self, target_id).await
     }
 
@@ -1015,50 +1079,55 @@ impl Engine for CamoufoxEngine {
 // ---------------------------------------------------------------------------
 
 impl CamoufoxPage {
-
-/// v0.6.3: INIT SCRIPTS — run agent code at DOCUMENT START, before
-/// any page script. The deepest interception layer (hooks captured
-/// by page libraries become OURS). Ghostfox's engine-level advantage.
-async fn add_init_script(&self, source: &str) -> Result<()> {
-    let sid = self.session_id().await?;
-    self.conn
-        .request_session(
-            "Page.setInitScripts",
-            serde_json::json!({
-                "scripts": [ { "script": source } ]
-            }),
-            Some(&sid),
-        )
-        .await?;
-    Ok(())
-}
-
-
-/// v0.6: Resolve a ref to its viewport center (scrolls into view).
-async fn ref_center(&self, r: &str) -> Result<(f64, f64)> {
-    let out = self.evaluate(&crate::a11y::rect_ref_js(r)).await?;
-    let s = out.as_str().ok_or_else(|| {
-        GhostError::PageOp(format!("rect_ref({r}) bad response"))
-    })?;
-    if s == "STALE-REF" {
-        return Err(GhostError::PageOp(format!(
-            "ref {r} is stale — rerun page_a11y"
-        )));
+    /// v0.6.3: INIT SCRIPTS — run agent code at DOCUMENT START, before
+    /// any page script. The deepest interception layer (hooks captured
+    /// by page libraries become OURS). Ghostfox's engine-level advantage.
+    async fn add_init_script(&self, source: &str) -> Result<()> {
+        let sid = self.session_id().await?;
+        self.conn
+            .request_session(
+                "Page.setInitScripts",
+                serde_json::json!({
+                    "scripts": [ { "script": source } ]
+                }),
+                Some(&sid),
+            )
+            .await?;
+        Ok(())
     }
-    let v: serde_json::Value = serde_json::from_str(s)
-        .map_err(|e| GhostError::PageOp(format!("rect_ref({r}) parse: {e}")))?;
-    Ok((
-        v.get("x").and_then(|x| x.as_f64()).unwrap_or(0.0),
-        v.get("y").and_then(|y| y.as_f64()).unwrap_or(0.0),
-    ))
-}
+
+    /// v0.6: Resolve a ref to its viewport center (scrolls into view).
+    async fn ref_center(&self, r: &str) -> Result<(f64, f64)> {
+        let out = self.evaluate(&crate::a11y::rect_ref_js(r)).await?;
+        let s = out
+            .as_str()
+            .ok_or_else(|| GhostError::PageOp(format!("rect_ref({r}) bad response")))?;
+        if s == "STALE-REF" {
+            return Err(GhostError::PageOp(format!(
+                "ref {r} is stale — rerun page_a11y"
+            )));
+        }
+        let v: serde_json::Value = serde_json::from_str(s)
+            .map_err(|e| GhostError::PageOp(format!("rect_ref({r}) parse: {e}")))?;
+        Ok((
+            v.get("x").and_then(|x| x.as_f64()).unwrap_or(0.0),
+            v.get("y").and_then(|y| y.as_f64()).unwrap_or(0.0),
+        ))
+    }
 
     /// v0.6: Dispatch one mouse event at (x, y). `buttons` is the
     /// bitmask of held buttons (1 = left held — drag moves). NOTE: the
     /// Juggler protocol (Playwright-Firefox) uses lowercase event types —
     /// "mousemove", not CDP's "mouseMoved" (down/up match the existing
     /// click path).
-    async fn dispatch_mouse(&self, ty: &str, x: f64, y: f64, buttons: u32, count: u32) -> Result<()> {
+    async fn dispatch_mouse(
+        &self,
+        ty: &str,
+        x: f64,
+        y: f64,
+        buttons: u32,
+        count: u32,
+    ) -> Result<()> {
         let sid = self.session_id().await?;
         // DOM semantics: `buttons` is the state AFTER the event. On
         // mouseup the button is no longer held — sending buttons=1 there
@@ -1133,7 +1202,7 @@ async fn ref_center(&self, r: &str) -> Result<(f64, f64)> {
         for i in 1..=steps {
             let t = i as f64 / steps as f64;
             let v = (t * (1.0 - t)).max(0.02) * 3.0; // ∝ smoothstep speed
-            // Approach phase (last 25%) gets extra care: slower.
+                                                     // Approach phase (last 25%) gets extra care: slower.
             let v = if t > 0.75 { v * 0.45 } else { v };
             raw.push(1.0 / v);
             raw_sum += 1.0 / v;
@@ -1153,9 +1222,15 @@ async fn ref_center(&self, r: &str) -> Result<(f64, f64)> {
             let t = i as f64 / steps as f64;
             let te = t * t * (3.0 - 2.0 * t);
             let u = 1.0 - te;
-            let x = u * u * u * x0 + 3.0 * u * u * te * c1.0 + 3.0 * u * te * te * c2.0 + te * te * te * x1;
+            let x = u * u * u * x0
+                + 3.0 * u * u * te * c1.0
+                + 3.0 * u * te * te * c2.0
+                + te * te * te * x1;
             let wander = (drift_phase + t * std::f64::consts::PI).sin() * drift_amp;
-            let y = u * u * u * y0 + 3.0 * u * u * te * c1.1 + 3.0 * u * te * te * c2.1 + te * te * te * y1
+            let y = u * u * u * y0
+                + 3.0 * u * u * te * c1.1
+                + 3.0 * u * te * te * c2.1
+                + te * te * te * y1
                 + wander * (dy / dist).abs().max(0.0); // only when horizontal-ish
             let jx = rng.random_range(-0.7..0.7);
             let jy = rng.random_range(-0.7..0.7);
@@ -1226,7 +1301,6 @@ async fn ref_center(&self, r: &str) -> Result<(f64, f64)> {
         }
         tracing::warn!(target: "ghostcloak::camoufox", "force_release: mouseup never confirmed after retries");
     }
-
 }
 
 // ---------------------------------------------------------------------------
@@ -1240,7 +1314,8 @@ static NET_REGISTRY: std::sync::OnceLock<
     std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<NetLog>>>,
 > = std::sync::OnceLock::new();
 
-fn net_registry() -> &'static std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<NetLog>>> {
+fn net_registry(
+) -> &'static std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<NetLog>>> {
     NET_REGISTRY.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
 }
 
@@ -1276,8 +1351,8 @@ static DEBUG_REGISTRY: std::sync::OnceLock<
 > = std::sync::OnceLock::new();
 
 fn debug_buffers_for(target_id: &str) -> Arc<DebugBuffers> {
-    let reg = DEBUG_REGISTRY
-        .get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+    let reg =
+        DEBUG_REGISTRY.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
     let mut reg = reg.lock().unwrap();
     reg.entry(target_id.to_string())
         .or_insert_with(|| Arc::new(DebugBuffers::new()))
@@ -1293,7 +1368,6 @@ fn now_ms() -> u64 {
 }
 
 #[async_trait]
-
 
 impl PageHandle for CamoufoxPage {
     fn target_id(&self) -> Option<String> {
@@ -1688,7 +1762,10 @@ impl PageHandle for CamoufoxPage {
         let start = {
             use rand::Rng;
             let mut rng = rand::rng();
-            (x + rng.random_range(-90.0..-25.0), y + rng.random_range(-70.0..-20.0))
+            (
+                x + rng.random_range(-90.0..-25.0),
+                y + rng.random_range(-70.0..-20.0),
+            )
         };
         let path = Self::human_path(start, (x, y));
         self.move_along(&path, false).await
@@ -1703,7 +1780,10 @@ impl PageHandle for CamoufoxPage {
             use rand::Rng;
             let mut rng = rand::rng();
             Self::human_path(
-                (sx + rng.random_range(-90.0..-25.0), sy + rng.random_range(-70.0..-20.0)),
+                (
+                    sx + rng.random_range(-90.0..-25.0),
+                    sy + rng.random_range(-70.0..-20.0),
+                ),
                 (sx, sy),
             )
         };
@@ -1726,7 +1806,11 @@ impl PageHandle for CamoufoxPage {
         // response is lost, keep going — aborting here would wedge the
         // session with a stuck button. If it truly didn't land, the
         // drag just won't take (safe, recoverable on the page).
-        if self.dispatch_mouse("mousedown", sx, sy, 1, 1).await.is_err() {
+        if self
+            .dispatch_mouse("mousedown", sx, sy, 1, 1)
+            .await
+            .is_err()
+        {
             tracing::warn!(target: "ghostcloak::camoufox", "mousedown response lost (continuing drag)");
         }
         {
@@ -1740,7 +1824,9 @@ impl PageHandle for CamoufoxPage {
         let path = Self::human_path((sx, sy), (tx, ty));
         if self.move_along(&path, true).await.is_err() {
             self.force_release(tx, ty).await;
-            return Err(GhostError::PageOp("drag path interrupted — button released, page intact".into()));
+            return Err(GhostError::PageOp(
+                "drag path interrupted — button released, page intact".into(),
+            ));
         }
         // 4. Settle on the target before letting go (humans verify the drop).
         {
@@ -1831,7 +1917,9 @@ impl PageHandle for CamoufoxPage {
                                                 }
                                                 other => parts.push(other.to_string()),
                                             }
-                                        } else if let Some(t) = a.get("type").and_then(|v| v.as_str()) {
+                                        } else if let Some(t) =
+                                            a.get("type").and_then(|v| v.as_str())
+                                        {
                                             parts.push(format!("[{t}]"));
                                         }
                                     }
@@ -1858,7 +1946,8 @@ impl PageHandle for CamoufoxPage {
                                 let mut c = buf2.console.lock().unwrap();
                                 c.push(entry);
                                 if c.len() > 500 {
-                                    let keep_from = c.len().saturating_sub(500); c.drain(0..keep_from);
+                                    let keep_from = c.len().saturating_sub(500);
+                                    c.drain(0..keep_from);
                                 }
                             }
                             "Runtime.exceptionThrown" => {
@@ -1877,7 +1966,9 @@ impl PageHandle for CamoufoxPage {
                                     .and_then(|v| v.as_u64())
                                     .unwrap_or(0);
                                 let mut stack: Vec<String> = Vec::new();
-                                if let Some(st) = msg.pointer("/params/stack").and_then(|v| v.as_str()) {
+                                if let Some(st) =
+                                    msg.pointer("/params/stack").and_then(|v| v.as_str())
+                                {
                                     stack.push(st.to_string());
                                 }
                                 let entry = serde_json::json!({
@@ -1890,7 +1981,8 @@ impl PageHandle for CamoufoxPage {
                                 let mut e = buf2.errors.lock().unwrap();
                                 e.push(entry);
                                 if e.len() > 200 {
-                                    let keep_from = e.len().saturating_sub(200); e.drain(0..keep_from);
+                                    let keep_from = e.len().saturating_sub(200);
+                                    e.drain(0..keep_from);
                                 }
                             }
                             "Network.requestWillBeSent" => {
@@ -1931,7 +2023,9 @@ impl PageHandle for CamoufoxPage {
                                         // index now stale for old entries — clear + rebuild lazily
                                         ix.clear();
                                         for (i, e2) in n.iter().enumerate() {
-                                            if let Some(r) = e2.get("requestId").and_then(|v| v.as_str()) {
+                                            if let Some(r) =
+                                                e2.get("requestId").and_then(|v| v.as_str())
+                                            {
                                                 ix.insert(r.to_string(), i);
                                             }
                                         }
@@ -2062,7 +2156,8 @@ impl PageHandle for CamoufoxPage {
         }
         if result.get("evicted").and_then(|v| v.as_bool()) == Some(true) {
             return Err(GhostError::PageOp(
-                "response body evicted (too large or consumed) — start capture before the request".into(),
+                "response body evicted (too large or consumed) — start capture before the request"
+                    .into(),
             ));
         }
         Ok(serde_json::to_string(&result).unwrap_or_default())
@@ -2152,9 +2247,7 @@ impl PageHandle for CamoufoxPage {
             ))
             .await?;
         if out.as_str() == Some("STALE-REF") {
-            return Err(GhostError::PageOp(
-                "ref stale — rerun page_a11y".into(),
-            ));
+            return Err(GhostError::PageOp("ref stale — rerun page_a11y".into()));
         }
         for _ in 0..120 {
             tokio::time::sleep(std::time::Duration::from_millis(250)).await;
@@ -2167,7 +2260,9 @@ impl PageHandle for CamoufoxPage {
                 return Ok(s.to_string());
             }
         }
-        Err(GhostError::PageOp("match_image: did not settle in time".into()))
+        Err(GhostError::PageOp(
+            "match_image: did not settle in time".into(),
+        ))
     }
 
     async fn type_ref(&self, r: &str, text: &str) -> Result<()> {

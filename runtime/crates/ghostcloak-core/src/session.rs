@@ -55,7 +55,6 @@ impl Session {
             .ok_or_else(|| GhostError::PageNotFound(id.into()))
     }
 
-
     /// v0.6.2: Every browser target as (page_id, target_id, url) — our
     /// opened pages AND site-opened popups. Popups are auto-attached and
     /// registered so the agent gets a page_id it can use directly.
@@ -69,11 +68,7 @@ impl Session {
             for (pid, page) in pages.iter() {
                 known.push(page.target_id().unwrap_or_default());
                 let url = page.url().await.unwrap_or_default();
-                out.push((
-                    pid.clone(),
-                    page.target_id().unwrap_or_default(),
-                    url,
-                ));
+                out.push((pid.clone(), page.target_id().unwrap_or_default(), url));
             }
         }
         // Auto-attach unseen targets (popups).

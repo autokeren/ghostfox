@@ -102,7 +102,10 @@ pub async fn ocr_png(png: &[u8]) -> Result<String> {
 }
 
 /// Shared: decode PNG -> OcrInput -> detect words -> group into lines.
-fn ocr_input_and_lines(eng: &OcrEngine, png: &[u8]) -> Result<(OcrInput, Vec<Vec<rten_imageproc::RotatedRect>>)> {
+fn ocr_input_and_lines(
+    eng: &OcrEngine,
+    png: &[u8],
+) -> Result<(OcrInput, Vec<Vec<rten_imageproc::RotatedRect>>)> {
     let img = image::load_from_memory(png).context("decoding PNG for OCR")?;
     let rgb = img.into_rgb8();
     let (w, h) = rgb.dimensions();
@@ -118,6 +121,7 @@ fn ocr_input_and_lines(eng: &OcrEngine, png: &[u8]) -> Result<(OcrInput, Vec<Vec
 /// PaddleOCR v4 recognition model (10.3 MB ONNX, auto-downloaded).
 /// The model was trained on 6,622 Chinese + English characters.
 /// Returns the recognized text.
+#[allow(dead_code)] // kept for CJK OCR flows coming with the vision ensemble
 pub async fn ocr_chinese_png(png: &[u8]) -> Result<String> {
     // 1. Load model + dictionary (cached)
     static CH_MODEL: OnceLock<(rten::Model, Vec<String>)> = OnceLock::new();
@@ -146,13 +150,14 @@ pub async fn ocr_chinese_png(png: &[u8]) -> Result<String> {
     let (w, h) = resized.dimensions();
     let pixels = resized.into_raw();
     let mut chw = vec![0f32; (3 * h * w) as usize];
+    let base = (h * w) as usize;
     for (i, px) in pixels.chunks(3).enumerate() {
-        let x = (i % w as usize) as usize;
-        let y = (i / w as usize) as usize;
-        // CHW: [channel][height][width]
-        chw[0 * (h * w) as usize + y * w as usize + x] = px[0] as f32 / 255.0 * 2.0 - 1.0;
-        chw[1 * (h * w) as usize + y * w as usize + x] = px[1] as f32 / 255.0 * 2.0 - 1.0;
-        chw[2 * (h * w) as usize + y * w as usize + x] = px[2] as f32 / 255.0 * 2.0 - 1.0;
+        let x = i % w as usize;
+        let y = i / w as usize;
+        // CHW layout: channel planes at 0, base, 2*base.
+        chw[y * w as usize + x] = px[0] as f32 / 255.0 * 2.0 - 1.0;
+        chw[base + y * w as usize + x] = px[1] as f32 / 255.0 * 2.0 - 1.0;
+        chw[2 * base + y * w as usize + x] = px[2] as f32 / 255.0 * 2.0 - 1.0;
     }
 
     // 4. Run the model

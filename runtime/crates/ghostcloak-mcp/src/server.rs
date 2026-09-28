@@ -60,168 +60,164 @@ struct DragParams {
     offset_y: Option<f64>,
 }
 
-    #[derive(Debug, Deserialize, JsonSchema)]
-    struct PixelsParams {
-        session_id: String,
-        page_id: String,
-        /// Ref of the element to render (canvas / img / background-image).
-        r#ref: String,
-        /// Grid width in cells (default 32).
-        grid_w: Option<u32>,
-        /// Grid height in cells (default 21).
-        grid_h: Option<u32>,
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+struct PixelsParams {
+    session_id: String,
+    page_id: String,
+    /// Ref of the element to render (canvas / img / background-image).
+    r#ref: String,
+    /// Grid width in cells (default 32).
+    grid_w: Option<u32>,
+    /// Grid height in cells (default 21).
+    grid_h: Option<u32>,
+}
 
-    #[derive(Debug, Deserialize, JsonSchema)]
-    struct ContrastParams {
-        session_id: String,
-        page_id: String,
-        /// Ref of the element to analyze (canvas / img / background-image).
-        r#ref: String,
-        /// Grid width in cells (default 100).
-        grid_w: Option<u32>,
-        /// Grid height in cells (default 44).
-        grid_h: Option<u32>,
-        /// Gaussian blur radius in px (default 4).
-        blur_radius: Option<u32>,
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ContrastParams {
+    session_id: String,
+    page_id: String,
+    /// Ref of the element to analyze (canvas / img / background-image).
+    r#ref: String,
+    /// Grid width in cells (default 100).
+    grid_w: Option<u32>,
+    /// Grid height in cells (default 44).
+    grid_h: Option<u32>,
+    /// Gaussian blur radius in px (default 4).
+    blur_radius: Option<u32>,
+}
 
-    #[derive(Debug, Deserialize, JsonSchema)]
-    struct InitScriptParams {
-        session_id: String,
-        page_id: String,
-        /// JavaScript source to run at document start on every navigation.
-        source: String,
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+struct InitScriptParams {
+    session_id: String,
+    page_id: String,
+    /// JavaScript source to run at document start on every navigation.
+    source: String,
+}
 
-    #[derive(Debug, Deserialize, JsonSchema)]
-    struct NetParams {
-        session_id: String,
-        page_id: String,
-        /// Optional URL substring filter (e.g. "geetest").
-        filter: Option<String>,
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+struct NetParams {
+    session_id: String,
+    page_id: String,
+    /// Optional URL substring filter (e.g. "geetest").
+    filter: Option<String>,
+}
 
-    #[derive(Debug, Deserialize, JsonSchema)]
-    struct NetBodyParams {
-        session_id: String,
-        page_id: String,
-        /// requestId from page_network_read.
-        request_id: String,
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+struct NetBodyParams {
+    session_id: String,
+    page_id: String,
+    /// requestId from page_network_read.
+    request_id: String,
+}
 
-    #[derive(Debug, Deserialize, JsonSchema)]
-    struct MatchImageParams {
-        session_id: String,
-        page_id: String,
-        /// Ref of the NEEDLE element (canvas / img / background-image).
-        needle_ref: String,
-        /// Optional crop of the needle image (x, y, w, h in needle-image px).
-        /// Omit to use the whole image. Use this to match a sub-region
-        /// (e.g. an instruction glyph band inside the same image).
-        needle_rect: Option<Vec<i64>>,
-        /// Ref of the HAYSTACK element to search in.
-        hay_ref: String,
-        /// Optional search-region crop of the haystack (x, y, w, h in
-        /// haystack-image px). Omit for the full image. USE THIS to
-        /// exclude the needle's own area (self-match guard).
-        hay_rect: Option<Vec<i64>>,
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+struct MatchImageParams {
+    session_id: String,
+    page_id: String,
+    /// Ref of the NEEDLE element (canvas / img / background-image).
+    needle_ref: String,
+    /// Optional crop of the needle image (x, y, w, h in needle-image px).
+    /// Omit to use the whole image. Use this to match a sub-region
+    /// (e.g. an instruction glyph band inside the same image).
+    needle_rect: Option<Vec<i64>>,
+    /// Ref of the HAYSTACK element to search in.
+    hay_ref: String,
+    /// Optional search-region crop of the haystack (x, y, w, h in
+    /// haystack-image px). Omit for the full image. USE THIS to
+    /// exclude the needle's own area (self-match guard).
+    hay_rect: Option<Vec<i64>>,
+}
 
-    #[derive(Debug, Deserialize, JsonSchema)]
-    struct OcrParams {
-        session_id: String,
-        page_id: String,
-        /// Ref of the element to OCR. Omit for the whole viewport.
-        r#ref: Option<String>,
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+struct OcrParams {
+    session_id: String,
+    page_id: String,
+    /// Ref of the element to OCR. Omit for the whole viewport.
+    r#ref: Option<String>,
+}
 
-    #[derive(Debug, Deserialize, JsonSchema)]
-    struct VisionParams {
-        session_id: String,
-        page_id: String,
-        /// Ref of the element to analyze. Omit for the whole viewport.
-        r#ref: Option<String>,
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+struct VisionParams {
+    session_id: String,
+    page_id: String,
+    /// Ref of the element to analyze. Omit for the whole viewport.
+    r#ref: Option<String>,
+}
 
-    #[derive(Debug, Deserialize, JsonSchema)]
-    struct GeetestClickParams {
-        session_id: String,
-        page_id: String,
-        /// Ref of the .geetest_item_wrap element (carries the challenge background image).
-        r#ref: String,
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+struct GeetestClickParams {
+    session_id: String,
+    page_id: String,
+    /// Ref of the .geetest_item_wrap element (carries the challenge background image).
+    r#ref: String,
+}
 
-    #[derive(Debug, Deserialize, JsonSchema)]
-    struct GeetestSlideParams {
-        session_id: String,
-        page_id: String,
-        /// Optional ref of the slider handle (.geetest_slider_button). If omitted
-        /// the tool locates it by selector and registers its own ref.
-        slider_ref: Option<String>,
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+struct GeetestSlideParams {
+    session_id: String,
+    page_id: String,
+    /// Optional ref of the slider handle (.geetest_slider_button). If omitted
+    /// the tool locates it by selector and registers its own ref.
+    slider_ref: Option<String>,
+}
 
-    #[derive(Debug, Deserialize, JsonSchema)]
-    struct CaptchaOcrParams {
-        session_id: String,
-        page_id: String,
-        /// Ref of the captcha <img> element. Omit for the whole viewport.
-        r#ref: Option<String>,
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+struct CaptchaOcrParams {
+    session_id: String,
+    page_id: String,
+    /// Ref of the captcha <img> element. Omit for the whole viewport.
+    r#ref: Option<String>,
+}
 
-    #[derive(Debug, Deserialize, JsonSchema)]
-    struct HcaptchaParams {
-        session_id: String,
-        page_id: String,
-        /// Optional ref of the hCaptcha anchor iframe / checkbox. If omitted
-        /// the tool auto-locates the anchor iframe by src pattern.
-        checkbox_ref: Option<String>,
-        /// Cloudflare API key for the host vision model (defaults to CLOUDFLARE_API_KEY env).
-        cf_api_key: Option<String>,
-        /// Cloudflare account id (defaults to CLOUDFLARE_ACCOUNT_ID env).
-        cf_account_id: Option<String>,
-        /// Max challenge rounds (hCaptcha chains 2-4). Default 4.
-        max_rounds: Option<u32>,
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+struct HcaptchaParams {
+    session_id: String,
+    page_id: String,
+    /// Optional ref of the hCaptcha anchor iframe / checkbox. If omitted
+    /// the tool auto-locates the anchor iframe by src pattern.
+    checkbox_ref: Option<String>,
+    /// Cloudflare API key for the host vision model (defaults to CLOUDFLARE_API_KEY env).
+    cf_api_key: Option<String>,
+    /// Cloudflare account id (defaults to CLOUDFLARE_ACCOUNT_ID env).
+    cf_account_id: Option<String>,
+    /// Max challenge rounds (hCaptcha chains 2-4). Default 4.
+    max_rounds: Option<u32>,
+}
 
-    #[derive(Debug, Deserialize, JsonSchema)]
-    struct ConsoleParams {
-        session_id: String,
-        page_id: String,
-        /// Drain the buffer after reading (default: keep entries).
-        clear: Option<bool>,
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ConsoleParams {
+    session_id: String,
+    page_id: String,
+    /// Drain the buffer after reading (default: keep entries).
+    clear: Option<bool>,
+}
 
-    #[derive(Debug, Deserialize, JsonSchema)]
-    struct ErrorsParams {
-        session_id: String,
-        page_id: String,
-        /// Drain the buffer after reading (default: keep entries).
-        clear: Option<bool>,
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ErrorsParams {
+    session_id: String,
+    page_id: String,
+    /// Drain the buffer after reading (default: keep entries).
+    clear: Option<bool>,
+}
 
-    #[derive(Debug, Deserialize, JsonSchema)]
-    struct RotateParams {
-        session_id: String,
-        page_id: String,
-        /// Ref of the rotate-right button (15deg per click in the standard demos).
-        rot_right_ref: String,
-        /// Ref of the rotate-left button.
-        rot_left_ref: String,
-        /// Ref of the check/verify button.
-        check_ref: String,
-        /// Ref of the reset button.
-        reset_ref: String,
-    }
+#[derive(Debug, Deserialize, JsonSchema)]
+struct RotateParams {
+    session_id: String,
+    page_id: String,
+    /// Ref of the rotate-right button (15deg per click in the standard demos).
+    rot_right_ref: String,
+    /// Ref of the rotate-left button.
+    rot_left_ref: String,
+    /// Ref of the check/verify button.
+    check_ref: String,
+    /// Ref of the reset button.
+    reset_ref: String,
+}
 
-    #[derive(Debug, Deserialize, JsonSchema)]
-    struct PagesParams {
-        session_id: String,
-    }
-
-
-
-
+#[derive(Debug, Deserialize, JsonSchema)]
+struct PagesParams {
+    session_id: String,
+}
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct PageCommentParams {
@@ -694,9 +690,14 @@ impl GhostcloakServer {
             .await
             .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
         let to = to_ref.unwrap_or_default();
-        page.drag_ref(&from_ref, &to, offset_x.unwrap_or(0.0), offset_y.unwrap_or(0.0))
-            .await
-            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        page.drag_ref(
+            &from_ref,
+            &to,
+            offset_x.unwrap_or(0.0),
+            offset_y.unwrap_or(0.0),
+        )
+        .await
+        .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
         let _ = self.recorder.record(
             &session_id,
             "page_drag",
@@ -783,7 +784,11 @@ impl GhostcloakServer {
     )]
     async fn page_network_start(
         &self,
-        Parameters(NetParams { session_id, page_id, .. }): Parameters<NetParams>,
+        Parameters(NetParams {
+            session_id,
+            page_id,
+            ..
+        }): Parameters<NetParams>,
     ) -> Result<CallToolResult, rmcp::model::ErrorData> {
         let session = self
             .session(&session_id)
@@ -804,7 +809,11 @@ impl GhostcloakServer {
     )]
     async fn page_network_read(
         &self,
-        Parameters(NetParams { session_id, page_id, filter }): Parameters<NetParams>,
+        Parameters(NetParams {
+            session_id,
+            page_id,
+            filter,
+        }): Parameters<NetParams>,
     ) -> Result<CallToolResult, rmcp::model::ErrorData> {
         let session = self
             .session(&session_id)
@@ -821,12 +830,17 @@ impl GhostcloakServer {
         let filtered: Vec<serde_json::Value> = entries
             .into_iter()
             .filter(|e| {
-                filter
-                    .as_deref()
-                    .is_none_or(|f| e.get("url").and_then(|u| u.as_str()).unwrap_or("").contains(f))
+                filter.as_deref().is_none_or(|f| {
+                    e.get("url")
+                        .and_then(|u| u.as_str())
+                        .unwrap_or("")
+                        .contains(f)
+                })
             })
             .collect();
-        Ok(text_result(serde_json::to_string_pretty(&filtered).unwrap_or_default()))
+        Ok(text_result(
+            serde_json::to_string_pretty(&filtered).unwrap_or_default(),
+        ))
     }
 
     #[tool(
@@ -834,7 +848,11 @@ impl GhostcloakServer {
     )]
     async fn page_network_body(
         &self,
-        Parameters(NetBodyParams { session_id, page_id, request_id }): Parameters<NetBodyParams>,
+        Parameters(NetBodyParams {
+            session_id,
+            page_id,
+            request_id,
+        }): Parameters<NetBodyParams>,
     ) -> Result<CallToolResult, rmcp::model::ErrorData> {
         let session = self
             .session(&session_id)
@@ -1142,13 +1160,15 @@ impl GhostcloakServer {
             Some(&page_id),
             serde_json::json!({ "clicks": boxes.len(), "img": [iw, ih] }),
         );
-        Ok(text_result(serde_json::to_string_pretty(&serde_json::json!({
-            "clicks": clicks,
-            "boxes_raw": boxes,
-            "rect": { "x": rx, "y": ry, "w": rw, "h": rh },
-            "img": { "w": iw, "h": ih },
-        }))
-        .unwrap_or_default()))
+        Ok(text_result(
+            serde_json::to_string_pretty(&serde_json::json!({
+                "clicks": clicks,
+                "boxes_raw": boxes,
+                "rect": { "x": rx, "y": ry, "w": rw, "h": rh },
+                "img": { "w": iw, "h": ih },
+            }))
+            .unwrap_or_default(),
+        ))
     }
 
     #[tool(
@@ -1236,11 +1256,13 @@ impl GhostcloakServer {
             Some(&page_id),
             serde_json::json!({ "drag_x": drag_x }),
         );
-        Ok(text_result(serde_json::to_string_pretty(&serde_json::json!({
-            "drag_x": drag_x,
-            "dragged": true,
-        }))
-        .unwrap_or_default()))
+        Ok(text_result(
+            serde_json::to_string_pretty(&serde_json::json!({
+                "drag_x": drag_x,
+                "dragged": true,
+            }))
+            .unwrap_or_default(),
+        ))
     }
 
     #[tool(
@@ -1255,7 +1277,8 @@ impl GhostcloakServer {
         }): Parameters<CaptchaOcrParams>,
     ) -> Result<CallToolResult, rmcp::model::ErrorData> {
         let png = self.element_png(&session_id, &page_id, r#ref).await?;
-        let text = crate::ddddocr::classify_png(&png).await
+        let text = crate::ddddocr::classify_png(&png)
+            .await
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
         let _ = self.recorder.record(
             &session_id,
@@ -1290,10 +1313,17 @@ impl GhostcloakServer {
             .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
         let key = cf_api_key
             .or_else(|| std::env::var("CLOUDFLARE_API_KEY").ok())
-            .ok_or_else(|| rmcp::model::ErrorData::invalid_params("no CLOUDFLARE_API_KEY (param or env)", None))?;
+            .ok_or_else(|| {
+                rmcp::model::ErrorData::invalid_params("no CLOUDFLARE_API_KEY (param or env)", None)
+            })?;
         let account = cf_account_id
             .or_else(|| std::env::var("CLOUDFLARE_ACCOUNT_ID").ok())
-            .ok_or_else(|| rmcp::model::ErrorData::invalid_params("no CLOUDFLARE_ACCOUNT_ID (param or env)", None))?;
+            .ok_or_else(|| {
+                rmcp::model::ErrorData::invalid_params(
+                    "no CLOUDFLARE_ACCOUNT_ID (param or env)",
+                    None,
+                )
+            })?;
         let glm = crate::hcaptcha::Glm::new(account, key);
         let max_rounds = max_rounds.unwrap_or(6) as usize;
 
@@ -1329,7 +1359,11 @@ impl GhostcloakServer {
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
         let av: serde_json::Value = serde_json::from_str(out.as_str().unwrap_or("{}"))
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
-        if let Some(err) = av.get("err").and_then(|e| e.as_str()).map(|e| e.to_string()) {
+        if let Some(err) = av
+            .get("err")
+            .and_then(|e| e.as_str())
+            .map(|e| e.to_string())
+        {
             return Err(rmcp::model::ErrorData::internal_error(err, None));
         }
         let (ax, ay) = (
@@ -1374,7 +1408,9 @@ impl GhostcloakServer {
                 break;
             }
         }
-        let chall = chall.ok_or_else(|| rmcp::model::ErrorData::internal_error("hCaptcha challenge iframe never appeared", None))?;
+        let chall = chall.ok_or_else(|| {
+            rmcp::model::ErrorData::internal_error("hCaptcha challenge iframe never appeared", None)
+        })?;
         let (mut cx, mut cy, mut cw, mut ch, vw) = (
             chall.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0),
             chall.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0),
@@ -1559,13 +1595,15 @@ impl GhostcloakServer {
             Some(&page_id),
             serde_json::json!({ "rounds": rounds, "response_len": response_len }),
         );
-        Ok(text_result(serde_json::to_string_pretty(&serde_json::json!({
-            "success": response_len > 0,
-            "rounds": rounds,
-            "response_len": response_len,
-            "debug": debug_rounds,
-        }))
-        .unwrap_or_default()))
+        Ok(text_result(
+            serde_json::to_string_pretty(&serde_json::json!({
+                "success": response_len > 0,
+                "rounds": rounds,
+                "response_len": response_len,
+                "debug": debug_rounds,
+            }))
+            .unwrap_or_default(),
+        ))
     }
 
     #[tool(
@@ -1640,11 +1678,13 @@ impl GhostcloakServer {
         }
         let winner = v.get("winner").and_then(|w| w.as_i64()).unwrap_or(-1);
         if winner < 0 {
-            return Ok(text_result(serde_json::to_string_pretty(&serde_json::json!({
-                "solved": false,
-                "history": v.get("history"),
-            }))
-            .unwrap_or_default()));
+            return Ok(text_result(
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "solved": false,
+                    "history": v.get("history"),
+                }))
+                .unwrap_or_default(),
+            ));
         }
         // Human replay of the winning rotation. Re-resolve refs first:
         // the JS sweep mutates the page (React re-renders), stale DOM nodes
@@ -1685,12 +1725,14 @@ impl GhostcloakServer {
             Some(&page_id),
             serde_json::json!({ "clicks": winner, "angle": winner * 15 }),
         );
-        Ok(text_result(serde_json::to_string_pretty(&serde_json::json!({
-            "solved": true,
-            "clicks": winner,
-            "angle": winner * 15,
-        }))
-        .unwrap_or_default()))
+        Ok(text_result(
+            serde_json::to_string_pretty(&serde_json::json!({
+                "solved": true,
+                "clicks": winner,
+                "angle": winner * 15,
+            }))
+            .unwrap_or_default(),
+        ))
     }
 
     #[tool(
@@ -1958,89 +2000,104 @@ impl GhostcloakServer {
     )]
     async fn session_me(
         &self,
-        Parameters(SessionMeParams { session_id, page_id }): Parameters<SessionMeParams>,
+        Parameters(SessionMeParams {
+            session_id,
+            page_id,
+        }): Parameters<SessionMeParams>,
     ) -> Result<CallToolResult, rmcp::model::ErrorData> {
         let session = self
             .session(&session_id)
             .await
             .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
-        let page = match page_id {
-            Some(pid) => session
-                .page(&pid)
-                .await
-                .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?,
-            None => {
-                let ids = session.page_ids().await;
-                if let Some(first) = ids.first() {
-                    session
-                        .page(first)
-                        .await
-                        .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?
-                } else {
-                    let pg = session.new_page(Some("about:blank")).await
-                        .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
-                    pg
+        let page =
+            match page_id {
+                Some(pid) => session
+                    .page(&pid)
+                    .await
+                    .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?,
+                None => {
+                    let ids = session.page_ids().await;
+                    if let Some(first) = ids.first() {
+                        session.page(first).await.map_err(|e| {
+                            rmcp::model::ErrorData::invalid_params(e.to_string(), None)
+                        })?
+                    } else {
+                        let pg = session.new_page(Some("about:blank")).await.map_err(|e| {
+                            rmcp::model::ErrorData::internal_error(e.to_string(), None)
+                        })?;
+                        pg
+                    }
                 }
-            }
-        };
+            };
         // Use a11y_snapshot (pierces shadow DOM) to find username
-        let snap = page.a11y_snapshot().await
-            .unwrap_or_else(|_| ghostcloak_core::engine::A11ySnapshot {
-                elements: vec![],
-                login_state: "unknown".into(),
-                page_url: String::new(),
-                page_title: String::new(),
-                danger_zone: None,
-                suspicious_elements: 0,
-                page_archived: None,
-                own_elements: 0,
-                username: None,
-                below_viewport: 0,
-                max_scroll_pages: 0,
-                notifications: vec![],
-                rate_limit_seconds: None,
-            });
+        let snap =
+            page.a11y_snapshot()
+                .await
+                .unwrap_or_else(|_| ghostcloak_core::engine::A11ySnapshot {
+                    elements: vec![],
+                    login_state: "unknown".into(),
+                    page_url: String::new(),
+                    page_title: String::new(),
+                    danger_zone: None,
+                    suspicious_elements: 0,
+                    page_archived: None,
+                    own_elements: 0,
+                    username: None,
+                    below_viewport: 0,
+                    max_scroll_pages: 0,
+                    notifications: vec![],
+                    rate_limit_seconds: None,
+                });
         // v0.5.3: page_a11y now detects the username from header profile
         // links (Reddit /user/X, X /@handle, HN logout link) — far more
         // reliable than scraping "Comment from X" which matches other users.
-        let mut username = snap.username.clone().unwrap_or_else(|| "unknown".to_string());
+        let mut username = snap
+            .username
+            .clone()
+            .unwrap_or_else(|| "unknown".to_string());
         if username == "unknown" {
-        for e in &snap.elements {
-            let name = &e.name;
-            // Reddit: "Comment from [username]"
-            if let Some(rest) = name.strip_prefix("Comment from ") {
-                let uname = rest.split_whitespace().next().unwrap_or("unknown");
-                if uname.len() >= 3 {
-                    username = uname.to_string();
-                    break;
-                }
-            }
-            // Reddit: "Expand user menu" → check for @username nearby
-            if name.contains("user menu") || name.contains("User menu") {
-                if let Some(at) = name.find('@') {
-                    let rest = &name[at+1..];
+            for e in &snap.elements {
+                let name = &e.name;
+                // Reddit: "Comment from [username]"
+                if let Some(rest) = name.strip_prefix("Comment from ") {
                     let uname = rest.split_whitespace().next().unwrap_or("unknown");
                     if uname.len() >= 3 {
                         username = uname.to_string();
                         break;
                     }
                 }
-            }
-            // Reddit: profile link with /user/username
-            if name.contains("/user/") || name.contains("u/") {
-                let parts: Vec<&str> = name.split('/').collect();
-                for (i, part) in parts.iter().enumerate() {
-                    if (*part == "user" || *part == "u") && i + 1 < parts.len() {
-                        let uname = parts[i+1];
-                        if uname.len() >= 3 && uname.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-') {
+                // Reddit: "Expand user menu" → check for @username nearby
+                if name.contains("user menu") || name.contains("User menu") {
+                    if let Some(at) = name.find('@') {
+                        let rest = &name[at + 1..];
+                        let uname = rest.split_whitespace().next().unwrap_or("unknown");
+                        if uname.len() >= 3 {
                             username = uname.to_string();
                             break;
                         }
                     }
                 }
-                if username != "unknown" { break; }
+                // Reddit: profile link with /user/username
+                if name.contains("/user/") || name.contains("u/") {
+                    let parts: Vec<&str> = name.split('/').collect();
+                    for (i, part) in parts.iter().enumerate() {
+                        if (*part == "user" || *part == "u") && i + 1 < parts.len() {
+                            let uname = parts[i + 1];
+                            if uname.len() >= 3
+                                && uname
+                                    .chars()
+                                    .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+                            {
+                                username = uname.to_string();
+                                break;
+                            }
+                        }
+                    }
+                    if username != "unknown" {
+                        break;
+                    }
+                }
             }
-        }
         }
         let username = username;
         Ok(text_result(username))
@@ -2051,7 +2108,11 @@ impl GhostcloakServer {
     )]
     async fn page_comment(
         &self,
-        Parameters(PageCommentParams { session_id, page_id, text }): Parameters<PageCommentParams>,
+        Parameters(PageCommentParams {
+            session_id,
+            page_id,
+            text,
+        }): Parameters<PageCommentParams>,
     ) -> Result<CallToolResult, rmcp::model::ErrorData> {
         let session = self
             .session(&session_id)
@@ -2063,7 +2124,9 @@ impl GhostcloakServer {
             .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
 
         // STEP 1: Get own username via a11y (fast, uses shadow DOM piercing)
-        let snap = page.a11y_snapshot().await
+        let snap = page
+            .a11y_snapshot()
+            .await
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
 
         let mut own_username = String::new();
@@ -2084,20 +2147,29 @@ impl GhostcloakServer {
                     || (e.name.contains(&own_username) && e.name.contains("ago"))
             });
             if has_own {
-                let _ = self.recorder.record(&session_id, "page_comment", Some(&page_id), serde_json::json!({
-                    "action": "skipped", "reason": "duplicate", "username": own_username
-                }));
-                return Ok(text_result(serde_json::to_string_pretty(&serde_json::json!({
-                    "action": "skipped",
-                    "reason": "already_commented",
-                    "username": own_username,
-                })).unwrap_or_default()));
+                let _ = self.recorder.record(
+                    &session_id,
+                    "page_comment",
+                    Some(&page_id),
+                    serde_json::json!({
+                        "action": "skipped", "reason": "duplicate", "username": own_username
+                    }),
+                );
+                return Ok(text_result(
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "action": "skipped",
+                        "reason": "already_commented",
+                        "username": own_username,
+                    }))
+                    .unwrap_or_default(),
+                ));
             }
         }
 
         // STEP 3: Find comment trigger (Reply preferred, Join conversation fallback)
         let trigger = page
-            .evaluate(r#"(() => {
+            .evaluate(
+                r#"(() => {
                 var btns = document.querySelectorAll('button');
                 for (var i=0;i<btns.length;i++) {
                     if (btns[i].offsetParent && btns[i].textContent.trim() === 'Reply') {
@@ -2110,7 +2182,8 @@ impl GhostcloakServer {
                     if (label.includes('Join the conversation')) return 'join';
                 }
                 return 'none';
-            })()"#)
+            })()"#,
+            )
             .await
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
 
@@ -2145,7 +2218,8 @@ impl GhostcloakServer {
             })()"#
         };
 
-        page.evaluate(click_js).await
+        page.evaluate(click_js)
+            .await
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
 
         // Wait for editor to render
@@ -2192,7 +2266,8 @@ impl GhostcloakServer {
 
         // STEP 6: Find and click submit
         let submitted = page
-            .evaluate(r#"(() => {
+            .evaluate(
+                r#"(() => {
                 var btns = document.querySelectorAll('button');
                 for (var i=0;i<btns.length;i++) {
                     if (btns[i].offsetParent && btns[i].textContent.trim() === 'Comment') {
@@ -2200,7 +2275,8 @@ impl GhostcloakServer {
                     }
                 }
                 return 'NO-SUBMIT';
-            })()"#)
+            })()"#,
+            )
             .await
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
 
@@ -2225,8 +2301,12 @@ impl GhostcloakServer {
             "verified": verified.as_str().unwrap_or(""),
         });
 
-        let _ = self.recorder.record(&session_id, "page_comment", Some(&page_id), result.clone());
-        Ok(text_result(serde_json::to_string_pretty(&result).unwrap_or_default()))
+        let _ = self
+            .recorder
+            .record(&session_id, "page_comment", Some(&page_id), result.clone());
+        Ok(text_result(
+            serde_json::to_string_pretty(&result).unwrap_or_default(),
+        ))
     }
 
     #[tool(
@@ -2234,20 +2314,39 @@ impl GhostcloakServer {
     )]
     async fn confirm_action(
         &self,
-        Parameters(ConfirmActionParams { session_id, page_id, action, r#ref }): Parameters<ConfirmActionParams>,
+        Parameters(ConfirmActionParams {
+            session_id,
+            page_id,
+            action,
+            r#ref,
+        }): Parameters<ConfirmActionParams>,
     ) -> Result<CallToolResult, rmcp::model::ErrorData> {
-        let session = self.session(&session_id).await
+        let session = self
+            .session(&session_id)
+            .await
             .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
-        let page = session.page(&page_id).await
+        let page = session
+            .page(&page_id)
+            .await
             .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
-        let snap = page.snapshot().await
+        let snap = page
+            .snapshot()
+            .await
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
-        let _ = self.recorder.record(&session_id, "confirm_action", Some(&page_id), serde_json::json!({
-            "action": action, "ref": r#ref, "url": snap.url, "confirmed": true,
-        }));
-        Ok(text_result(serde_json::to_string_pretty(&serde_json::json!({
-            "confirmed": true, "action": action, "ref": r#ref,
-        })).unwrap_or_default()))
+        let _ = self.recorder.record(
+            &session_id,
+            "confirm_action",
+            Some(&page_id),
+            serde_json::json!({
+                "action": action, "ref": r#ref, "url": snap.url, "confirmed": true,
+            }),
+        );
+        Ok(text_result(
+            serde_json::to_string_pretty(&serde_json::json!({
+                "confirmed": true, "action": action, "ref": r#ref,
+            }))
+            .unwrap_or_default(),
+        ))
     }
 
     #[tool(
@@ -2255,11 +2354,18 @@ impl GhostcloakServer {
     )]
     async fn page_dismiss_modal(
         &self,
-        Parameters(DismissModalParams { session_id, page_id }): Parameters<DismissModalParams>,
+        Parameters(DismissModalParams {
+            session_id,
+            page_id,
+        }): Parameters<DismissModalParams>,
     ) -> Result<CallToolResult, rmcp::model::ErrorData> {
-        let session = self.session(&session_id).await
+        let session = self
+            .session(&session_id)
+            .await
             .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
-        let page = session.page(&page_id).await
+        let page = session
+            .page(&page_id)
+            .await
             .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
         let result = page.evaluate(r#"(() => {
             const patterns = ['accept','agree','got it','ok','close','dismiss','allow all','continue','not now','no thanks'];

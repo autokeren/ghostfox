@@ -96,9 +96,7 @@ async fn models() -> Result<&'static GtModels> {
     let siam_bytes = tokio::fs::read(&siam_path).await?;
     let m = GtModels {
         yolo: Model::load(yolo_bytes).context("loading yolov8s.onnx")?,
-        siamese: std::sync::Mutex::new(
-            Model::load(siam_bytes).context("loading siamese.onnx")?,
-        ),
+        siamese: std::sync::Mutex::new(Model::load(siam_bytes).context("loading siamese.onnx")?),
     };
     Ok(MODELS.get_or_init(|| m))
 }
@@ -131,7 +129,11 @@ fn iou(a: &Box, b: &Box) -> f32 {
 
 /// Greedy NMS (same semantics as cv2.dnn.NMSBoxes).
 fn nms(mut boxes: Vec<Box>) -> Vec<Box> {
-    boxes.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    boxes.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     let mut kept: Vec<Box> = Vec::new();
     for b in boxes {
         if kept.iter().all(|k| iou(k, &b) < IOU_THRESH) {
@@ -146,12 +148,13 @@ fn to_value(rgb: &image::RgbImage) -> rten::Value {
     let (w, h) = rgb.dimensions();
     let pixels = rgb.as_raw();
     let mut chw = vec![0f32; (3 * h * w) as usize];
+    let base = (h * w) as usize;
     for (i, px) in pixels.chunks(3).enumerate() {
         let x = i % w as usize;
         let y = i / w as usize;
-        let base = (h * w) as usize;
-        chw[0 * base + y * w as usize + x] = px[0] as f32 / 255.0;
-        chw[1 * base + y * w as usize + x] = px[1] as f32 / 255.0;
+        // CHW layout: channel planes at 0, base, 2*base.
+        chw[y * w as usize + x] = px[0] as f32 / 255.0;
+        chw[base + y * w as usize + x] = px[1] as f32 / 255.0;
         chw[2 * base + y * w as usize + x] = px[2] as f32 / 255.0;
     }
     rten::Value::from_shape(&[1usize, 3, h as usize, w as usize], chw).expect("tensor build")
@@ -160,7 +163,9 @@ fn to_value(rgb: &image::RgbImage) -> rten::Value {
 /// Detect char boxes: returns (smalls, bigs) where smalls are the
 /// instruction-strip glyphs (keyed by left x, sort = click order) and
 /// bigs are the field chars.
-fn detect(models: &GtModels, img: &image::RgbImage) -> Result<(Vec<(i32, image::RgbImage)>, Vec<Box>)> {
+type GlyphStrip = Vec<(i32, image::RgbImage)>;
+
+fn detect(models: &GtModels, img: &image::RgbImage) -> Result<(GlyphStrip, Vec<Box>)> {
     let (ow, oh) = img.dimensions();
     let resized = image::imageops::resize(img, YOLO_IN, YOLO_IN, FilterType::Triangle);
     let input = to_value(&resized);
@@ -265,7 +270,7 @@ pub async fn solve_image(img_bytes: &[u8]) -> Result<Vec<[i32; 2]>> {
             )
             .to_image();
             let d2 = siamese_prep(&crop);
-            let mut session = models
+            let session = models
                 .siamese
                 .lock()
                 .map_err(|_| anyhow!("siamese session poisoned"))?;
@@ -273,12 +278,18 @@ pub async fn solve_image(img_bytes: &[u8]) -> Result<Vec<[i32; 2]>> {
             let in2 = session.node_id("input.53").context("siamese input2 node")?;
             let out_id = session.output_ids()[0];
             let out = session
-                .run(vec![(in1, d1.as_view().into()), (in2, d2.into())], &[out_id], None)
+                .run(
+                    vec![(in1, d1.as_view().into()), (in2, d2.into())],
+                    &[out_id],
+                    None,
+                )
                 .context("siamese inference")?;
             drop(session);
             let v = out[0].as_view();
             let sim = match &v {
-                rten::ValueView::FloatTensor(tv) => tv.data().and_then(|d| d.first().copied()).unwrap_or(0.0),
+                rten::ValueView::FloatTensor(tv) => {
+                    tv.data().and_then(|d| d.first().copied()).unwrap_or(0.0)
+                }
                 _ => 0.0,
             };
             if sigmoid(sim) >= SIAMESE_THRESHOLD {
@@ -300,7 +311,7 @@ pub async fn siamese_similarity(png1: &[u8], png2: &[u8]) -> Result<f32> {
     let img2 = image::load_from_memory(png2).context("sim decode 2")?;
     let d1 = siamese_prep(&img1.to_rgb8());
     let d2 = siamese_prep(&img2.to_rgb8());
-    let mut session = m
+    let session = m
         .siamese
         .lock()
         .map_err(|_| anyhow!("siamese session poisoned"))?;
@@ -313,7 +324,9 @@ pub async fn siamese_similarity(png1: &[u8], png2: &[u8]) -> Result<f32> {
     drop(session);
     let v = out[0].as_view();
     let raw = match &v {
-        rten::ValueView::FloatTensor(tv) => tv.data().and_then(|d| d.first().copied()).unwrap_or(0.0),
+        rten::ValueView::FloatTensor(tv) => {
+            tv.data().and_then(|d| d.first().copied()).unwrap_or(0.0)
+        }
         _ => 0.0,
     };
     Ok(1.0 / (1.0 + (-raw).exp()))
@@ -331,7 +344,10 @@ fn binary_closing(mask: &mut [bool], w: usize, h: usize, s: usize) {
                     for dx in -r..=r {
                         let nx = x + dx;
                         let ny = y + dy;
-                        if nx >= 0 && ny >= 0 && nx < w as isize && ny < h as isize
+                        if nx >= 0
+                            && ny >= 0
+                            && nx < w as isize
+                            && ny < h as isize
                             && mask[(ny * w as isize + nx) as usize]
                         {
                             tmp[(y * w as isize + x) as usize] = true;
@@ -400,7 +416,7 @@ fn largest_blob(mask: &[bool], w: usize, h: usize) -> Option<(usize, usize, usiz
                 stack.push(p + w);
             }
         }
-        if best.as_ref().map_or(true, |(ba, _)| area > *ba) {
+        if best.as_ref().is_none_or(|(ba, _)| area > *ba) {
             best = Some((area, (x0, y0, x1, y1)));
         }
     }
@@ -421,17 +437,19 @@ pub fn slide_gap(
     }
     let mut diff_mask = vec![false; (w * h) as usize];
     let mut max_diff = 0f32;
-    for i in 0..(w * h) as usize {
+    for (i, slot) in diff_mask.iter_mut().enumerate() {
         let d = (bg.as_raw()[i] as f32 - full.as_raw()[i] as f32).abs();
         if d > max_diff {
             max_diff = d;
         }
         if d > 40.0 {
-            diff_mask[i] = true;
+            *slot = true;
         }
     }
     if max_diff < 10.0 {
-        return Err(anyhow!("bg and full canvas are identical — no hole to find"));
+        return Err(anyhow!(
+            "bg and full canvas are identical — no hole to find"
+        ));
     }
     binary_closing(&mut diff_mask, w as usize, h as usize, 5);
     let (hx0, _hy0, _hx1, _hy1) =
@@ -469,28 +487,62 @@ mod tests {
 mod tests2 {
     use super::*;
 
+    /// Local debug harness — runs only when the dev fixture is present.
     #[tokio::test]
     async fn debug_matrix() {
-        let bytes = std::fs::read("/tmp/opencode/ga.png").expect("read test image");
+        let path = std::path::Path::new("/tmp/opencode/ga.png");
+        if !path.exists() {
+            // no local fixture on CI — nothing to assert on
+            return;
+        }
+        let bytes = std::fs::read(path).expect("read test image");
         let m = models().await.expect("models");
         let img = image::load_from_memory(&bytes).unwrap().to_rgb8();
         let (smalls, bigs) = detect(m, &img).expect("detect");
-        println!("RUST smalls x: {:?}", smalls.iter().map(|(x, c)| (x, c.width(), c.height())).collect::<Vec<_>>());
-        println!("RUST bigs: {:?}", bigs.iter().map(|b| (b.x, b.y, b.w, b.h)).collect::<Vec<_>>());
+        println!(
+            "RUST smalls x: {:?}",
+            smalls
+                .iter()
+                .map(|(x, c)| (x, c.width(), c.height()))
+                .collect::<Vec<_>>()
+        );
+        println!(
+            "RUST bigs: {:?}",
+            bigs.iter()
+                .map(|b| (b.x, b.y, b.w, b.h))
+                .collect::<Vec<_>>()
+        );
         for (x, g) in &smalls {
             let d1 = siamese_prep(g);
             let mut row = Vec::new();
             for b in &bigs {
-                let crop = image::imageops::crop_imm(&img, b.x.max(0.0) as u32, b.y.max(0.0) as u32,
+                let crop = image::imageops::crop_imm(
+                    &img,
+                    b.x.max(0.0) as u32,
+                    b.y.max(0.0) as u32,
                     b.w.min(img.width() as f32 - b.x.max(0.0)) as u32,
-                    b.h.min(img.height() as f32 - b.y.max(0.0)) as u32).to_image();
+                    b.h.min(img.height() as f32 - b.y.max(0.0)) as u32,
+                )
+                .to_image();
                 let d2 = siamese_prep(&crop);
-                let in1 = m.siamese.node_id("input").unwrap();
-                let in2 = m.siamese.node_id("input.53").unwrap();
-                let out_id = m.siamese.output_ids()[0];
-                let out = m.siamese.run(vec![(in1, d1.as_view().into()), (in2, d2.into())], &[out_id], None).unwrap();
+                let siam = m.siamese.lock().unwrap();
+                let in1 = siam.node_id("input").unwrap();
+                let in2 = siam.node_id("input.53").unwrap();
+                let out_id = siam.output_ids()[0];
+                let out = siam
+                    .run(
+                        vec![(in1, d1.as_view().into()), (in2, d2.into())],
+                        &[out_id],
+                        None,
+                    )
+                    .unwrap();
                 let v = out[0].as_view();
-                let sim = match &v { rten::ValueView::FloatTensor(tv) => tv.data().and_then(|d| d.first().copied()).unwrap_or(0.0), _ => 0.0 };
+                let sim = match &v {
+                    rten::ValueView::FloatTensor(tv) => {
+                        tv.data().and_then(|d| d.first().copied()).unwrap_or(0.0)
+                    }
+                    _ => 0.0,
+                };
                 row.push(format!("{:.3}", sigmoid(sim)));
             }
             println!("glyph@{}: {:?}", x, row);

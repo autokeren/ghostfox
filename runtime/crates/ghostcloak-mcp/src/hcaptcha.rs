@@ -14,29 +14,97 @@
 
 use anyhow::{anyhow, Context, Result};
 use base64::Engine as _;
-use std::collections::HashSet;
-use std::path::PathBuf;
-use std::sync::OnceLock;
 use image::imageops::FilterType;
 use rten::Model;
 use rten_tensor::Layout as _;
+use std::collections::HashSet;
+use std::path::PathBuf;
+use std::sync::OnceLock;
 
 /// COCO-80 classes. hCaptcha's object categories map onto these almost
 /// 1:1 (bus, car, boat, traffic light, animals...) — the split-labor
 /// trick: GLM reads the instruction (text), YOLO does the detection.
 const COCO: [&str; 80] = [
-    "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck",
-    "boat", "traffic light", "fire hydrant", "stop sign", "parking meter", "bench",
-    "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra",
-    "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee",
-    "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove",
-    "skateboard", "surfboard", "tennis racket", "bottle", "wine glass", "cup",
-    "fork", "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange",
-    "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair", "couch",
-    "potted plant", "bed", "dining table", "toilet", "tv", "laptop", "mouse",
-    "remote", "keyboard", "cell phone", "microwave", "oven", "toaster", "sink",
-    "refrigerator", "book", "clock", "vase", "scissors", "teddy bear",
-    "hair drier", "toothbrush",
+    "person",
+    "bicycle",
+    "car",
+    "motorcycle",
+    "airplane",
+    "bus",
+    "train",
+    "truck",
+    "boat",
+    "traffic light",
+    "fire hydrant",
+    "stop sign",
+    "parking meter",
+    "bench",
+    "bird",
+    "cat",
+    "dog",
+    "horse",
+    "sheep",
+    "cow",
+    "elephant",
+    "bear",
+    "zebra",
+    "giraffe",
+    "backpack",
+    "umbrella",
+    "handbag",
+    "tie",
+    "suitcase",
+    "frisbee",
+    "skis",
+    "snowboard",
+    "sports ball",
+    "kite",
+    "baseball bat",
+    "baseball glove",
+    "skateboard",
+    "surfboard",
+    "tennis racket",
+    "bottle",
+    "wine glass",
+    "cup",
+    "fork",
+    "knife",
+    "spoon",
+    "bowl",
+    "banana",
+    "apple",
+    "sandwich",
+    "orange",
+    "broccoli",
+    "carrot",
+    "hot dog",
+    "pizza",
+    "donut",
+    "cake",
+    "chair",
+    "couch",
+    "potted plant",
+    "bed",
+    "dining table",
+    "toilet",
+    "tv",
+    "laptop",
+    "mouse",
+    "remote",
+    "keyboard",
+    "cell phone",
+    "microwave",
+    "oven",
+    "toaster",
+    "sink",
+    "refrigerator",
+    "book",
+    "clock",
+    "vase",
+    "scissors",
+    "teddy bear",
+    "hair drier",
+    "toothbrush",
 ];
 
 fn coco_path() -> PathBuf {
@@ -46,7 +114,10 @@ fn coco_path() -> PathBuf {
             .map(|d| d.to_string_lossy().into_owned())
             .unwrap_or_else(|| ".ghostfox".into())
     });
-    PathBuf::from(home).join("models").join("coco").join("yolov8n.onnx")
+    PathBuf::from(home)
+        .join("models")
+        .join("coco")
+        .join("yolov8n.onnx")
 }
 
 static COCO_MODEL: OnceLock<Option<Model>> = OnceLock::new();
@@ -65,7 +136,8 @@ fn coco_model() -> Option<&'static Model> {
 }
 
 fn singular(w: &str) -> &str {
-    w.strip_suffix("es").unwrap_or_else(|| w.strip_suffix('s').unwrap_or(w))
+    w.strip_suffix("es")
+        .unwrap_or_else(|| w.strip_suffix('s').unwrap_or(w))
 }
 
 /// Map instruction words to COCO class indices (plural-tolerant).
@@ -75,10 +147,8 @@ pub fn coco_indices(words: &[String]) -> Vec<usize> {
         let lw = w.trim().to_lowercase();
         let s = singular(&lw);
         for (i, c) in COCO.iter().enumerate() {
-            if *c == lw || *c == s || lw.contains(c) {
-                if !out.contains(&i) {
-                    out.push(i);
-                }
+            if (*c == lw || *c == s || lw.contains(c)) && !out.contains(&i) {
+                out.push(i);
             }
         }
     }
@@ -100,8 +170,8 @@ pub fn coco_detect(png: &[u8], targets: &[usize], min_conf: f32) -> Result<Vec<(
         let x = i % w;
         let y = i / w;
         let base = w * h;
-        chw[0 * base + y * w + x] = px[0] as f32 / 255.0;
-        chw[1 * base + y * w + x] = px[1] as f32 / 255.0;
+        chw[y * w + x] = px[0] as f32 / 255.0;
+        chw[base + y * w + x] = px[1] as f32 / 255.0;
         chw[2 * base + y * w + x] = px[2] as f32 / 255.0;
     }
     let input = rten::Value::from_shape(&[1usize, 3, h, w], chw).context("coco input tensor")?;
@@ -123,8 +193,6 @@ pub fn coco_detect(png: &[u8], targets: &[usize], min_conf: f32) -> Result<Vec<(
     for i in 0..n {
         let x = data[i];
         let y = data[n + i];
-        let bw = data[2 * n + i];
-        let bh = data[3 * n + i];
         let mut best = 0f32;
         let mut best_cls = 0usize;
         for (k, t) in targets.iter().enumerate() {
@@ -145,10 +213,9 @@ pub fn coco_detect(png: &[u8], targets: &[usize], min_conf: f32) -> Result<Vec<(
     hits.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
     let mut kept: Vec<(f64, f64, f64)> = Vec::new();
     for h3 in hits {
-        if kept
-            .iter()
-            .all(|(kx, ky, _): &(f64, f64, f64)| ((kx - h3.0).powi(2) + (ky - h3.1).powi(2)).sqrt() > 50.0)
-        {
+        if kept.iter().all(|(kx, ky, _): &(f64, f64, f64)| {
+            ((kx - h3.0).powi(2) + (ky - h3.1).powi(2)).sqrt() > 50.0
+        }) {
             kept.push(h3);
         }
     }
@@ -241,7 +308,13 @@ impl Glm {
         // that fits it — numbered-cell classification for tile grids, direct
         // object pointing for single-image / reference-panel variants.
         match detect_layout(png) {
-            Ok(Layout::Grid { x, y, w: gw, h: gh, cols }) => {
+            Ok(Layout::Grid {
+                x,
+                y,
+                w: gw,
+                h: gh,
+                cols,
+            }) => {
                 let rows = cols; // square grids
                 if let Ok((grid_png, _rect)) =
                     grid_overlay(png, cols, Some((x as u32, y as u32, gw as u32, gh as u32)))
@@ -252,10 +325,16 @@ impl Glm {
                             let chh = gh / rows as f64;
                             let clicks: Vec<(f64, f64)> = cells
                                 .iter()
-                                .map(|&(r, c)| (x + (c as f64 + 0.5) * cw, y + (r as f64 + 0.5) * chh))
+                                .map(|&(r, c)| {
+                                    (x + (c as f64 + 0.5) * cw, y + (r as f64 + 0.5) * chh)
+                                })
                                 .collect();
                             tracing::info!(target: "ghostcloak::mcp", "hcaptcha GRID path: layout=({:?},{:?},{:?},{:?},cols={}) cells={:?} clicks={:?}", x, y, gw, gh, cols, cells, clicks);
-                            return Ok(Solved { clicks, verify: Some((w as f64 - 50.0, h as f64 - 60.0)), drag: None });
+                            return Ok(Solved {
+                                clicks,
+                                verify: Some((w as f64 - 50.0, h as f64 - 60.0)),
+                                drag: None,
+                            });
                         }
                     }
                 }
@@ -292,10 +371,17 @@ impl Glm {
                                             if x1 <= x0 || y1 <= y0 {
                                                 continue;
                                             }
-                                            let c = image::imageops::crop_imm(&rgb, x0, y0, x1 - x0, y1 - y0)
-                                                .to_image();
+                                            let c = image::imageops::crop_imm(
+                                                &rgb,
+                                                x0,
+                                                y0,
+                                                x1 - x0,
+                                                y1 - y0,
+                                            )
+                                            .to_image();
                                             let mut buf = std::io::Cursor::new(Vec::new());
-                                            if c.write_to(&mut buf, image::ImageFormat::Png).is_ok() {
+                                            if c.write_to(&mut buf, image::ImageFormat::Png).is_ok()
+                                            {
                                                 crops.push((*cx, *cy, buf.into_inner()));
                                             }
                                         }
@@ -305,7 +391,11 @@ impl Glm {
                                             for a in 0..n {
                                                 for b in (a + 1)..n {
                                                     if let Ok(s) =
-                                                        crate::geetest::siamese_similarity(&crops[a].2, &crops[b].2).await
+                                                        crate::geetest::siamese_similarity(
+                                                            &crops[a].2,
+                                                            &crops[b].2,
+                                                        )
+                                                        .await
                                                     {
                                                         sim_sum[a] += s;
                                                         sim_sum[b] += s;
@@ -334,8 +424,13 @@ impl Glm {
                         if let Ok(boxes) = hc_detect(png, file, is_seg, min_conf).await {
                             if !boxes.is_empty() {
                                 let want = count_from_instruction(&inst);
-                                let take = if want > 0 { want.min(boxes.len()) } else { boxes.len().min(5) };
-                                let clicks: Vec<(f64, f64)> = boxes.iter().take(take).cloned().collect();
+                                let take = if want > 0 {
+                                    want.min(boxes.len())
+                                } else {
+                                    boxes.len().min(5)
+                                };
+                                let clicks: Vec<(f64, f64)> =
+                                    boxes.iter().take(take).cloned().collect();
                                 tracing::info!(target: "ghostcloak::mcp", "hcaptcha ZOO path: model={file} clicks={clicks:?}", file = file);
                                 return Ok(Solved {
                                     clicks,
@@ -394,7 +489,11 @@ impl Glm {
                                     .map(|&(x, y2, _)| (x, y2.max(cy + 6.0).min(cy + chh - 6.0)))
                                     .collect();
                                 tracing::info!(target: "ghostcloak::mcp", "hcaptcha REASON path: words={:?} clicks={:?}", words, clicks);
-                                return Ok(Solved { clicks, verify: Some((w as f64 - 50.0, h as f64 - 60.0)), drag: None });
+                                return Ok(Solved {
+                                    clicks,
+                                    verify: Some((w as f64 - 50.0, h as f64 - 60.0)),
+                                    drag: None,
+                                });
                             }
                         }
                     }
@@ -412,7 +511,7 @@ impl Glm {
                     } else {
                         self.qwen_point(png).await
                     };
-                    if let Ok(mut solved) = res {
+                    if let Ok(solved) = res {
                         if solved.drag.is_some() {
                             return Ok(solved);
                         }
@@ -428,7 +527,10 @@ impl Glm {
                         .find(|((cx, cy2), _)| (cx - p.0).abs() < 40.0 && (cy2 - p.1).abs() < 40.0)
                     {
                         let k = c.1 as f64;
-                        c.0 = (((c.0).0 * (k - 1.0) + p.0) / k, ((c.0).1 * (k - 1.0) + p.1) / k);
+                        c.0 = (
+                            ((c.0).0 * (k - 1.0) + p.0) / k,
+                            ((c.0).1 * (k - 1.0) + p.1) / k,
+                        );
                         c.1 += 1;
                     } else {
                         clusters.push((p, 1));
@@ -439,8 +541,12 @@ impl Glm {
                 if cons.is_empty() {
                     cons = clusters;
                 }
-                cons.sort_by(|a, b| b.1.cmp(&a.1));
-                let take = if want > 0 { want.min(cons.len()) } else { cons.len().min(4) };
+                cons.sort_by_key(|c| std::cmp::Reverse(c.1));
+                let take = if want > 0 {
+                    want.min(cons.len())
+                } else {
+                    cons.len().min(4)
+                };
                 let clicks: Vec<(f64, f64)> = cons.iter().take(take).map(|(p, _)| *p).collect();
                 if !clicks.is_empty() {
                     tracing::info!(target: "ghostcloak::mcp", "hcaptcha GLM-ENSEMBLE: want={want} clusters={:?}", cons);
@@ -461,9 +567,14 @@ impl Glm {
             if !idxs.is_empty() {
                 if let Ok(boxes) = coco_detect(png, &idxs, 0.30) {
                     if !boxes.is_empty() {
-                        let clicks: Vec<(f64, f64)> = boxes.iter().take(6).map(|(x, y, _)| (*x, *y)).collect();
+                        let clicks: Vec<(f64, f64)> =
+                            boxes.iter().take(6).map(|(x, y, _)| (*x, *y)).collect();
                         tracing::info!(target: "ghostcloak::mcp", "hcaptcha COCO path: words={:?} clicks={:?}", words, clicks);
-                        return Ok(Solved { clicks, verify: Some((w as f64 - 50.0, h as f64 - 60.0)), drag: None });
+                        return Ok(Solved {
+                            clicks,
+                            verify: Some((w as f64 - 50.0, h as f64 - 60.0)),
+                            drag: None,
+                        });
                     }
                 }
             }
@@ -473,7 +584,13 @@ impl Glm {
     }
 
     /// Numbered-grid classification: the model answers with cell indices.
-    async fn pick_cells(&self, gridded_png: &[u8], w: u32, h: u32, grid: u32) -> Result<Vec<(u32, u32)>> {
+    async fn pick_cells(
+        &self,
+        gridded_png: &[u8],
+        w: u32,
+        h: u32,
+        grid: u32,
+    ) -> Result<Vec<(u32, u32)>> {
         let b64 = base64::engine::general_purpose::STANDARD.encode(gridded_png);
         let prompt = format!(
             "This challenge image has a {grid}x{grid} numbered grid (labels 0-{} in yellow, top-left of each cell). Read the instruction and reply ONLY with the cell numbers that must be clicked, comma separated (e.g. 3,7), or none. Cell numbering: left to right, top to bottom starting at 0.",
@@ -536,7 +653,8 @@ impl Glm {
     async fn glm_point(&self, png: &[u8]) -> Result<Solved> {
         let b64 = base64::engine::general_purpose::STANDARD.encode(png);
         let prompt = "Read the instruction at the top of this captcha challenge. Then give the exact pixel coordinates (x, y) of the element(s) that satisfy it. Reply ONLY coordinate pairs, one per line: x y. If the instruction asks to DRAG something, reply with ONE line: D x1 y1 x2 y2 (source then destination).";
-        self.cf_vision_point(b64, prompt, "@cf/zai-org/glm-5.3-flash", 5000).await
+        self.cf_vision_point(b64, prompt, "@cf/zai-org/glm-5.3-flash", 5000)
+            .await
     }
 
     /// Qwen3.8-27b pointing vote — the biggest vision model on the
@@ -547,11 +665,18 @@ impl Glm {
     async fn qwen_point(&self, png: &[u8]) -> Result<Solved> {
         let b64 = base64::engine::general_purpose::STANDARD.encode(png);
         let prompt = "The image is 520x570 pixels. Read the instruction in this captcha challenge. Give the exact PIXEL coordinates (x, y) of every element that must be clicked. Reply ONLY x y lines.";
-        self.cf_vision_point(b64, prompt, "@cf/qwen/qwen3.8-27b", 4000).await
+        self.cf_vision_point(b64, prompt, "@cf/qwen/qwen3.8-27b", 4000)
+            .await
     }
 
     /// Shared messages-format vision call; parses x y / D lines.
-    async fn cf_vision_point(&self, b64: String, prompt: &str, model: &str, mt: u32) -> Result<Solved> {
+    async fn cf_vision_point(
+        &self,
+        b64: String,
+        prompt: &str,
+        model: &str,
+        mt: u32,
+    ) -> Result<Solved> {
         let payload = serde_json::json!({
             "messages": [{"role": "user", "content": [
                 {"type": "image_url", "image_url": {"url": format!("data:image/png;base64,{b64}")}},
@@ -594,7 +719,11 @@ impl Glm {
             return Err(anyhow!("cf vision empty answer"));
         }
         let (clicks, verify, drag) = parse_clicks_full(&text, 520.0, 570.0);
-        Ok(Solved { clicks, drag, verify })
+        Ok(Solved {
+            clicks,
+            drag,
+            verify,
+        })
     }
 
     /// GLM drag ensemble: 3 calls, parse D-lines, cluster source and
@@ -621,21 +750,31 @@ impl Glm {
         let mut sources: Vec<(f64, f64)> = Vec::new();
         let mut dests: Vec<(f64, f64)> = Vec::new();
         for _ in 0..4 {
-            let Ok(text) = self.glm_call(&payload).await else { continue };
+            let Ok(text) = self.glm_call(&payload).await else {
+                continue;
+            };
             // Parse "SLOT x y" and "SHAPE x y" lines (also tolerates a
             // combined "D x1 y1 x2 y2" line). Prose numbers are ignored:
             // only lines that START with the keywords count.
             let mut slot: Option<(f64, f64)> = None;
             let mut shape: Option<(f64, f64)> = None;
             for line in text.lines() {
-                let trimmed = line.trim().trim_start_matches("1)").trim_start_matches("2)").trim();
+                let trimmed = line
+                    .trim()
+                    .trim_start_matches("1)")
+                    .trim_start_matches("2)")
+                    .trim();
                 let upper = trimmed.to_uppercase();
                 let is_slot = upper.starts_with("SLOT");
                 let is_shape = upper.starts_with("SHAPE");
                 let is_d = trimmed.starts_with('D') && trimmed.split_whitespace().count() == 5;
                 let nums: Vec<f64> = trimmed
                     .split(|c: char| c.is_whitespace())
-                    .filter_map(|t| t.trim_matches(|c: char| !c.is_ascii_digit() && c != '.').parse::<f64>().ok())
+                    .filter_map(|t| {
+                        t.trim_matches(|c: char| !c.is_ascii_digit() && c != '.')
+                            .parse::<f64>()
+                            .ok()
+                    })
                     .collect();
                 if is_slot && nums.len() >= 2 {
                     slot = Some((nums[0], nums[1]));
@@ -664,13 +803,16 @@ impl Glm {
                     .find(|((cx, cy), _)| (cx - p.0).abs() < 50.0 && (cy - p.1).abs() < 50.0)
                 {
                     let k = c.1 as f64;
-                    c.0 = (((c.0).0 * (k - 1.0) + p.0) / k, ((c.0).1 * (k - 1.0) + p.1) / k);
+                    c.0 = (
+                        ((c.0).0 * (k - 1.0) + p.0) / k,
+                        ((c.0).1 * (k - 1.0) + p.1) / k,
+                    );
                     c.1 += 1;
                 } else {
                     clusters.push((*p, 1));
                 }
             }
-            clusters.sort_by(|a, b| b.1.cmp(&a.1));
+            clusters.sort_by_key(|c| std::cmp::Reverse(c.1));
             clusters.first().map(|(p, _)| *p).unwrap_or(pts[0])
         };
         // source: require 2+ votes when possible (it's the critical pick)
@@ -686,7 +828,7 @@ impl Glm {
                 s_clusters.push((*p, 1));
             }
         }
-        s_clusters.sort_by(|a, b| b.1.cmp(&a.1));
+        s_clusters.sort_by_key(|c| std::cmp::Reverse(c.1));
         let src = s_clusters.first().map(|(p, _)| *p).unwrap_or(sources[0]);
         Ok((src, consensus(&dests)))
     }
@@ -728,16 +870,20 @@ impl Glm {
 
     /// Single-image challenges: one llama call — read the instruction and
     /// list the pixel coordinates of every element to click.
+    #[allow(dead_code)] // kept for the cross-model ensemble wiring
     async fn point_targets(&self, png: &[u8]) -> Result<Solved> {
         let b64 = base64::engine::general_purpose::STANDARD.encode(png);
         let prompt = "Read the instruction in this captcha challenge. If it asks to DRAG something somewhere, reply with ONE line: D x1 y1 x2 y2 (source then destination centers). Otherwise list the pixel coordinates (x, y) of EVERY element that must be clicked, one per line, format: x y. If there is a Verify/Submit button, output its center as the final line: V x y. Nothing else.";
         let payload = serde_json::json!({ "image": b64, "prompt": prompt });
         let text = self.llama_call(&payload).await?;
         let (clicks, verify, drag) = parse_clicks_full(&text, 520.0, 570.0);
-        let solved = Solved { clicks, drag, verify };
+        let solved = Solved {
+            clicks,
+            drag,
+            verify,
+        };
         Ok(solved)
     }
-
 
     /// Instrumented twin of solve_challenge: also returns the detected
     /// layout and the raw model answer for debugging.
@@ -747,24 +893,37 @@ impl Glm {
         w: u32,
         h: u32,
     ) -> Result<(Solved, String, String)> {
-        let layout = detect_layout(png).map(|l| match l {
-            Layout::Grid { x, y, w: gw, h: gh, cols } =>
-                format!("grid x={x:.0} y={y:.0} w={gw:.0} h={gh:.0} cols={cols}"),
-            Layout::Image { y, h: chh } => format!("image y={y:.0} h={chh:.0}"),
-        }).unwrap_or_else(|e| format!("detect-failed: {e}"));
+        let layout = detect_layout(png)
+            .map(|l| match l {
+                Layout::Grid {
+                    x,
+                    y,
+                    w: gw,
+                    h: gh,
+                    cols,
+                } => format!("grid x={x:.0} y={y:.0} w={gw:.0} h={gh:.0} cols={cols}"),
+                Layout::Image { y, h: chh } => format!("image y={y:.0} h={chh:.0}"),
+            })
+            .unwrap_or_else(|e| format!("detect-failed: {e}"));
         let b64 = base64::engine::general_purpose::STANDARD.encode(png);
         let raw = if let Ok(l) = detect_layout(png) {
             match l {
                 Layout::Grid { .. } => {
                     let prompt = "Read the instruction in this captcha challenge. What single object or category must be selected? Reply with ONLY the object name(s).";
-                    self.llama_call(&serde_json::json!({"image": b64, "prompt": prompt})).await.unwrap_or_default()
+                    self.llama_call(&serde_json::json!({"image": b64, "prompt": prompt}))
+                        .await
+                        .unwrap_or_default()
                 }
                 Layout::Image { .. } => {
                     let prompt = "Read the instruction in this captcha challenge and reply with ONLY the instruction text, nothing else.";
-                    self.llama_call(&serde_json::json!({"image": b64, "prompt": prompt})).await.unwrap_or_default()
+                    self.llama_call(&serde_json::json!({"image": b64, "prompt": prompt}))
+                        .await
+                        .unwrap_or_default()
                 }
             }
-        } else { String::new() };
+        } else {
+            String::new()
+        };
         let solved = self.solve_challenge(png, w, h).await?;
         Ok((solved, layout, raw.chars().take(180).collect::<String>()))
     }
@@ -811,8 +970,7 @@ impl Glm {
             .await
             .context("llama request failed")?;
         let d: serde_json::Value = resp.json().await.context("llama response parse")?;
-        Ok(d
-            .get("result")
+        Ok(d.get("result")
             .and_then(|r| r.get("response"))
             .and_then(|c| c.as_str())
             .unwrap_or_default()
@@ -921,10 +1079,16 @@ impl Glm {
         }
         let mut clusters: Vec<((f64, f64), usize)> = Vec::new();
         for p in all_pts {
-            if let Some(c) = clusters.iter_mut().find(|((cx, cy), _)| (cx - p.0).abs() < 45.0 && (cy - p.1).abs() < 45.0) {
+            if let Some(c) = clusters
+                .iter_mut()
+                .find(|((cx, cy), _)| (cx - p.0).abs() < 45.0 && (cy - p.1).abs() < 45.0)
+            {
                 let n = c.1 + 1;
                 let k = n as f64;
-                c.0 = (((c.0).0 * (k - 1.0) + p.0) / k, ((c.0).1 * (k - 1.0) + p.1) / k);
+                c.0 = (
+                    ((c.0).0 * (k - 1.0) + p.0) / k,
+                    ((c.0).1 * (k - 1.0) + p.1) / k,
+                );
                 c.1 = n;
             } else {
                 clusters.push((p, 1));
@@ -942,31 +1106,41 @@ impl Glm {
             ));
         }
         let verify = if !all_verify.is_empty() {
-            let (sx, sy): (f64, f64) = all_verify.iter().fold((0.0, 0.0), |a, p| (a.0 + p.0, a.1 + p.1));
+            let (sx, sy): (f64, f64) = all_verify
+                .iter()
+                .fold((0.0, 0.0), |a, p| (a.0 + p.0, a.1 + p.1));
             Some((sx / all_verify.len() as f64, sy / all_verify.len() as f64))
         } else {
             Some((w as f64 - 50.0, h as f64 - 60.0))
         };
         tracing::info!(target: "ghostcloak::mcp", "hcaptcha glm: clicks={:?} verify={:?}", clicks, verify);
-        Ok(Solved { clicks, verify, drag: None })
+        Ok(Solved {
+            clicks,
+            verify,
+            drag: None,
+        })
     }
 }
 
 /// Parse "<x> <y>" lines, a trailing "V <x> <y>" verify point, and an
 /// optional "D x1 y1 x2 y2" drag line. Coordinates clamped to bounds.
 /// Near-duplicate points (within 30px) collapse into one.
+pub type Clicks = Vec<(f64, f64)>;
+pub type DragPair = ((f64, f64), (f64, f64));
+
 pub fn parse_clicks_full(
     s: &str,
     w: f64,
     h: f64,
-) -> (Vec<(f64, f64)>, Option<(f64, f64)>, Option<((f64, f64), (f64, f64))>) {
+) -> (Clicks, Option<(f64, f64)>, Option<DragPair>) {
     let mut clicks: Vec<(f64, f64)> = Vec::new();
     let mut verify: Option<(f64, f64)> = None;
     let mut drag: Option<((f64, f64), (f64, f64))> = None;
     for line in s.lines() {
         let mut parts = line.split_whitespace();
         let (a, b, c) = (parts.next(), parts.next(), parts.next());
-        let is_drag = matches!(a, Some(t) if t.eq_ignore_ascii_case("d") || t.eq_ignore_ascii_case("drag"));
+        let is_drag =
+            matches!(a, Some(t) if t.eq_ignore_ascii_case("d") || t.eq_ignore_ascii_case("drag"));
         if is_drag {
             let mut rest = parts;
             let (Some(x1), Some(y1), Some(x2), Some(y2)) =
@@ -974,29 +1148,37 @@ pub fn parse_clicks_full(
             else {
                 continue;
             };
-            let (Ok(x1f), Ok(y1f), Ok(x2f), Ok(y2f)) =
-                (x1.parse::<f64>(), y1.parse::<f64>(), x2.parse::<f64>(), y2.parse::<f64>())
-            else {
+            let (Ok(x1f), Ok(y1f), Ok(x2f), Ok(y2f)) = (
+                x1.parse::<f64>(),
+                y1.parse::<f64>(),
+                x2.parse::<f64>(),
+                y2.parse::<f64>(),
+            ) else {
                 continue;
             };
             let clamp = |v: f64, max: f64| v.clamp(2.0, max - 2.0);
-            drag = Some(((clamp(x1f, w), clamp(y1f, h)), (clamp(x2f, w), clamp(y2f, h))));
+            drag = Some((
+                (clamp(x1f, w), clamp(y1f, h)),
+                (clamp(x2f, w), clamp(y2f, h)),
+            ));
             continue;
         }
         let is_verify = matches!(a, Some(t) if t.eq_ignore_ascii_case("v") || t.contains("erif") || t.contains("erify") || t.contains("ubmit"));
-        let (x_tok, y_tok) = if is_verify {
-            (b, c)
-        } else {
-            (a, b)
+        let (x_tok, y_tok) = if is_verify { (b, c) } else { (a, b) };
+        let (Some(x_tok), Some(y_tok)) = (x_tok, y_tok) else {
+            continue;
         };
-        let (Some(x_tok), Some(y_tok)) = (x_tok, y_tok) else { continue };
-        let (Ok(x_f), Ok(y_f)) = (x_tok.parse::<f64>(), y_tok.parse::<f64>()) else { continue };
+        let (Ok(x_f), Ok(y_f)) = (x_tok.parse::<f64>(), y_tok.parse::<f64>()) else {
+            continue;
+        };
         let clamp = |v: f64, max: f64| v.clamp(2.0, max - 2.0);
         let pt = (clamp(x_f, w), clamp(y_f, h));
         if is_verify {
             verify = Some(pt);
         } else {
-            let dup = clicks.iter().any(|(x, y)| (x - pt.0).abs() < 30.0 && (y - pt.1).abs() < 30.0);
+            let dup = clicks
+                .iter()
+                .any(|(x, y)| (x - pt.0).abs() < 30.0 && (y - pt.1).abs() < 30.0);
             if !dup {
                 clicks.push(pt);
             }
@@ -1006,7 +1188,7 @@ pub fn parse_clicks_full(
 }
 
 /// Legacy parser wrapper (no drag).
-pub fn parse_clicks(s: &str, w: f64, h: f64) -> (Vec<(f64, f64)>, Option<(f64, f64)>) {
+pub fn parse_clicks(s: &str, w: f64, h: f64) -> (Clicks, Option<(f64, f64)>) {
     let (clicks, verify, _) = parse_clicks_full(s, w, h);
     (clicks, verify)
 }
@@ -1014,7 +1196,10 @@ pub fn parse_clicks(s: &str, w: f64, h: f64) -> (Vec<(f64, f64)>, Option<(f64, f
 /// Distinct challenge-round fingerprint helper (unused placeholder for
 /// future round-diff detection; kept for API stability).
 pub fn _round_set(clicks: &[(f64, f64)]) -> HashSet<(i64, i64)> {
-    clicks.iter().map(|(x, y)| (*x as i64 / 10, *y as i64 / 10)).collect()
+    clicks
+        .iter()
+        .map(|(x, y)| (*x as i64 / 10, *y as i64 / 10))
+        .collect()
 }
 
 /// Overlay a numbered grid on the challenge crop: red cell borders +
@@ -1026,12 +1211,18 @@ pub fn _round_set(clicks: &[(f64, f64)]) -> HashSet<(i64, i64)> {
 /// area (hCaptcha: header ~130px + footer ~50px are NOT tiles). Returns
 /// the PNG plus the content rect used, so callers can map cell centers
 /// back to full-crop coordinates.
-pub fn grid_overlay(png: &[u8], grid: u32, content: Option<(u32, u32, u32, u32)>) -> Result<(Vec<u8>, (f64, f64, f64, f64))> {
+pub type RectF = (f64, f64, f64, f64);
+
+pub fn grid_overlay(
+    png: &[u8],
+    grid: u32,
+    content: Option<(u32, u32, u32, u32)>,
+) -> Result<(Vec<u8>, RectF)> {
     use image::ImageFormat;
     let img = image::load_from_memory(png).context("grid overlay decode")?;
     let mut rgb = img.to_rgb8();
     let (fw, fh) = rgb.dimensions();
-    let (ox, oy, w, h) = content.map(|(x, y, ww, hh)| (x, y, ww, hh)).unwrap_or((0, 0, fw, fh));
+    let (ox, oy, w, h) = content.unwrap_or((0, 0, fw, fh));
     let (cw, ch) = (w / grid, h / grid);
     for r in 0..grid {
         for c in 0..grid {
@@ -1039,12 +1230,20 @@ pub fn grid_overlay(png: &[u8], grid: u32, content: Option<(u32, u32, u32, u32)>
             let y0 = oy + r * ch;
             // red border
             for x in x0..x0 + cw {
-                if y0 < fh { rgb.put_pixel(x, y0, image::Rgb([255, 0, 0])); }
-                if y0 + ch.saturating_sub(1) < fh && y0 + ch > 0 { rgb.put_pixel(x, y0 + ch - 1, image::Rgb([255, 0, 0])); }
+                if y0 < fh {
+                    rgb.put_pixel(x, y0, image::Rgb([255, 0, 0]));
+                }
+                if y0 + ch.saturating_sub(1) < fh && y0 + ch > 0 {
+                    rgb.put_pixel(x, y0 + ch - 1, image::Rgb([255, 0, 0]));
+                }
             }
             for y in y0..y0 + ch {
-                if x0 < fw { rgb.put_pixel(x0, y, image::Rgb([255, 0, 0])); }
-                if x0 + cw.saturating_sub(1) < fw && x0 + cw > 0 { rgb.put_pixel(x0 + cw - 1, y, image::Rgb([255, 0, 0])); }
+                if x0 < fw {
+                    rgb.put_pixel(x0, y, image::Rgb([255, 0, 0]));
+                }
+                if x0 + cw.saturating_sub(1) < fw && x0 + cw > 0 {
+                    rgb.put_pixel(x0 + cw - 1, y, image::Rgb([255, 0, 0]));
+                }
             }
             // yellow label box + number (blocky 3x5 font digits)
             let idx = r * grid + c;
@@ -1057,9 +1256,15 @@ pub fn grid_overlay(png: &[u8], grid: u32, content: Option<(u32, u32, u32, u32)>
             }
             // draw the digits with simple block glyphs
             const GLYPHS: [&str; 10] = [
-                "111 101 101 101 111", "010 110 010 010 111", "111 001 111 100 111",
-                "111 001 111 001 111", "101 101 111 001 001", "111 100 111 001 111",
-                "111 100 111 101 111", "111 001 001 001 001", "111 101 111 101 111",
+                "111 101 101 101 111",
+                "010 110 010 010 111",
+                "111 001 111 100 111",
+                "111 001 111 001 111",
+                "101 101 111 001 001",
+                "111 100 111 001 111",
+                "111 100 111 101 111",
+                "111 001 001 001 001",
+                "111 101 111 101 111",
                 "111 101 111 001 111",
             ];
             let mut dx = lx + 3;
@@ -1085,7 +1290,8 @@ pub fn grid_overlay(png: &[u8], grid: u32, content: Option<(u32, u32, u32, u32)>
         }
     }
     let mut buf = std::io::Cursor::new(Vec::new());
-    rgb.write_to(&mut buf, ImageFormat::Png).context("grid encode")?;
+    rgb.write_to(&mut buf, ImageFormat::Png)
+        .context("grid encode")?;
     Ok((buf.into_inner(), (ox as f64, oy as f64, w as f64, h as f64)))
 }
 
@@ -1093,7 +1299,13 @@ pub fn grid_overlay(png: &[u8], grid: u32, content: Option<(u32, u32, u32, u32)>
 #[derive(Debug)]
 pub enum Layout {
     /// 3x3-style tile grid with its real rect + column count.
-    Grid { x: f64, y: f64, w: f64, h: f64, cols: u32 },
+    Grid {
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+        cols: u32,
+    },
     /// Single image (click-on-object) or reference-panel variant: the
     /// model must point at targets directly.
     Image { y: f64, h: f64 },
@@ -1112,7 +1324,7 @@ pub fn detect_layout(png: &[u8]) -> Result<Layout> {
     }
     // row std
     let mut row_std = vec![0f64; h as usize];
-    for y in 0..h as usize {
+    for (y, slot) in row_std.iter_mut().enumerate() {
         let mut sum = 0f64;
         let mut sumsq = 0f64;
         for x in 0..w as usize {
@@ -1121,7 +1333,7 @@ pub fn detect_layout(png: &[u8]) -> Result<Layout> {
             sumsq += v * v;
         }
         let n = w as f64;
-        row_std[y] = (sumsq / n - (sum / n) * (sum / n)).max(0.0).sqrt();
+        *slot = (sumsq / n - (sum / n) * (sum / n)).max(0.0).sqrt();
     }
     // solid bands (std < 9, run >= 4 rows)
     let mut bands: Vec<(u32, u32)> = Vec::new();
@@ -1145,7 +1357,9 @@ pub fn detect_layout(png: &[u8]) -> Result<Layout> {
         .find(|b| b.0 >= 40 && b.1 - b.0 >= 10)
         .ok_or_else(|| anyhow!("no instruction banner band found"))?;
     // sub-banner: next solid band well below the banner (>= 80px under it)
-    let sub = bands.iter().find(|b| b.0 > banner.1 + 80 && b.1 - b.0 >= 10);
+    let sub = bands
+        .iter()
+        .find(|b| b.0 > banner.1 + 80 && b.1 - b.0 >= 10);
     let content_top = banner.1 + 2;
     let content_bottom = sub.map(|b| b.0 - 2).unwrap_or(h.saturating_sub(55));
     if content_bottom <= content_top + 20 {
@@ -1154,7 +1368,7 @@ pub fn detect_layout(png: &[u8]) -> Result<Layout> {
     // column std within the content rows
     let band_h = (content_bottom - content_top) as usize;
     let mut col_std = vec![0f64; w as usize];
-    for x in 0..w as usize {
+    for (x, slot) in col_std.iter_mut().enumerate() {
         let mut sum = 0f64;
         let mut sumsq = 0f64;
         for y in (content_top as usize)..(content_bottom as usize) {
@@ -1163,7 +1377,7 @@ pub fn detect_layout(png: &[u8]) -> Result<Layout> {
             sumsq += v * v;
         }
         let n = band_h as f64;
-        col_std[x] = (sumsq / n - (sum / n) * (sum / n)).max(0.0).sqrt();
+        *slot = (sumsq / n - (sum / n) * (sum / n)).max(0.0).sqrt();
     }
     let mut colbands: Vec<(u32, u32)> = Vec::new();
     let mut x = 0usize;
@@ -1182,7 +1396,10 @@ pub fn detect_layout(png: &[u8]) -> Result<Layout> {
     }
     // reference-panel variant: a wide solid column on the left half
     if colbands.iter().any(|b| b.1 - b.0 >= 80 && b.0 < w / 2) {
-        return Ok(Layout::Image { y: content_top as f64, h: (content_bottom - content_top) as f64 });
+        return Ok(Layout::Image {
+            y: content_top as f64,
+            h: (content_bottom - content_top) as f64,
+        });
     }
     // thin vertical separators -> tile grid. Sanity: separators must sit
     // away from the edges, be few (2-3), and leave a wide, tall content
@@ -1208,7 +1425,10 @@ pub fn detect_layout(png: &[u8]) -> Result<Layout> {
             });
         }
     }
-    Ok(Layout::Image { y: content_top as f64, h: (content_bottom - content_top) as f64 })
+    Ok(Layout::Image {
+        y: content_top as f64,
+        h: (content_bottom - content_top) as f64,
+    })
 }
 
 /// hCaptcha challenge-model zoo — community-trained specialized
@@ -1216,26 +1436,86 @@ pub fn detect_layout(png: &[u8]) -> Result<Layout> {
 /// as the GeeTest pair: specialized beats general VLM.
 /// (name, file, is_seg, min_conf)
 const HC_ZOO: &[(&str, &str, bool, f32)] = &[
-    ("appears only once", "appears_only_once_2309_yolov8s-seg.onnx", true, 0.55),
-    ("different", "appears_only_once_2309_yolov8s-seg.onnx", true, 0.55),
-    ("not follow", "appears_only_once_2309_yolov8s-seg.onnx", true, 0.55),
-    ("break the pattern", "appears_only_once_2309_yolov8s-seg.onnx", true, 0.55),
-    ("once", "appears_only_once_2309_yolov8s-seg.onnx", true, 0.55),
+    (
+        "appears only once",
+        "appears_only_once_2309_yolov8s-seg.onnx",
+        true,
+        0.55,
+    ),
+    (
+        "different",
+        "appears_only_once_2309_yolov8s-seg.onnx",
+        true,
+        0.55,
+    ),
+    (
+        "not follow",
+        "appears_only_once_2309_yolov8s-seg.onnx",
+        true,
+        0.55,
+    ),
+    (
+        "break the pattern",
+        "appears_only_once_2309_yolov8s-seg.onnx",
+        true,
+        0.55,
+    ),
+    (
+        "once",
+        "appears_only_once_2309_yolov8s-seg.onnx",
+        true,
+        0.55,
+    ),
     ("food", "can_be_eaten_2312_yolov8s.onnx", false, 0.35),
     ("eaten", "can_be_eaten_2312_yolov8s.onnx", false, 0.35),
     ("eat", "can_be_eaten_2312_yolov8s.onnx", false, 0.35),
-    ("head of the animal", "head_of_the_animal_2310_yolov8s.onnx", false, 0.40),
-    ("head of an animal", "head_of_the_animal_2310_yolov8s.onnx", false, 0.40),
+    (
+        "head of the animal",
+        "head_of_the_animal_2310_yolov8s.onnx",
+        false,
+        0.40,
+    ),
+    (
+        "head of an animal",
+        "head_of_the_animal_2310_yolov8s.onnx",
+        false,
+        0.40,
+    ),
     ("animalhead", "animalhead2315_yolov8s.onnx", false, 0.40),
     ("head of the", "animalhead2315_yolov8s.onnx", false, 0.40),
     ("animal", "animal2309_yolov8s.onnx", false, 0.40),
-    ("nested smallest", "nested_smallest_bird2312.onnx", false, 0.40),
-    ("nested largest", "nested_largest_lion2309.onnx", false, 0.40),
-    ("nested colder", "nested_colder_bedroom2309.onnx", false, 0.40),
-    ("something you can eat", "something_you_can_eat2312.onnx", false, 0.35),
+    (
+        "nested smallest",
+        "nested_smallest_bird2312.onnx",
+        false,
+        0.40,
+    ),
+    (
+        "nested largest",
+        "nested_largest_lion2309.onnx",
+        false,
+        0.40,
+    ),
+    (
+        "nested colder",
+        "nested_colder_bedroom2309.onnx",
+        false,
+        0.40,
+    ),
+    (
+        "something you can eat",
+        "something_you_can_eat2312.onnx",
+        false,
+        0.35,
+    ),
     ("land vehicle", "land_vehicle2309.onnx", false, 0.35),
     ("vehicle", "land_vehicle2309.onnx", false, 0.35),
-    ("observation wheel", "observation_wheel_2309_yolov8n.onnx", false, 0.40),
+    (
+        "observation wheel",
+        "observation_wheel_2309_yolov8n.onnx",
+        false,
+        0.40,
+    ),
     ("treasure", "treasurechest2309_yolov8n.onnx", false, 0.40),
     ("chest", "treasurechest2309_yolov8n.onnx", false, 0.40),
 ];
@@ -1255,10 +1535,8 @@ pub fn hc_pick_model(inst: &str) -> Option<(&'static str, bool, f32)> {
     let low = inst.to_lowercase();
     let mut best: Option<(usize, &str, bool, f32)> = None;
     for (kw, file, seg, conf) in HC_ZOO {
-        if low.contains(kw) {
-            if best.as_ref().map_or(true, |(len, _, _, _)| kw.len() > *len) {
-                best = Some((kw.len(), file, *seg, *conf));
-            }
+        if low.contains(kw) && best.as_ref().is_none_or(|(len, _, _, _)| kw.len() > *len) {
+            best = Some((kw.len(), file, *seg, *conf));
         }
     }
     best.map(|(_, f, s, c)| (f, s, c))
@@ -1268,24 +1546,45 @@ pub fn hc_pick_model(inst: &str) -> Option<(&'static str, bool, f32)> {
 /// detection ([1,C,8400], classes at 4..C) and seg models
 /// ([1,37,8400]: only channel 4 is the score). Returns box centers
 /// in image coords, confidence-sorted, NMS-deduped.
-pub async fn hc_detect_boxes(png: &[u8], model_file: &str, is_seg: bool, min_conf: f32) -> Result<Vec<(f64, f64, f64, f64, f32)>> {
+pub async fn hc_detect_boxes(
+    png: &[u8],
+    model_file: &str,
+    is_seg: bool,
+    min_conf: f32,
+) -> Result<Vec<(f64, f64, f64, f64, f32)>> {
     hc_detect_impl(png, model_file, is_seg, min_conf, true).await
 }
 
-pub async fn hc_detect(png: &[u8], model_file: &str, is_seg: bool, min_conf: f32) -> Result<Vec<(f64, f64)>> {
+pub async fn hc_detect(
+    png: &[u8],
+    model_file: &str,
+    is_seg: bool,
+    min_conf: f32,
+) -> Result<Vec<(f64, f64)>> {
     let boxes = hc_detect_impl(png, model_file, is_seg, min_conf, false).await?;
     Ok(boxes.into_iter().map(|(x, y, _, _, _)| (x, y)).collect())
 }
 
-async fn hc_detect_impl(png: &[u8], model_file: &str, is_seg: bool, min_conf: f32, want_boxes: bool) -> Result<Vec<(f64, f64, f64, f64, f32)>> {
+async fn hc_detect_impl(
+    png: &[u8],
+    model_file: &str,
+    is_seg: bool,
+    min_conf: f32,
+    want_boxes: bool,
+) -> Result<Vec<(f64, f64, f64, f64, f32)>> {
     let path = hc_model_dir().join(model_file);
     if !path.exists() {
         // on-demand: pull from the QIN2DIM model release (553-model zoo)
         let url = format!(
             "https://github.com/QIN2DIM/hcaptcha-challenger/releases/download/model/{model_file}"
         );
-        let resp = reqwest::get(&url).await.map_err(|e| anyhow!("zoo download failed: {e}"))?;
-        let bytes_dl = resp.bytes().await.map_err(|e| anyhow!("zoo download read: {e}"))?;
+        let resp = reqwest::get(&url)
+            .await
+            .map_err(|e| anyhow!("zoo download failed: {e}"))?;
+        let bytes_dl = resp
+            .bytes()
+            .await
+            .map_err(|e| anyhow!("zoo download read: {e}"))?;
         tokio::fs::write(&path, &bytes_dl)
             .await
             .with_context(|| format!("writing {}", path.display()))?;
@@ -1303,8 +1602,8 @@ async fn hc_detect_impl(png: &[u8], model_file: &str, is_seg: bool, min_conf: f3
         let x = i % w;
         let y = i / w;
         let base = w * h;
-        chw[0 * base + y * w + x] = px[0] as f32 / 255.0;
-        chw[1 * base + y * w + x] = px[1] as f32 / 255.0;
+        chw[y * w + x] = px[0] as f32 / 255.0;
+        chw[base + y * w + x] = px[1] as f32 / 255.0;
         chw[2 * base + y * w + x] = px[2] as f32 / 255.0;
     }
     let input = rten::Value::from_shape(&[1usize, 3, h, w], chw).context("hc input tensor")?;
@@ -1320,11 +1619,7 @@ async fn hc_detect_impl(png: &[u8], model_file: &str, is_seg: bool, min_conf: f3
     let n = tv.size(2); // 8400
     let ch = tv.size(1);
     let data = tv.data().context("hc output data")?;
-    let score_channels: Vec<usize> = if is_seg {
-        vec![4]
-    } else {
-        (4..ch).collect()
-    };
+    let score_channels: Vec<usize> = if is_seg { vec![4] } else { (4..ch).collect() };
     let xf = ow / 640.0;
     let yf = oh / 640.0;
     let mut hits: Vec<(f64, f64, f64, f64, f32)> = Vec::new();

@@ -39,7 +39,10 @@ async fn download(url: &str, to: &PathBuf) -> Result<()> {
     let resp = reqwest::get(url)
         .await
         .map_err(|e| anyhow!("model download failed ({url}): {e}"))?;
-    let bytes = resp.bytes().await.map_err(|e| anyhow!("read failed: {e}"))?;
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| anyhow!("read failed: {e}"))?;
     tokio::fs::write(&tmp, &bytes).await?;
     tokio::fs::rename(&tmp, to).await?;
     Ok(())
@@ -77,7 +80,10 @@ async fn engine() -> Result<&'static DdddOcr> {
         .commit_from_file(&model_path)
         .context("loading ddddocr common.onnx")?;
     let charset_text = std::fs::read_to_string(&charset_path).context("reading charset")?;
-    let charset: Vec<char> = charset_text.lines().map(|l| l.chars().next().unwrap_or(' ')).collect();
+    let charset: Vec<char> = charset_text
+        .lines()
+        .map(|l| l.chars().next().unwrap_or(' '))
+        .collect();
     Ok(ENGINE.get_or_init(|| DdddOcr {
         session: std::sync::Mutex::new(session),
         charset,
@@ -116,10 +122,9 @@ pub async fn classify_png(png: &[u8]) -> Result<String> {
         .context("extracting output tensor")?;
     // ONNX output is [T, 1, C] (sequence-major)
     let (t, c) = (
-        shape.get(0).copied().unwrap_or(0) as usize,
+        shape.first().copied().unwrap_or(0) as usize,
         shape.get(2).copied().unwrap_or(0) as usize,
     );
-
 
     // CTC greedy decode
     let mut prev: Option<usize> = None;
@@ -138,13 +143,10 @@ pub async fn classify_png(png: &[u8]) -> Result<String> {
             prev = None;
             continue;
         }
-        if Some(best) != prev {
-            if best < eng.charset.len() {
-                out.push(eng.charset[best]);
-            }
+        if Some(best) != prev && best < eng.charset.len() {
+            out.push(eng.charset[best]);
         }
         prev = Some(best);
     }
     Ok(out)
 }
-
