@@ -185,7 +185,7 @@ origin device** (platform, timezone, locale, screen) — a session that
 suddenly changes identity looks like an impossible login and anti-fraud
 systems revoke it. Proven flow, see `AGENTS.md` §8.
 
-**Full tool surface (43 tools):**
+**Full tool surface (47 tools):**
 
 | Category | Tools |
 |---|---|
@@ -198,6 +198,7 @@ systems revoke it. Proven flow, see `AGENTS.md` §8.
 | **Vision** | `page_vision` · `page_ocr` · `page_match_image` · `page_pixels` · `page_contrast` |
 | **Inspect** | `page_eval` · `page_open` · `page_comment` |
 | **Identity** | `identity_generate` · `identity_audit` |
+| **Recipes** | `recipe_record` · `recipe_save` · `recipe_list` · `recipe_replay` (deterministic replay, semantic anchors, strict/lenient escalation) |
 | **Evidence & safety** | `session_evidence` · `confirm_action` |
 
 Every mutation returns a **receipt** — `page_fill` reports `landed_chars`, while

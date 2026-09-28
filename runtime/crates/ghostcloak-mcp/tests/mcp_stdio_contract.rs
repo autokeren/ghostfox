@@ -95,6 +95,10 @@ fn mcp_stdio_contract_lists_and_calls_identity_tools() {
         "page_upload_file",
         "page_eval",
         "page_extract",
+        "recipe_record",
+        "recipe_save",
+        "recipe_list",
+        "recipe_replay",
         "identity_generate",
         "identity_audit",
         "session_evidence",
@@ -103,7 +107,7 @@ fn mcp_stdio_contract_lists_and_calls_identity_tools() {
     ] {
         assert!(names.contains(&expected), "missing tool {expected}");
     }
-    assert_eq!(names.len(), 43, "tools: {names:?}");
+    assert_eq!(names.len(), 47, "tools: {names:?}");
 
     let generated = request(
         &mut child,

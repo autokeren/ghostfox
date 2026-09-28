@@ -8,6 +8,7 @@ mod geetest;
 mod hcaptcha;
 mod liveview;
 mod ocr;
+mod recipes;
 mod recording;
 mod server;
 

@@ -357,6 +357,29 @@ fn default_true() -> bool {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+struct RecipeRecordParams {
+    session_id: String,
+    /// Recipe name (a-zA-Z0-9-_). Overwrites an existing recipe with the same name on save.
+    name: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct RecipeSaveParams {
+    session_id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct RecipeReplayParams {
+    session_id: String,
+    page_id: String,
+    name: String,
+    /// strict (default): stop with a rich error when an anchor fails to
+    /// resolve (page changed). false: skip unresolvable steps and report them.
+    #[serde(default = "default_true")]
+    strict: bool,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct PageExtractParams {
     session_id: String,
     page_id: String,
@@ -413,9 +436,63 @@ pub struct GhostcloakServer {
 #[derive(Default)]
 pub(crate) struct ServerState {
     pub(crate) sessions: HashMap<String, Arc<Session>>,
+    /// Recipe drafts in progress: session_id -> (name, steps).
+    pub(crate) recipe_drafts: HashMap<String, (String, Vec<crate::recipes::RecipeStep>)>,
+    /// Last a11y snapshot per page — the anchor source at record time.
+    pub(crate) a11y_cache: HashMap<String, ghostcloak_core::engine::A11ySnapshot>,
 }
 
 impl GhostcloakServer {
+    /// Record a step into the session's recipe draft (if one is active).
+    /// `full_params` are the original tool args; for `*_ref` tools pass
+    /// Some(ref) so the anchor (role+name) is captured from the cached
+    /// a11y snapshot.
+    async fn note_recipe(
+        &self,
+        session_id: &str,
+        tool: &str,
+        full_params: serde_json::Value,
+        used_ref: Option<&str>,
+    ) {
+        let (active, anchor) = {
+            let state = self.state.read().await;
+            if !state.recipe_drafts.contains_key(session_id) {
+                return;
+            }
+            let anchor = used_ref.and_then(|r| {
+                state
+                    .a11y_cache
+                    .values()
+                    .find_map(|snap| crate::recipes::anchor_from_ref(snap, r))
+            });
+            (true, anchor)
+        };
+        if !active {
+            return;
+        }
+        let step = crate::recipes::RecipeStep {
+            tool: tool.to_string(),
+            anchor,
+            params: full_params,
+        };
+        let mut state = self.state.write().await;
+        if let Some((_, steps)) = state.recipe_drafts.get_mut(session_id) {
+            steps.push(step);
+        }
+    }
+
+    async fn cache_a11y(&self, page_id: &str, snap: ghostcloak_core::engine::A11ySnapshot) {
+        let mut state = self.state.write().await;
+        state.a11y_cache.insert(page_id.to_string(), snap);
+        // Bound the cache: keep the 8 most recent pages.
+        if state.a11y_cache.len() > 8 {
+            let victim = state.a11y_cache.keys().next().cloned();
+            if let Some(v) = victim {
+                state.a11y_cache.remove(&v);
+            }
+        }
+    }
+
     pub fn new() -> Self {
         Self::default()
     }
@@ -553,6 +630,13 @@ impl GhostcloakServer {
             Some(&new_id),
             serde_json::json!({ "url": url }),
         );
+        self.note_recipe(
+            &session_id,
+            "page_open",
+            serde_json::json!({ "url": url }),
+            None,
+        )
+        .await;
         Ok(text_result(new_id))
     }
 
@@ -625,6 +709,7 @@ impl GhostcloakServer {
             .a11y_snapshot()
             .await
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        self.cache_a11y(&page_id, snap.clone()).await;
         let _ = self.recorder.record(
             &session_id,
             "page_a11y",
@@ -662,6 +747,7 @@ impl GhostcloakServer {
             .a11y_snapshot()
             .await
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        self.cache_a11y(&page_id, snap.clone()).await;
 
         let eq_ci = |a: &str, b: &str| a.eq_ignore_ascii_case(b);
         let contains_ci =
@@ -757,6 +843,13 @@ impl GhostcloakServer {
         page.click_ref(&r#ref)
             .await
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        self.note_recipe(
+            &session_id,
+            "page_click_ref",
+            serde_json::json!({ "ref": r#ref }),
+            Some(&r#ref),
+        )
+        .await;
         let _ = self.recorder.record(
             &session_id,
             "page_click_ref",
@@ -1985,6 +2078,13 @@ impl GhostcloakServer {
         page.type_ref(&r#ref, &text)
             .await
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        self.note_recipe(
+            &session_id,
+            "page_type_ref",
+            serde_json::json!({ "text": text }),
+            Some(&r#ref),
+        )
+        .await;
         let _ = self.recorder.record(
             &session_id,
             "page_type_ref",
@@ -2808,6 +2908,234 @@ impl GhostcloakServer {
             .to_toml()
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
         Ok(text_result(toml_str))
+    }
+
+    #[tool(
+        description = "Start recording a deterministic recipe on a session. While recording, action tools (page_open, page_click_ref, page_type_ref, ...) append steps to the draft; ref-based actions capture SEMANTIC anchors (role + accessible name) so the recipe survives DOM churn. Call recipe_save to persist. Replay later with recipe_replay — no LLM needed for the happy path."
+    )]
+    async fn recipe_record(
+        &self,
+        Parameters(RecipeRecordParams { session_id, name }): Parameters<RecipeRecordParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        self.session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let safe: String = name
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+            .take(64)
+            .collect();
+        if safe.is_empty() {
+            return Err(rmcp::model::ErrorData::invalid_params(
+                "recipe name must contain a-zA-Z0-9-_".to_string(),
+                None,
+            ));
+        }
+        {
+            let mut state = self.state.write().await;
+            state
+                .recipe_drafts
+                .insert(session_id.clone(), (safe.clone(), Vec::new()));
+        }
+        Ok(text_result(format!(
+            "recording `{safe}` — act now; recipe_save when done"
+        )))
+    }
+
+    #[tool(
+        description = "Persist the in-progress recipe of a session to ~/.ghostfox/recipes/<name>.json and stop recording. Returns the step summary."
+    )]
+    async fn recipe_save(
+        &self,
+        Parameters(RecipeSaveParams { session_id }): Parameters<RecipeSaveParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let (name, steps) = {
+            let mut state = self.state.write().await;
+            state.recipe_drafts.remove(&session_id).ok_or_else(|| {
+                rmcp::model::ErrorData::invalid_params(
+                    format!(
+                        "session `{session_id}` has no recipe draft — call recipe_record first"
+                    ),
+                    None,
+                )
+            })?
+        };
+        let recipe = crate::recipes::Recipe {
+            name: name.clone(),
+            created_at: chrono::Utc::now().to_rfc3339(),
+            steps: steps.clone(),
+        };
+        let path = crate::recipes::save(&recipe)
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let _ = self.recorder.record(
+            &session_id,
+            "recipe_save",
+            None,
+            serde_json::json!({ "recipe": name, "steps": steps.len() }),
+        );
+        let summary: Vec<String> = steps
+            .iter()
+            .map(|s| {
+                format!(
+                    "{}{}",
+                    s.tool,
+                    s.anchor
+                        .as_ref()
+                        .map(|a| format!(" -> ({}, {:?})", a.role, a.name))
+                        .unwrap_or_default()
+                )
+            })
+            .collect();
+        Ok(text_result(format!(
+            "saved `{name}` ({} steps) to {}\n{}",
+            steps.len(),
+            path.display(),
+            summary.join("\n")
+        )))
+    }
+
+    #[tool(description = "List saved recipes (name, step count, created).")]
+    async fn recipe_list(&self) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let items: Vec<serde_json::Value> = crate::recipes::list()
+            .into_iter()
+            .map(|r| {
+                serde_json::json!({
+                    "name": r.name,
+                    "steps": r.steps.len(),
+                    "created_at": r.created_at,
+                })
+            })
+            .collect();
+        Ok(text_result(
+            serde_json::to_string_pretty(&items).unwrap_or_default(),
+        ))
+    }
+
+    #[tool(
+        description = "Replay a saved recipe deterministically on a page: each step re-resolves its semantic anchor against a FRESH a11y snapshot (anchors: role+name), then executes. strict=true (default): a missing anchor stops with a rich error (step index + anchor + hint) so the LLM can take over; strict=false skips unresolvable steps. Returns {played, skipped, failed_at?}."
+    )]
+    async fn recipe_replay(
+        &self,
+        Parameters(RecipeReplayParams {
+            session_id,
+            page_id,
+            name,
+            strict,
+        }): Parameters<RecipeReplayParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let recipe = crate::recipes::load(&name)
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let mut played = 0usize;
+        let mut skipped: Vec<serde_json::Value> = Vec::new();
+        // page_open steps create a NEW page; subsequent steps must act on
+        // the page the previous step left behind, not the replay target.
+        let mut current_page = page_id.clone();
+        for (idx, step) in recipe.steps.iter().enumerate() {
+            // Fresh snapshot per step: anchors must re-resolve against the
+            // page the previous step left behind.
+            let page = session
+                .page(&current_page)
+                .await
+                .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+            let snap = page
+                .a11y_snapshot()
+                .await
+                .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+            self.cache_a11y(&current_page, snap.clone()).await;
+            match step.tool.as_str() {
+                "page_open" => {
+                    let url = step
+                        .params
+                        .get("url")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let before = session.page_ids().await;
+                    session
+                        .new_page(Some(url))
+                        .await
+                        .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+                    let after = session.page_ids().await;
+                    if let Some(new_id) = after.into_iter().find(|id| !before.contains(id)) {
+                        current_page = new_id;
+                    }
+                    played += 1;
+                    continue;
+                }
+                "page_click_ref" | "page_type_ref" => {
+                    let Some(anchor) = &step.anchor else {
+                        skipped.push(serde_json::json!({
+                            "step": idx, "tool": step.tool, "reason": "no anchor recorded"
+                        }));
+                        if strict {
+                            return Err(rmcp::model::ErrorData::internal_error(format!(
+                                "step {idx} ({}) has no anchor — record the recipe from ref-based actions",
+                                step.tool
+                            ), None));
+                        }
+                        continue;
+                    };
+                    let Some(el) = crate::recipes::resolve_anchor(&snap, anchor) else {
+                        let msg = serde_json::json!({
+                            "failed_at": idx,
+                            "tool": step.tool,
+                            "anchor": anchor,
+                            "hint": "page changed — run page_a11y/page_extract and continue manually",
+                            "played": played,
+                        });
+                        if strict {
+                            return Ok(text_result(format!(
+                                "ESCALATE: {}",
+                                serde_json::to_string_pretty(&msg).unwrap_or_default()
+                            )));
+                        }
+                        skipped.push(msg);
+                        continue;
+                    };
+                    if step.tool == "page_click_ref" {
+                        page.click_ref(&el.r#ref).await.map_err(|e| {
+                            rmcp::model::ErrorData::internal_error(e.to_string(), None)
+                        })?;
+                    } else {
+                        let text = step
+                            .params
+                            .get("text")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        page.type_ref(&el.r#ref, text).await.map_err(|e| {
+                            rmcp::model::ErrorData::internal_error(e.to_string(), None)
+                        })?;
+                    }
+                    played += 1;
+                    continue;
+                }
+                other => {
+                    skipped.push(serde_json::json!({
+                        "step": idx, "tool": other, "reason": "tool not replayable in v1"
+                    }));
+                    if strict {
+                        return Err(rmcp::model::ErrorData::internal_error(
+                            format!("step {idx}: tool `{other}` is not replayable in v1"),
+                            None,
+                        ));
+                    }
+                    continue;
+                }
+            }
+        }
+        let _ = self.recorder.record(
+            &session_id,
+            "recipe_replay",
+            Some(&page_id),
+            serde_json::json!({ "recipe": name, "played": played, "skipped": skipped.len() }),
+        );
+        Ok(text_result(format!(
+            "{{\"played\": {played}, \"skipped\": {}}}",
+            serde_json::to_string(&skipped).unwrap_or_default()
+        )))
     }
 
     #[tool(

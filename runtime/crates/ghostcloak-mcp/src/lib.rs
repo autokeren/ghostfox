@@ -2,4 +2,5 @@
 
 pub mod geetest;
 pub mod ocr;
+pub mod recipes;
 pub mod recording;

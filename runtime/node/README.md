@@ -19,7 +19,7 @@ Then wire it into any MCP client (Claude Code, Cursor, ...):
 }
 ```
 
-Tools: the full 43-tool surface — sessions (`session_create`, `session_pages`),
+Tools: the full 47-tool surface — sessions (`session_create`, `session_pages`),
 sight (`page_a11y`, `page_snapshot`, `page_screenshot`), action
 (`page_click_ref`, `page_type_ref`, `page_fill`, `page_drag`, ...), the
 native captcha suite (`page_geetest_click`, `page_geetest_slide`,
