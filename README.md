@@ -52,6 +52,24 @@ Firefox (MPL-2.0)
 | Coherent identities + auditor | **✓** | ✗ | ✗ | partial |
 | Runtime language | **Rust** | — | Node | — |
 
+**The moat — why this isn't just another wrapper.**
+
+1. **We own the engine.** The anti-detect lives in C++ patches inside our own
+   Firefox fork — not in injected JS that detectors can read. Upstream
+   Camoufox has signaled partially-closed patches ahead; wrappers inherit
+   that risk, a fork that owns its engine doesn't.
+2. **A living proof corpus.** Every claim here has a receipt: bilibili
+   icon-click ×6, hCaptcha on production signups, TikTok OAuth+OTP live,
+   500/500 identity audits, Docker E2E. Features get copied in a week —
+   verified history can't be.
+3. **Agent-native ergonomics.** 43 coherent MCP tools, fire-then-verify
+   receipts, evidence recording, and a playbook (`AGENTS.md`) distilled
+   from real runs. Agents (and their prompts) build habits on this
+   surface — switching costs are real.
+4. **Canonical distribution.** PyPI, npm, GHCR and the official MCP
+   Registry under one name, with the docs, benchmarks and changelogs to
+   back it. Forks will exist; the verified trunk is here.
+
 **Captcha suite — 8 families, solved on-device (v0.6.7+).** The runtime
 ships native MCP solvers with local models — no paid captcha farms, no
 cloud, no browser rent:
