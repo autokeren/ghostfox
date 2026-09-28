@@ -481,6 +481,57 @@ impl GhostcloakServer {
         }
     }
 
+    /// Compose an action receipt: cached-before snapshot (if any) diffed
+    /// against a fresh after-snapshot. Degrades gracefully when no cached
+    /// before exists (the receipt then reports state, not diff).
+    async fn action_receipt(
+        &self,
+        page: &Arc<dyn ghostcloak_core::engine::PageHandle>,
+        page_id: &str,
+        action: &str,
+        target_ref: Option<&str>,
+    ) -> serde_json::Value {
+        let before = {
+            let state = self.state.read().await;
+            state.a11y_cache.get(page_id).cloned()
+        };
+        // Settle: a click on a link/form submit starts a navigation that the
+        // immediate walk would miss. Half a second covers the common cases
+        // without turning every action into a slow round trip — agents
+        // re-snapshot after actions anyway; this returns evidence instead.
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        let after = page.a11y_snapshot().await.ok();
+        let Some(after) = after else {
+            return serde_json::json!({
+                "action": action,
+                "receipt": "degraded",
+                "reason": "post-action snapshot unavailable (page navigating?)",
+            });
+        };
+        self.cache_a11y(page_id, after.clone()).await;
+        let target = target_ref
+            .and_then(|r| after.elements.iter().find(|e| e.r#ref == r))
+            .map(|e| serde_json::json!({ "ref": e.r#ref, "role": e.role, "name": e.name }));
+        let (changes, url_changed) = match &before {
+            Some(b) => (
+                crate::receipts::diff(b, &after, 40),
+                after.page_url != b.page_url,
+            ),
+            None => (
+                serde_json::json!({ "changed": null, "note": "no cached before-snapshot — run page_a11y before acting to enable diffs" }),
+                false,
+            ),
+        };
+        serde_json::json!({
+            "action": action,
+            "target": target,
+            "url": after.page_url,
+            "url_changed": url_changed,
+            "login_state": after.login_state,
+            "changes": changes,
+        })
+    }
+
     async fn cache_a11y(&self, page_id: &str, snap: ghostcloak_core::engine::A11ySnapshot) {
         let mut state = self.state.write().await;
         state.a11y_cache.insert(page_id.to_string(), snap);
@@ -856,7 +907,14 @@ impl GhostcloakServer {
             Some(&page_id),
             serde_json::json!({ "ref": r#ref }),
         );
-        Ok(text_result("clicked"))
+        // Act -> Observe -> Compare: diff the cached before-snapshot against
+        // a fresh walk so the agent gets EVIDENCE, not "clicked".
+        let receipt = self
+            .action_receipt(&page, &page_id, "click", Some(&r#ref))
+            .await;
+        Ok(text_result(
+            serde_json::to_string_pretty(&receipt).unwrap_or_default(),
+        ))
     }
 
     #[tool(
@@ -2091,7 +2149,12 @@ impl GhostcloakServer {
             Some(&page_id),
             serde_json::json!({ "ref": r#ref, "chars": text.chars().count() }),
         );
-        Ok(text_result("typed"))
+        let receipt = self
+            .action_receipt(&page, &page_id, "type", Some(&r#ref))
+            .await;
+        Ok(text_result(
+            serde_json::to_string_pretty(&receipt).unwrap_or_default(),
+        ))
     }
 
     #[tool(
@@ -2908,6 +2971,52 @@ impl GhostcloakServer {
             .to_toml()
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
         Ok(text_result(toml_str))
+    }
+
+    #[tool(
+        description = "Observe what changed since the last a11y snapshot: diffs the page's cached snapshot (from page_a11y/page_extract/the last action receipt) against a FRESH walk. Returns {changed, adds, removes, updates, changes:[{op, ref, role, name, value?, prev?}]}. Capped at 40 entries. This is the observeDiff primitive: act, then page_diff to see consequences without paying for a full snapshot."
+    )]
+    async fn page_diff(
+        &self,
+        Parameters(PageRefParams {
+            session_id,
+            page_id,
+        }): Parameters<PageRefParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let page = session
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let before = {
+            let state = self.state.read().await;
+            state.a11y_cache.get(&page_id).cloned()
+        };
+        let after = page
+            .a11y_snapshot()
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        self.cache_a11y(&page_id, after.clone()).await;
+        let _ = self.recorder.record(
+            &session_id,
+            "page_diff",
+            Some(&page_id),
+            serde_json::json!({ "had_base": before.is_some() }),
+        );
+        match before {
+            Some(b) => {
+                let d = crate::receipts::diff(&b, &after, 40);
+                Ok(text_result(
+                    serde_json::to_string_pretty(&d).unwrap_or_default(),
+                ))
+            }
+            None => Ok(text_result(
+                "no cached snapshot to diff against — run page_a11y first",
+            )),
+        }
     }
 
     #[tool(
