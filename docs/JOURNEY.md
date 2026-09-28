@@ -69,16 +69,60 @@ Runtime Rust pertama + engine fork Camoufox. MCP round-trip E2E jalan.
 - [ ] WebGPU v1 persona spoofing (nutup leak persona Win/Mac-ARM; 2 jam per iterasi build)
 - [ ] PR #782: monitor upstream beta.31 assets
 
-## Horizon — C++ arc (mata & tangan di level Gecko)
+## Horizon — C++ arc: panca indra AI di level Gecko
 
 **Prinsip**: AI jangan masuk C++. C++ = sensor + actuator deterministik. Otak di runtime/MCP.
+Framing: setiap milestone = satu "indra" yang dibuka untuk agen.
 
-1. **M1 — Native observation** ✅ wiring done (`Page.getFullAXTree` + flatten) — tinggal E2E + actionable native refs (ref registry ala backendNodeId)
-2. **M2 — Native click/type broker**: `semantic_click(ref)` — resolve accessible object → rect layout NATIVE (JS bisa bohong soal `getBoundingClientRect`! sites hook rect buat racun klik) → hit-test → dispatch trusted events. Ini juga = koodinat mouse yang GAK BISA DIBOHONGIN.
-3. **M2.5 — Stealth pixel extraction** (`Agent.captureSurface`): baca piksel dari compositor/backing store TANPA `toDataURL` (yang bisa di-hook site buat deteksi exfiltrasi) → captcha suite jadi satu-satunya yang stealth dari sisi akuisisi. PR kecil di juggler additions.
-4. **M3 — Receipts native**: AccEvent diff stream (`Agent.observeDiff`) — update inkremental, bukan full snapshot.
-5. **M4 — Browser state native**: load state, dialogs, downloads, focus/selection.
-6. **M5 — Policy layer**: origin allowlist, confirmation enforced, redacted evidence.
+### M1 — 👁 Penglihatan terstruktur ✅ (wiring done)
+`Page.getFullAXTree` + flatten → `page_a11y native=true` — trusted a11y tree.
+Tinggal: E2E + actionable native refs (ref registry ala backendNodeId).
+
+### M2 — ✋ Peraba: native click/type broker
+`semantic_click(ref)` — resolve accessible → **rect layout NATIVE** (JS bisa bohong soal
+`getBoundingClientRect`; sites hook rect buat racun klik — koordinat mouse yang gak bisa
+dibohongin) → hit-test → trusted events. Drag captcha paling diuntungkan: gap→target presisi.
+
+### M2.5 — 🥷 Stealth pixel extraction
+`Agent.captureSurface`: baca piksel dari compositor/backing store TANPA `toDataURL`
+(yang bisa di-hook site buat deteksi exfiltrasi) → captcha suite jadi satu-satunya yang
+stealth dari sisi akuisisi data. Kombinasi unik yang gak dimiliki kompetitor wrapper-based
+(mereka SEMUA lewat toDataURL/CDP screenshot yang bisa di-hook). PR kecil di juggler
+additions + compositor hook.
+
+### M3 — 👂 Pendengaran: update inkremental + whisper stream
+- AccEvent diff (`Agent.observeDiff`) — a11y tree sebagai stream, bukan full snapshot.
+- **DOM mutation whisper**: tiap perubahan DOM = event (bukan polling).
+- **WebSocket frames**: network full-duplex (HTTP udah; WS buat challenge/config makin umum).
+
+### M3.5 — 👃 Penciuman: paint & timing sense
+- **Visual-stability events** (RefreshDriver/compositor observer): "tunggu sampai
+  VISUALLY siap" — bunuh semua `sleep(3)` arbiter di playbook. Ini pengganti
+  page_wait_for yang sejati.
+- **Timing sense**: DNS/TLS/TTFB per request, long-task events.
+- **Jank detector**: main-thread sibuk → jangan klik dulu (page "rasanya" berat).
+
+### M4 — 🧍 Proprioception: state tubuh browser
+- Load state, dialogs, downloads, **focus/selection**.
+- **Caret/selection/IME state**: agent "merasa" posisi jarinya di editor —
+  receipts typing jadi nyata (caret pindah ke mana setelah 1000 chars? selection
+  range native, JS gak bisa bohong soal ini).
+- **Cookie/session heartbeat**: event "auth cookie berubah/kehapus" → deteksi
+  matinya session LEBIH AWAL. Pelajaran LinkedIn (revoked diam-diam) jadi
+  gak bakal keulang — kita TAU di detik kejadian.
+- **Frame stream + visual diff** (screencast exposure): agent "lihat" animasi
+  masih jalan apa udah selesai.
+
+### M4.5 — 🩺 Self-health
+- **Memory/CPU per-tab**: agent multi-tab "merasa" tab yang bocor → close.
+- Crash content-process → event → auto-recovery (self-healing sessions).
+
+### M5 — 🛡 Policy layer
+Origin allowlist, confirmation enforced, redacted evidence.
+
+**Urutan eksekusi**: M1 E2E → v0.8.2 → M2 (+M2.5 bareng) → M3/M3.5 → M4/M4.5 → M5.
+**Yang paling "ghostfox banget" dulu**: cookie heartbeat + visual stability — dua-duanya
+nyambung langsung ke pengalaman lapangan (session ke-revoke diam-diam, sleep-guessing).
 
 **Kemerdekaan bertahap dari upstream** (strategi): patch stack formalisasi → satu siklus update Firefox kita kerjain sendiri → cherry-pick camoufox selagi open → hard-fork trigger ditentukan dari awal (closed / stale >2 bulan).
 
