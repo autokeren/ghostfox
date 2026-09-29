@@ -163,12 +163,24 @@ Field lessons (this one fought hard):
   profiles; the restore never came from our tools.
 
 ### M2.5 — 🥷 Stealth pixel extraction
-`Agent.captureSurface`: read pixels from the compositor/backing store
-WITHOUT `toDataURL` (which sites can hook to detect exfiltration) → the
-captcha suite becomes the only one that's stealth at the data-acquisition
-layer. A combination no wrapper-based competitor can have — they ALL go
-through hookable toDataURL/CDP screenshots. Small PR in the juggler
-additions + a compositor hook.
+**SHIPPED (core + GeeTest migrated).** `Page.captureSurface`: raw RGBA
+from the compositor/backing store WITHOUT `toDataURL` (which sites can
+hook to detect exfiltration) → the captcha suite becomes the only one
+that's stealth at the data-acquisition layer. A combination no
+wrapper-based competitor can have — they ALL go through hookable
+toDataURL/CDP screenshots. `page_pixels` v2 (region / semantic / ref
+modes, grids in Rust) + the GeeTest slide solver now read pixels this way.
+
+Field lessons:
+- **drawSnapshot is black for offset rects**: a rect whose origin is not
+  (0,0) returns a BLACK snapshot (Firefox quirk, invisible to every
+  screenshot path because screenshots always use the full viewport).
+  Fix: snap the full content viewport and crop via
+  `drawImage(snapshot, -x, -y)`.
+- **Xray Maps don't cross from frame scripts**: the page-realm
+  `__gfxRefs` Map is unreliable through the frame script compartment —
+  resolve walk-ref rects via page-realm evaluate instead; the PIXELS
+  stay compositor-native either way.
 
 ### M3 — 👂 Hearing: incremental updates + whisper streams
 - AccEvent diff (`Agent.observeDiff`) — the a11y tree as a stream, not

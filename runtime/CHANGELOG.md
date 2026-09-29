@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **M2.5 compositor pixel capture**: `Page.captureSurface` — raw RGBA of
+  any content-viewport rect straight from the compositor (`drawSnapshot`
+  onto a CHROME-realm canvas). No page-realm canvas, no toDataURL, no
+  getImageData: pages cannot hook, poison or even observe the read. The
+  hole every wrapper-based competitor has in their captcha pipelines.
+  Handles the Firefox quirk where `drawSnapshot` returns black for
+  non-zero-origin rects (full-viewport snap + canvas crop).
+- `page_pixels` v2: pixels from the compositor in three modes —
+  `{x,y,width,height}` raw region, `{role,name}` semantic element
+  (native a11y bounds, scroll-first), `{ref}` walk-ref. Luminance grids
+  computed in Rust; no pixel math left in page JS.
+- GeeTest slide solver: the last page-realm toDataURL read in the
+  captcha suite migrated to captureSurface (canvas rects from JS, pixels
+  from the compositor) — CORS taint is now impossible by construction.
 - `page_click_native` (tool #49): the M2 touch primitive — semantic
   click whose coordinates come from the ENGINE's a11y tree, not page JS.
   Page scripts can hook `getBoundingClientRect` to poison coordinates;

@@ -203,7 +203,7 @@ systems revoke it. Proven flow, see `AGENTS.md` §8.
 | **Act** | `page_click_ref` · `page_click_native` (trusted a11y-bounds click: scroll-first, DOM-proof coordinates) · `page_type_ref` · `page_click` · `page_type` · `page_fill` · `page_press` · `page_drag` · `page_move_to` · `page_upload_file` · `page_init_script` |
 | **Captcha** | `captcha_solve` · `page_geetest_slide` · `page_geetest_click` · `page_captcha_rotate` · `page_captcha_ocr` · `page_hcaptcha` |
 | **Debug** | `page_console` · `page_errors` · `page_network_start` · `page_network_read` · `page_network_body` |
-| **Vision** | `page_vision` · `page_ocr` · `page_match_image` · `page_pixels` · `page_contrast` |
+| **Vision** | `page_vision` · `page_ocr` · `page_match_image` · `page_pixels` (compositor pixels — region/semantic/ref, no toDataURL) · `page_contrast` |
 | **Inspect** | `page_eval` · `page_open` · `page_comment` |
 | **Identity** | `identity_generate` · `identity_audit` |
 | **Recipes** | `recipe_record` · `recipe_save` · `recipe_list` · `recipe_replay` (deterministic replay, semantic anchors, strict/lenient escalation) |
