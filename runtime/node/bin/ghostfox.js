@@ -81,8 +81,21 @@ async function install() {
   if (!fs.existsSync(path.join(ENGINE, "ghostfox-bin"))) {
     const platform = os.platform() === "linux" ? "lin" : os.platform() === "darwin" ? "mac" : "win";
     const arch = os.arch() === "arm64" ? "arm64" : "x86_64";
-    const asset = Object.keys(assets).find((n) => n.includes(`${platform}.${arch}`) && n.endsWith(".zip"));
-    if (!asset) throw new Error(`no prebuilt engine for ${platform}-${arch} on the latest release`);
+    const want = (a) => a.includes(`${platform}.${arch}`) && a.endsWith(".zip");
+    let asset = Object.keys(assets).find(want);
+    // Engine builds land ~2h after a release; when the latest release is
+    // still engine-less (runtime-only), fall back to the most recent
+    // release that HAS the engine zip.
+    if (!asset) {
+      log("engine zip not on the latest release yet — checking previous releases...");
+      const rels = await fetchJson(`https://api.github.com/repos/${REPO}/releases?per_page=10`);
+      for (const rel of rels) {
+        const prevAssets = Object.fromEntries(rel.assets.map((a) => [a.name, a.browser_download_url]));
+        const hit = Object.keys(prevAssets).find(want);
+        if (hit) { asset = hit; assets[asset] = prevAssets[hit]; log(`using ${asset} from ${rel.tag_name}`); break; }
+      }
+    }
+    if (!asset) throw new Error(`no prebuilt engine for ${platform}-${arch} on any release`);
     log(`downloading engine (${asset}) — this is ~650MB...`);
     const tmp = path.join(os.tmpdir(), "ghostfox-engine.zip");
     await download(assets[asset], tmp);

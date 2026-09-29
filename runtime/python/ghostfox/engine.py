@@ -110,11 +110,15 @@ def install_runtime(dest: Path | None = None, quiet: bool = False) -> Path:
         _, runtime_asset = _win_assets()
     else:
         _, runtime_asset = _linux_assets()
-    rel = _latest_release()
-    url = next(
-        (a["browser_download_url"] for a in rel.get("assets", []) if a["name"] == runtime_asset),
-        None,
-    )
+    url = None
+    for rel in _releases():
+        hit = next(
+            (a["browser_download_url"] for a in rel.get("assets", []) if a["name"] == runtime_asset),
+            None,
+        )
+        if hit:
+            url = hit
+            break
     if not url:
         raise RuntimeError("no prebuilt runtime asset — build it with cargo (see README)")
     if not quiet:
