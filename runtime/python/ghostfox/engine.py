@@ -33,6 +33,17 @@ def engine_home() -> Path:
     return root / "engine"
 
 
+def _win_assets() -> tuple[str, str]:
+    """(engine asset substring, runtime asset name) for Windows."""
+    mach = platform.machine().lower()
+    if mach in ("x86_64", "amd64"):
+        return "win.x86_64", "ghostcloak-mcp.exe"
+    raise RuntimeError(
+        "prebuilt engine/runtime are Windows x86_64 only "
+        "(from-source builds for other platforms: see the repo README)"
+    )
+
+
 def _linux_assets() -> tuple[str, str]:
     """(engine asset substring, runtime asset name) for this Linux arch."""
     mach = platform.machine().lower()
@@ -58,7 +69,10 @@ def install_engine(dest: Path | None = None, quiet: bool = False) -> Path:
     assets = {
         a["name"]: a["browser_download_url"] for a in rel.get("assets", [])
     }
-    engine_pat, _ = _linux_assets()
+    if platform.system() == "Windows":
+        engine_pat, _ = _win_assets()
+    else:
+        engine_pat, _ = _linux_assets()
     url = next(
         (u for n, u in assets.items() if engine_pat in n and n.endswith(".zip")),
         None,
@@ -92,7 +106,10 @@ def install_runtime(dest: Path | None = None, quiet: bool = False) -> Path:
     dest = dest or engine_home().parent / "mcp" / "ghostcloak-mcp"
     if dest.exists():
         return dest
-    _, runtime_asset = _linux_assets()
+    if platform.system() == "Windows":
+        _, runtime_asset = _win_assets()
+    else:
+        _, runtime_asset = _linux_assets()
     rel = _latest_release()
     url = next(
         (a["browser_download_url"] for a in rel.get("assets", []) if a["name"] == runtime_asset),

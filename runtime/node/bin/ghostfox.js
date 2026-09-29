@@ -19,7 +19,7 @@ const zlib = require("zlib");
 const REPO = "autokeren/ghostfox";
 const ROOT = process.env.GHOSTFOX_ROOT || path.join(os.homedir(), ".ghostfox");
 const ENGINE = path.join(ROOT, "engine");
-const MCP_BIN = path.join(ROOT, "mcp", "ghostcloak-mcp");
+const MCP_BIN = path.join(ROOT, "mcp", os.platform() === "win32" ? "ghostcloak-mcp.exe" : "ghostcloak-mcp");
 
 function log(msg) { process.stderr.write(`ghostfox: ${msg}\n`); }
 
@@ -67,7 +67,9 @@ async function install() {
   const assets = Object.fromEntries(rel.assets.map((a) => [a.name, a.browser_download_url]));
 
   if (!fs.existsSync(MCP_BIN)) {
-    const rtAsset = os.platform() === "linux" && os.arch() === "arm64" ? "ghostcloak-mcp-arm64" : "ghostcloak-mcp";
+    const rtAsset = os.platform() === "win32" ? "ghostcloak-mcp.exe"
+      : os.platform() === "linux" && os.arch() === "arm64" ? "ghostcloak-mcp-arm64"
+      : "ghostcloak-mcp";
     const url = assets[rtAsset];
     if (!url) throw new Error("no prebuilt runtime asset on the latest release — build it from source (see the repo README)");
     log("downloading ghostcloak-mcp runtime...");

@@ -27,13 +27,29 @@ jobs:
         include:
           - runner: ubuntu-latest
             asset: ghostcloak-mcp
+            container: ubuntu:24.04
           - runner: ubuntu-24.04-arm
             asset: ghostcloak-mcp-arm64
+            container: ubuntu:24.04
+          - runner: windows-2022
+            asset: ghostcloak-mcp.exe
+            container: windows
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
 
+      - name: Build on Windows (native cargo)
+        if: matrix.container == 'windows'
+        shell: pwsh
+        run: |
+          rustup default stable
+          cd runtime
+          cargo build --release -p ghostcloak-mcp
+          Copy-Item target\release\ghostcloak-mcp.exe -Destination "$env:RUNNER_TEMP\${{ matrix.asset }}"
+          Get-Item "$env:RUNNER_TEMP\${{ matrix.asset }}"
+
       - name: Build inside ubuntu:24.04 (native arch)
+        if: matrix.container != 'windows'
         run: |
           docker run --rm \
             -v "$PWD/runtime:/src:ro" \
@@ -66,10 +82,18 @@ jobs:
           fi
           ls -la "/tmp/gf-out/${{ matrix.asset }}"
 
-      - name: Attach to release
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Attach to release (linux)
+        if: startsWith(github.ref, 'refs/tags/') && matrix.container != 'windows'
         uses: softprops/action-gh-release@v2
         with:
           files: /tmp/gf-out/${{ matrix.asset }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Attach to release (windows)
+        if: startsWith(github.ref, 'refs/tags/') && matrix.container == 'windows'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ runner.temp }}/${{ matrix.asset }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
