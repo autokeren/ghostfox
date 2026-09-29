@@ -18,7 +18,7 @@ Every task on any site is the same four beats:
 READ    → page_a11y (or page_snapshot for plain text)
 REASON  → skip? wait? scroll? proceed? (see §2 — every signal is in the JSON)
 DECIDE  → one clear next action
-ACT     → page_type_ref / page_click_ref / page_type / page_eval
+ACT     → page_type_ref / page_click_ref / page_click_native / page_type / page_eval
         → then ALWAYS READ AGAIN (self-health, §4)
 ```
 
@@ -664,6 +664,12 @@ session migrated from a Camoufox-lineage browser this way.*
   focused/required/checked/expanded/disabled). Native refs (n1..n) are
   OBSERVATION handles: identify elements, anchor recipes, diff. Acting:
   resolve role+name via page_extract, or use the default JS-walk refs.
+- **Native click (M2)** — `page_click_native {"role", "name"}`: coordinates
+  come from the engine's a11y bounds, so pages that hook
+  `getBoundingClientRect` cannot poison the click. Scrolls below-fold
+  targets into view first (deterministic instant scroll). Receipt carries
+  the trusted bounds + click point. Prefer it over JS-derived clicks on
+  anti-bot pages.
 - **Action receipts** — `page_click_ref` / `page_type_ref` return evidence,
   not "clicked": {target, url, url_changed, login_state, changes[]}.
   READ `changes` after every action: it tells you what actually happened

@@ -5,6 +5,18 @@ All notable changes to ghostcloak will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `page_click_native` (tool #49): the M2 touch primitive — semantic
+  click whose coordinates come from the ENGINE's a11y tree, not page JS.
+  Page scripts can hook `getBoundingClientRect` to poison coordinates;
+  the native tree can't be tampered. Scroll-first: deterministic instant
+  `scrollTo` from a11y geometry brings below-fold targets into the
+  viewport (a11y bounds are window-relative; the fixed chrome offset is
+  `mozInnerScreenY - screenY` — no scroll compensation, no staleness).
+  Receipts carry the trusted bounds + click point.
+
 ## [0.8.2] — 2026-09-29
 
 The agent-reliability release: observation, determinism, evidence.

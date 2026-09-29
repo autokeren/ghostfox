@@ -141,10 +141,26 @@ misses). Engine-side shipped: atk-bridge-env.patch + NO_AT_BRIDGE=1 at
 spawn. Remaining: actionable native refs (a backendNodeId-style registry).
 
 ### M2 — ✋ Touch: the native click/type broker
-`semantic_click(ref)` — resolve the accessible → the NATIVE layout rect
-(JS can lie about `getBoundingClientRect`; sites hook rects to poison
-clicks — mouse coordinates that cannot be fooled) → hit-test → trusted
-events. Drag captchas benefit most: precise gap→target geometry.
+**SHIPPED (in-development, E2E verified).** `page_click_native(role, name)`
+resolves the accessible → the NATIVE layout rect (JS can lie about
+`getBoundingClientRect`; sites hook rects to poison clicks — mouse
+coordinates that cannot be fooled) → scroll-first → trusted events.
+Drag captchas benefit most: precise gap→target geometry.
+
+Field lessons (this one fought hard):
+- **The 57px chrome offset**: a11y bounds are window-relative, page CSS
+  is content-viewport-relative; the delta is the engine's hidden chrome
+  strip. Fix: `mozInnerScreenY - screenY` — window properties, always
+  fresh, zero staleness (the doc-accessible's own bounds lag scrolls).
+- **`scrollToPoint` is a misnomer**: it moves the VIEWPORT so a screen
+  point tops the window — using it to "scroll an element into view"
+  shoves the page the wrong way. Replaced with deterministic instant
+  `win.scrollTo` computed from the a11y rect (smooth `scrollIntoView`
+  raced the click dispatch mid-animation).
+- **Scroll restoration poisons tests**: persistent profiles restore the
+  previous scroll position on revisit — a "click missed at y=364"
+  turned out to be the page arriving pre-scrolled. Test with fresh
+  profiles; the restore never came from our tools.
 
 ### M2.5 — 🥷 Stealth pixel extraction
 `Agent.captureSurface`: read pixels from the compositor/backing store
