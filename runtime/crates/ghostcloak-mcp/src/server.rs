@@ -1557,7 +1557,7 @@ impl GhostcloakServer {
     }
 
     #[tool(
-        description = "GEETEST SLIDE SOLVER: solve the GeeTest v3-style slide puzzle from the live page, then perform the human drag itself. Extracts the three canvases (bg, puzzle slice, full reference bg) via toDataURL, finds the hole with |bg-fullbg| diff + largest-blob + morphological closing (the JPEG-noise trap), measures the piece's solid-alpha left edge, and drags the slider by hole_x0 - piece_x0 with the engine's humanized mouse. Returns JSON {drag_x, hole: [x0, x1], piece_x0}. Call AFTER the challenge popup is open. No vision model, pure pixel math."
+        description = "GEETEST SLIDE SOLVER: solve the GeeTest v3-style slide puzzle from the live page, then perform the human drag itself. Captures the three canvases (bg, puzzle slice, full reference bg) STRAIGHT from the compositor (M2.5 — no page-realm toDataURL, no CORS taint, unhookable), finds the hole with |bg-fullbg| diff + largest-blob + morphological closing (the JPEG-noise trap), measures the piece's solid-alpha left edge, and drags the slider by hole_x0 - piece_x0 with the engine's humanized mouse. Returns JSON {drag_x, hole: [x0, x1], piece_x0}. Call AFTER the challenge popup is open. No vision model, pure pixel math."
     )]
     async fn page_geetest_slide(
         &self,
@@ -1575,7 +1575,9 @@ impl GhostcloakServer {
             .page(&page_id)
             .await
             .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
-        // 1. Grab the three canvases as data URLs + register the slider ref.
+        // 1. Locate the three canvases + register the slider ref, then
+        // capture them STRAIGHT from the compositor (M2.5): no page-realm
+        // toDataURL, no CORS taint — the pixel path is unhookable.
         let slider_js = match &slider_ref {
             Some(r) => serde_json::to_string(r).unwrap_or_default(),
             None => "null".into(),
@@ -1593,9 +1595,11 @@ impl GhostcloakServer {
     if (btn) window.__gfxRefs.set('gs_btn', btn);
   }}
   if (!btn) return JSON.stringify({{err: 'slider handle not found'}});
-  try {{
-    return JSON.stringify({{bg: bg.toDataURL(), sl: sl.toDataURL(), fb: fb.toDataURL(), ref: 'gs_btn'}});
-  }} catch(e) {{ return JSON.stringify({{err: 'tainted canvas: ' + e.message}}); }}
+  var rectOf = function(el) {{
+    var r = el.getBoundingClientRect();
+    return {{x: Math.floor(r.x), y: Math.floor(r.y), w: Math.max(1, Math.round(r.width)), h: Math.max(1, Math.round(r.height))}};
+  }};
+  return JSON.stringify({{bg: rectOf(bg), sl: rectOf(sl), fb: fb ? rectOf(fb) : null, ref: 'gs_btn'}});
 }})()"#
         );
         let out = page
@@ -1608,28 +1612,67 @@ impl GhostcloakServer {
         if let Some(err) = v.get("err").and_then(|e| e.as_str()).map(|e| e.to_string()) {
             return Err(rmcp::model::ErrorData::internal_error(err, None));
         }
-        let b64 = |k: &str| -> Vec<u8> {
-            v.get(k)
-                .and_then(|x| x.as_str())
-                .and_then(|d| d.split(',').nth(1))
-                .map(|p| {
-                    use base64::Engine as _;
-                    base64::engine::general_purpose::STANDARD
-                        .decode(p)
-                        .unwrap_or_default()
-                })
-                .unwrap_or_default()
+        let rect_of = |k: &str| -> Result<(i64, i64, u32, u32), rmcp::model::ErrorData> {
+            let rect = v.get(k).and_then(|r| r.as_object()).ok_or_else(|| {
+                rmcp::model::ErrorData::internal_error(format!("{k} canvas rect missing"), None)
+            })?;
+            let (Some(x), Some(y), Some(w), Some(h)) = (
+                rect.get("x").and_then(|v| v.as_i64()),
+                rect.get("y").and_then(|v| v.as_i64()),
+                rect.get("w").and_then(|v| v.as_u64()).map(|v| v as u32),
+                rect.get("h").and_then(|v| v.as_u64()).map(|v| v as u32),
+            ) else {
+                return Err(rmcp::model::ErrorData::internal_error(
+                    format!("{k} canvas rect malformed"),
+                    None,
+                ));
+            };
+            Ok((x, y, w, h))
         };
-        let bg = image::load_from_memory(&b64("bg"))
-            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?
-            .to_luma8();
-        let sl = image::load_from_memory(&b64("sl"))
-            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?
-            .to_rgba8();
-        let fb = image::load_from_memory(&b64("fb"))
-            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?
-            .to_luma8();
-        let drag_x = crate::geetest::slide_gap(&bg, &sl, &fb)
+        let (bgx, bgy, bgw, bgh) = rect_of("bg")?;
+        let (slx, sly, slw, slh) = rect_of("sl")?;
+        let fbx = rect_of("fb").ok();
+        let surf_bg = page
+            .capture_surface(bgx, bgy, bgw, bgh)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let surf_sl = page
+            .capture_surface(slx, sly, slw, slh)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let surf_fb = match fbx {
+            Some((x, y, w, h)) => Some(
+                page.capture_surface(x, y, w, h)
+                    .await
+                    .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?,
+            ),
+            None => None,
+        };
+        let bg = image::GrayImage::from_raw(
+            surf_bg.width,
+            surf_bg.height,
+            surf_bg
+                .rgba
+                .chunks_exact(4)
+                .map(|p| ((299 * p[0] as u32 + 587 * p[1] as u32 + 114 * p[2] as u32) / 1000) as u8)
+                .collect(),
+        )
+        .ok_or_else(|| rmcp::model::ErrorData::internal_error("bg buffer", None))?;
+        let sl = image::RgbaImage::from_raw(surf_sl.width, surf_sl.height, surf_sl.rgba.clone())
+            .ok_or_else(|| rmcp::model::ErrorData::internal_error("sl buffer", None))?;
+        let fb = surf_fb.and_then(|f| {
+            image::GrayImage::from_raw(
+                f.width,
+                f.height,
+                f.rgba
+                    .chunks_exact(4)
+                    .map(|p| {
+                        ((299 * p[0] as u32 + 587 * p[1] as u32 + 114 * p[2] as u32) / 1000) as u8
+                    })
+                    .collect(),
+            )
+        });
+        let drag_x = crate::geetest::slide_gap(&bg, &sl, fb.as_ref().unwrap_or(&bg))
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
         // 2. Human drag.
         page.drag_ref("gs_btn", "", drag_x as f64, 0.0)
