@@ -123,6 +123,23 @@ pub struct A11yElement {
     /// v0.5.3: aria-description / title text for extra context.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// M2: native layout bounds (CSS pixels) from the accessibility tree —
+    /// trusted geometry for semantic clicks (JS getBoundingClientRect can
+    /// be hooked to poison coordinates).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bounds: Option<Bounds>,
+    /// Extra engine-side keys (debug telemetry etc.), preserved verbatim.
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
+/// Native layout rectangle (CSS pixels), from the a11y tree.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Bounds {
+    pub x: i64,
+    pub y: i64,
+    pub width: i64,
+    pub height: i64,
 }
 
 /// A captured page state, cheap to hand to an LLM.
@@ -179,6 +196,23 @@ pub trait PageHandle: Send + Sync {
     async fn a11y_tree_native(&self) -> Result<serde_json::Value> {
         Err(crate::error::GhostError::PageOp(
             "native a11y tree not supported by this engine".into(),
+        ))
+    }
+    /// M2: scroll an accessible into view via the engine's native
+    /// a11y scrollToPoint, returning the resulting layout bounds.
+    async fn scroll_accessible_into_view(&self, role: &str, name: &str) -> Result<Option<Bounds>> {
+        let _ = (role, name);
+        Err(crate::error::GhostError::PageOp(
+            "scroll_accessible_into_view not supported by this engine".into(),
+        ))
+    }
+    /// M2: click at raw viewport coordinates with a human-like mouse
+    /// path (bezier + tremor + landing). Coordinates come from trusted
+    /// sources (native a11y bounds), NOT from JS-measured rects that
+    /// pages can poison.
+    async fn click_coords(&self, _x: f64, _y: f64) -> Result<()> {
+        Err(crate::error::GhostError::PageOp(
+            "click_coords not supported by this engine".into(),
         ))
     }
     /// Act on an element by its ref from a11y_snapshot.

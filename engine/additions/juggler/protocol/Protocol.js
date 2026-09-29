@@ -182,6 +182,15 @@ axTypes.AXTree = {
 
   tag: t.Optional(t.String),
 
+  // M2: native layout bounds from getBoundsInCSSPixels — the trusted
+  // geometry for semantic clicks (JS rects can be poisoned).
+  bounds: t.Optional({
+    x: t.Number,
+    y: t.Number,
+    width: t.Number,
+    height: t.Number,
+  }),
+
   foundObject: t.Optional(t.Boolean),
 }
 
@@ -1029,6 +1038,20 @@ const Accessibility = {
   types: axTypes,
   events: {},
   methods: {
+    'scrollIntoView': {
+      params: {
+        role: t.String,
+        name: t.String,
+      },
+      returns: {
+        bounds: t.Optional({
+          x: t.Number,
+          y: t.Number,
+          width: t.Number,
+          height: t.Number,
+        }),
+      },
+    },
     'getFullAXTree': {
       params: {
         objectId: t.Optional(t.String),

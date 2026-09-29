@@ -152,6 +152,7 @@ export class PageAgent {
         dispatchTapEvent: this._dispatchTapEvent.bind(this),
         getContentQuads: this._getContentQuads.bind(this),
         getFullAXTree: this._getFullAXTree.bind(this),
+        scrollAccessibleIntoView: this._scrollAccessibleIntoView.bind(this),
         insertText: this._insertText.bind(this),
         scrollIntoViewIfNeeded: this._scrollIntoViewIfNeeded.bind(this),
         setFileInputFiles: this._setFileInputFiles.bind(this),
@@ -630,6 +631,59 @@ export class PageAgent {
     badptr.contents;
   }
 
+  async _scrollAccessibleIntoView({role, name}) {
+    const service = Cc["@mozilla.org/accessibilityService;1"]
+      .getService(Ci.nsIAccessibilityService);
+    const document = this._frameTree.mainFrame().domWindow().document;
+    const docAcc = service.getAccessibleFor(document);
+    if (!docAcc) return null;
+    const find = (acc) => {
+      const r = service.getStringRole(acc.role);
+      if (r === role && acc.name && acc.name.includes(name))
+        return acc;
+      for (let child = acc.firstChild; child; child = child.nextSibling) {
+        const hit = find(child);
+        if (hit) return hit;
+      }
+      return null;
+    };
+    const target = find(docAcc);
+    if (!target) return null;
+    const win = this._frameTree.mainFrame().domWindow();
+    const cssScale = win.devicePixelRatio || 1;
+    // Content-area origin inside the browser window — fixed offset,
+    // independent of scroll (window properties are always fresh).
+    const chromeX = win.mozInnerScreenX - win.screenX;
+    const chromeY = win.mozInnerScreenY - win.screenY;
+    const readBounds = () => {
+      let bx = {}, by = {}, bw = {}, bh = {};
+      target.getBoundsInCSSPixels(bx, by, bw, bh);
+      return {
+        x: bx.value / cssScale - chromeX,
+        y: by.value / cssScale - chromeY,
+        width: bw.value / cssScale,
+        height: bh.value / cssScale,
+      };
+    };
+    let b = readBounds();
+    const vpW = win.innerWidth;
+    const vpH = win.innerHeight;
+    // Deterministic instant scroll (scrollTo has no animation): bring
+    // the target into the content viewport with a small margin.
+    const MARGIN = 24;
+    let dy = 0, dx = 0;
+    if (b.y < 0) dy = b.y - MARGIN;
+    else if (b.y + b.height > vpH) dy = b.y + b.height - vpH + MARGIN;
+    if (b.x < 0) dx = b.x - MARGIN;
+    else if (b.x + b.width > vpW) dx = b.x + b.width - vpW + MARGIN;
+    if (dy !== 0 || dx !== 0) {
+      win.scrollTo(win.scrollX + dx, win.scrollY + dy);
+      await new Promise(resolve => win.setTimeout(resolve, 120));
+    }
+    b = readBounds();
+    return { bounds: b };
+  }
+
   async _getFullAXTree({objectId}) {
     let unsafeObject = null;
     if (objectId) {
@@ -640,8 +694,19 @@ export class PageAgent {
 
     const service = Cc["@mozilla.org/accessibilityService;1"]
       .getService(Ci.nsIAccessibilityService);
+    // DPR for normalizing a11y bounds into the page's CSS-pixel space
+    // (closure for buildNode, which has no `this`).
+    const cssScale = this._frameTree.mainFrame().domWindow().devicePixelRatio || 1;
     const document = this._frameTree.mainFrame().domWindow().document;
     const docAcc = service.getAccessibleFor(document);
+
+    // a11y bounds are window-relative; page CSS is content-viewport-
+    // relative. The content-area origin inside the browser window is a
+    // fixed offset: mozInnerScreenY - screenY. Window properties are
+    // always fresh — no a11y staleness, no scroll compensation.
+    const cwin = this._frameTree.mainFrame().domWindow();
+    const docOriginX = cwin.mozInnerScreenX - cwin.screenX;
+    const docOriginY = cwin.mozInnerScreenY - cwin.screenY;
 
     while (docAcc.document.isUpdatePendingForJugglerAccessibility)
       await new Promise(x => this._frameTree.mainFrame().domWindow().requestAnimationFrame(x));
@@ -742,14 +807,23 @@ export class PageAgent {
           tree[stringProperty] = attributes[stringProperty];
       }
 
-      // Native layout bounds (CSS pixels) — the trusted geometry for
-      // M2 semantic clicks. JS can lie about getBoundingClientRect;
-      // this comes from the accessibility tree itself.
+      // Native layout bounds — the trusted geometry for M2 semantic
+      // clicks. JS can lie about getBoundingClientRect; this comes from
+      // the accessibility tree itself. NOTE: getBoundsInCSSPixels returns
+      // values in the SPOOFED-DPR space (Camoufox scales the layout to
+      // match the identity's devicePixelRatio) — divide by the page's
+      // dpr so the numbers land in the same CSS-pixel space the spoofed
+      // page scripts see (and our mouse dispatch expects).
       {
         let bx = {}, by = {}, bw = {}, bh = {};
         accElement.getBoundsInCSSPixels(bx, by, bw, bh);
-        if (bw.value > 0 && bh.value > 0)
-          tree.bounds = { x: bx.value, y: by.value, width: bw.value, height: bh.value };
+        if (bw.value > 0 && bh.value > 0) {
+          tree.bounds = {
+            x: bx.value / cssScale - docOriginX,
+            y: by.value / cssScale - docOriginY,
+            width: bw.value / cssScale, height: bh.value / cssScale,
+          };
+        }
       }
       const children = [];
 

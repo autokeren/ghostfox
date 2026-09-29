@@ -1803,6 +1803,59 @@ impl PageHandle for CamoufoxPage {
         Ok(false)
     }
 
+    async fn scroll_accessible_into_view(
+        &self,
+        role: &str,
+        name: &str,
+    ) -> Result<Option<ghostcloak_core::engine::Bounds>> {
+        let sid = self.session_id().await?;
+        let res = self
+            .conn
+            .request_session_t(
+                "Accessibility.scrollIntoView",
+                serde_json::json!({ "role": role, "name": name }),
+                Some(&sid),
+                std::time::Duration::from_secs(20),
+            )
+            .await
+            .map_err(|e| GhostError::PageOp(format!("scrollIntoView: {e}")))?;
+        let b = res.get("bounds").cloned();
+        Ok(b.and_then(|b| {
+            Some(ghostcloak_core::engine::Bounds {
+                x: b.get("x")?.as_i64()?,
+                y: b.get("y")?.as_i64()?,
+                width: b.get("width")?.as_i64()?,
+                height: b.get("height")?.as_i64()?,
+            })
+        }))
+    }
+
+    async fn click_coords(&self, x: f64, y: f64) -> Result<()> {
+        // Human path from a nearby start point: a real hand approaches
+        // the target from an offset, not from nowhere. (RNG scoped —
+        // ThreadRng is !Send, must not live across awaits.)
+        let from = {
+            use rand::Rng;
+            let mut rng = rand::rng();
+            (
+                x + rng.random_range(-36.0..36.0),
+                y + rng.random_range(-24.0..24.0),
+            )
+        };
+        for (px, py, delay) in Self::human_path(from, (x, y)) {
+            self.dispatch_mouse("mousemove", px, py, 0, 0).await?;
+            tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+        }
+        self.dispatch_mouse("mousedown", x, y, 1, 1).await?;
+        let hold = {
+            use rand::Rng;
+            50 + rand::rng().random_range(0..90u64)
+        };
+        tokio::time::sleep(std::time::Duration::from_millis(hold)).await;
+        self.dispatch_mouse("mouseup", x, y, 0, 1).await?;
+        Ok(())
+    }
+
     async fn click_ref(&self, r: &str) -> Result<()> {
         let out = self.evaluate(&crate::a11y::click_ref_js(r)).await?;
         match out.as_str() {

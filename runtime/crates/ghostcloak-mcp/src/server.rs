@@ -357,6 +357,16 @@ fn default_true() -> bool {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+struct PageClickNativeParams {
+    session_id: String,
+    page_id: String,
+    /// Accessible role: "link", "button", "textbox", ...
+    role: String,
+    /// Substring match against the accessible name (case-insensitive).
+    name: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct PageA11yParams {
     session_id: String,
     page_id: String,
@@ -2996,6 +3006,87 @@ impl GhostcloakServer {
     }
 
     #[tool(
+        description = "M2 semantic click: resolve an element by role+name against the NATIVE accessibility tree and click its center with a human-like mouse path. The coordinates come from the a11y tree's layout bounds — pages CANNOT poison them (JS getBoundingClientRect hooks are bypassed entirely). Returns an action receipt. Prefer this for anything a JS-rect poison could break: login buttons, captcha sliders, anti-bot traps."
+    )]
+    async fn page_click_native(
+        &self,
+        Parameters(PageClickNativeParams {
+            session_id,
+            page_id,
+            role,
+            name,
+        }): Parameters<PageClickNativeParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let page = session
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        // Scroll the target into view FIRST via the engine's native
+        // a11y scrollToPoint (no JS rects involved), then take the tree
+        // and resolve the anchor against it. Best-effort: errors are
+        // ignored, the anchor resolution below reports the truth.
+        let _ = page.scroll_accessible_into_view(&role, &name).await;
+        let raw = page
+            .a11y_tree_native()
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let snap = native_a11y_flatten(raw);
+        self.cache_a11y(&page_id, snap.clone()).await;
+        let anchor = crate::recipes::Anchor {
+            role: role.clone(),
+            name: name.clone(),
+        };
+        let el = crate::recipes::resolve_anchor(&snap, &anchor)
+            .ok_or_else(|| {
+                rmcp::model::ErrorData::internal_error(format!(
+                    "no native element matches role={role:?} name={name:?} — run page_a11y(native=true) to inspect"
+                ), None)
+            })?;
+        let Some(b) = &el.bounds else {
+            return Err(rmcp::model::ErrorData::internal_error(
+                "native element has no layout bounds".to_string(),
+                None,
+            ));
+        };
+        let (cx, cy) = (
+            b.x as f64 + b.width as f64 / 2.0,
+            b.y as f64 + b.height as f64 / 2.0,
+        );
+        page.click_coords(cx, cy)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let debug_target = serde_json::json!({
+            "bounds": b,
+            "click": { "x": cx, "y": cy }
+        });
+        self.note_recipe(
+            &session_id,
+            "page_click_native",
+            serde_json::json!({ "role": role, "name": name }),
+            None,
+        )
+        .await;
+        let _ = self.recorder.record(
+            &session_id,
+            "page_click_native",
+            Some(&page_id),
+            serde_json::json!({ "role": role, "name": name, "x": cx, "y": cy }),
+        );
+        let receipt = self
+            .action_receipt(&page, &page_id, "click_native", None)
+            .await;
+        let mut out = receipt;
+        out["target"] = debug_target;
+        Ok(text_result(
+            serde_json::to_string_pretty(&out).unwrap_or_default(),
+        ))
+    }
+
+    #[tool(
         description = "Observe what changed since the last a11y snapshot: diffs the page's cached snapshot (from page_a11y/page_extract/the last action receipt) against a FRESH walk. Returns {changed, adds, removes, updates, changes:[{op, ref, role, name, value?, prev?}]}. Capped at 40 entries. This is the observeDiff primitive: act, then page_diff to see consequences without paying for a full snapshot."
     )]
     async fn page_diff(
@@ -3368,6 +3459,14 @@ fn native_a11y_flatten(raw: serde_json::Value) -> ghostcloak_core::engine::A11yS
                 serde_json::Value::Bool(b) => Some(*b),
                 _ => None,
             });
+            let bounds = node.get("bounds").and_then(|b| {
+                Some(ghostcloak_core::engine::Bounds {
+                    x: b.get("x")?.as_i64()?,
+                    y: b.get("y")?.as_i64()?,
+                    width: b.get("width")?.as_i64()?,
+                    height: b.get("height")?.as_i64()?,
+                })
+            });
             let el = A11yElement {
                 r#ref: format!("n{}", counter),
                 role: role.clone(),
@@ -3390,6 +3489,14 @@ fn native_a11y_flatten(raw: serde_json::Value) -> ghostcloak_core::engine::A11yS
                     .and_then(|v| v.as_str())
                     .filter(|s| !s.is_empty())
                     .map(str::to_string),
+                bounds,
+                extra: node
+                    .as_object()
+                    .cloned()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|(k, _)| k != "bounds" && k != "children")
+                    .collect(),
             };
             out.push(el);
         }

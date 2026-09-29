@@ -297,6 +297,10 @@ export class PageHandler {
     this._pageNetwork.fulfillInterceptedRequest(requestId, status, statusText, headers, base64body);
   }
 
+  async ['Accessibility.scrollIntoView'](params) {
+    return await this._contentPage.send('scrollAccessibleIntoView', params);
+  }
+
   async ['Accessibility.getFullAXTree'](params) {
     return await this._contentPage.send('getFullAXTree', params);
   }
