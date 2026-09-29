@@ -5,3 +5,4 @@ pub mod ocr;
 pub mod receipts;
 pub mod recipes;
 pub mod recording;
+pub mod vision;

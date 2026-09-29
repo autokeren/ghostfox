@@ -65,7 +65,16 @@ struct PixelsParams {
     session_id: String,
     page_id: String,
     /// Ref of the element to render (canvas / img / background-image).
-    r#ref: String,
+    r#ref: Option<String>,
+    /// M2.5 semantic mode: capture the element matching role+name via
+    /// the native a11y bounds (trusted rect).
+    role: Option<String>,
+    name: Option<String>,
+    /// M2.5 region mode: raw rect in content-viewport CSS pixels.
+    x: Option<i64>,
+    y: Option<i64>,
+    width: Option<u32>,
+    height: Option<u32>,
     /// Grid width in cells (default 32).
     grid_w: Option<u32>,
     /// Grid height in cells (default 21).
@@ -1026,7 +1035,7 @@ impl GhostcloakServer {
     }
 
     #[tool(
-        description = "SUPERMAN GLASSES: render an element (canvas / img / background-image) as a compact luminance GRID of digits 0-9 the agent READS directly — see shapes, holes, object orientation, image layout WITHOUT a vision model. 0=black, 9=white. Captcha gaps appear as darker cells, upright skies are bright rows on top. Pass the ref from page_a11y. Returns JSON {w, h, grid:[rows of digits]}."
+        description = "SUPERMAN GLASSES v2 (M2.5): render a screen region / semantic element / walk-ref into a compact luminance grid the agent READS as numbers. Pixels come STRAIGHT from the compositor (Page.captureSurface) — no page-realm canvas, no toDataURL, no getImageData: pages cannot hook, poison or even observe the read. Modes (pick one): {x,y,width,height} raw viewport rect · {role,name} semantic element (native a11y bounds, trusted) · {ref} walk-ref from page_a11y (privileged rect). Returns {w, h, grid} — 0-9 luminance rows, and {width,height} in CSS px."
     )]
     async fn page_pixels(
         &self,
@@ -1034,6 +1043,12 @@ impl GhostcloakServer {
             session_id,
             page_id,
             r#ref,
+            role,
+            name,
+            x,
+            y,
+            width,
+            height,
             grid_w,
             grid_h,
         }): Parameters<PixelsParams>,
@@ -1048,17 +1063,74 @@ impl GhostcloakServer {
             .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
         let gw = grid_w.unwrap_or(32).clamp(4, 128);
         let gh = grid_h.unwrap_or(21).clamp(4, 128);
-        let grid = page
-            .pixels_ref(&r#ref, gw, gh)
+
+        // Resolve the capture rect by mode.
+        let rect: Option<ghostcloak_core::engine::Bounds> =
+            if let (Some(x), Some(y), Some(w), Some(h)) = (x, y, width, height) {
+                Some(ghostcloak_core::engine::Bounds {
+                    x,
+                    y,
+                    width: w as i64,
+                    height: h as i64,
+                })
+            } else if let (Some(role), Some(name)) = (role, name) {
+                // Scroll-first (M2): below-fold targets must be visible or
+                // the compositor snapshot shows the wrong content.
+                let _ = page.scroll_accessible_into_view(&role, &name).await;
+                let raw = page
+                    .a11y_tree_native()
+                    .await
+                    .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+                let snap = native_a11y_flatten(raw);
+                let anchor = crate::recipes::Anchor { role, name };
+                crate::recipes::resolve_anchor(&snap, &anchor).and_then(|el| el.bounds.clone())
+            } else if let Some(r) = r#ref {
+                page.get_ref_rect(&r)
+                    .await
+                    .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?
+            } else {
+                None
+            };
+
+        let Some(b) = rect else {
+            return Err(rmcp::model::ErrorData::invalid_params(
+                "no capture target: pass {x,y,width,height}, {role,name} or {ref}",
+                None,
+            ));
+        };
+        let (bw, bh) = (
+            b.width.clamp(1, 2048) as u32,
+            b.height.clamp(1, 2048) as u32,
+        );
+        if bw * bh > 4_194_304 {
+            return Err(rmcp::model::ErrorData::invalid_params(
+                format!("capture region {}x{} exceeds 4M pixels — crop it", bw, bh),
+                None,
+            ));
+        }
+        let surface = page
+            .capture_surface(b.x, b.y, bw, bh)
             .await
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let grid =
+            crate::vision::luminance_grid(&surface.rgba, surface.width, surface.height, gw, gh);
         let _ = self.recorder.record(
             &session_id,
             "page_pixels",
             Some(&page_id),
-            serde_json::json!({ "ref": r#ref, "grid_w": gw, "grid_h": gh }),
+            serde_json::json!({ "mode": "captureSurface", "bounds": b, "grid_w": gw, "grid_h": gh }),
         );
-        Ok(text_result(grid))
+        Ok(text_result(
+            serde_json::to_string_pretty(&serde_json::json!({
+                "w": gw,
+                "h": gh,
+                "width": surface.width,
+                "height": surface.height,
+                "source": "compositor",
+                "grid": grid,
+            }))
+            .unwrap_or_default(),
+        ))
     }
 
     #[tool(

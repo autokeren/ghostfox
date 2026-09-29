@@ -920,6 +920,19 @@ const Page = {
         data: t.String,
       }
     },
+    'captureSurface': {
+      params: {
+        x: t.Number,
+        y: t.Number,
+        width: t.Number,
+        height: t.Number,
+      },
+      returns: {
+        data: t.String,
+        width: t.Number,
+        height: t.Number,
+      },
+    },
     'getContentQuads': {
       params: {
         frameId: t.String,

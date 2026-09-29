@@ -142,6 +142,16 @@ pub struct Bounds {
     pub height: i64,
 }
 
+/// M2.5: raw RGBA pixels of a viewport rectangle, straight from the
+/// compositor (no page-realm canvas, no toDataURL, no PNG round-trip).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SurfacePixels {
+    pub width: u32,
+    pub height: u32,
+    /// RGBA, row-major, 4 bytes per pixel.
+    pub rgba: Vec<u8>,
+}
+
 /// A captured page state, cheap to hand to an LLM.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PageSnapshot {
@@ -213,6 +223,23 @@ pub trait PageHandle: Send + Sync {
     async fn click_coords(&self, _x: f64, _y: f64) -> Result<()> {
         Err(crate::error::GhostError::PageOp(
             "click_coords not supported by this engine".into(),
+        ))
+    }
+    /// M2.5: read RAW RGBA pixels of a content-viewport rectangle
+    /// straight from the compositor — no page-realm canvas, no
+    /// toDataURL, no PNG round-trip. Page scripts cannot hook, poison
+    /// or observe this path (the hole every wrapper-based competitor
+    /// has in their captcha pipelines).
+    async fn capture_surface(
+        &self,
+        x: i64,
+        y: i64,
+        width: u32,
+        height: u32,
+    ) -> Result<SurfacePixels> {
+        let _ = (x, y, width, height);
+        Err(crate::error::GhostError::PageOp(
+            "capture_surface not supported by this engine".into(),
         ))
     }
     /// Act on an element by its ref from a11y_snapshot.
@@ -303,6 +330,15 @@ pub trait PageHandle: Send + Sync {
     /// (canvas / img / background-image) as a compact luminance grid
     /// the agent READS as digits — a text-model-friendly way to see
     /// shapes without a vision model.
+    /// M2.5: the honest layout rect of a walk-ref, resolved in the
+    /// privileged frame-script compartment (pages cannot hook
+    /// getBoundingClientRect there).
+    async fn get_ref_rect(&self, r: &str) -> Result<Option<Bounds>> {
+        let _ = r;
+        Err(crate::error::GhostError::PageOp(
+            "get_ref_rect not supported by this engine".into(),
+        ))
+    }
     async fn pixels_ref(&self, r: &str, gw: u32, gh: u32) -> Result<String> {
         let _ = (r, gw, gh);
         Err(crate::error::GhostError::PageOp(

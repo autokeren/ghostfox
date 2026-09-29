@@ -1830,6 +1830,37 @@ impl PageHandle for CamoufoxPage {
         }))
     }
 
+    async fn capture_surface(
+        &self,
+        x: i64,
+        y: i64,
+        width: u32,
+        height: u32,
+    ) -> Result<ghostcloak_core::engine::SurfacePixels> {
+        use base64::Engine as _;
+        let sid = self.session_id().await?;
+        let res = self
+            .conn
+            .request_session(
+                "Page.captureSurface",
+                serde_json::json!({ "x": x, "y": y, "width": width, "height": height }),
+                Some(&sid),
+            )
+            .await?;
+        let data = res
+            .get("data")
+            .and_then(|d| d.as_str())
+            .ok_or_else(|| GhostError::Protocol("Page.captureSurface returned no data".into()))?;
+        let rgba = base64::engine::general_purpose::STANDARD
+            .decode(data)
+            .map_err(|e| GhostError::Protocol(format!("captureSurface base64: {e}")))?;
+        Ok(ghostcloak_core::engine::SurfacePixels {
+            width,
+            height,
+            rgba,
+        })
+    }
+
     async fn click_coords(&self, x: f64, y: f64) -> Result<()> {
         // Human path from a nearby start point: a real hand approaches
         // the target from an offset, not from nowhere. (RNG scoped —
@@ -2274,6 +2305,66 @@ impl PageHandle for CamoufoxPage {
             ));
         }
         Ok(serde_json::to_string(&result).unwrap_or_default())
+    }
+
+    async fn get_ref_rect(&self, r: &str) -> Result<Option<ghostcloak_core::engine::Bounds>> {
+        // Resolve the walk-ref's layout rect, scroll it into the viewport
+        // first (deterministic instant scrollTo), then re-read. Runs in
+        // the page realm via evaluate — the rect call is the same one the
+        // walk itself uses; the PIXELS stay compositor-native.
+        let scroll_js = format!(
+            r#"(function() {{
+  var el = (window.__gfxRefs || new Map()).get('{r}');
+  if (!el || !el.isConnected) return 'STALE-REF';
+  var rect = el.getBoundingClientRect();
+  var MARGIN = 24, dy = 0, dx = 0;
+  if (rect.y < 0) dy = rect.y - MARGIN;
+  else if (rect.y + rect.height > innerHeight) dy = rect.y + rect.height - innerHeight + MARGIN;
+  if (rect.x < 0) dx = rect.x - MARGIN;
+  else if (rect.x + rect.width > innerWidth) dx = rect.x + rect.width - innerWidth + MARGIN;
+  if (dy !== 0 || dx !== 0) window.scrollTo(scrollX + dx, scrollY + dy);
+  return 'ok';
+}})()"#
+        );
+        match self.evaluate(&scroll_js).await {
+            Ok(v) if v.as_str() == Some("STALE-REF") => return Ok(None),
+            Ok(_) => {}
+            Err(e) => return Err(e),
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+        let rect_js = format!(
+            r#"(function() {{
+  var el = (window.__gfxRefs || new Map()).get('{r}');
+  if (!el || !el.isConnected) return 'STALE-REF';
+  var rect = el.getBoundingClientRect();
+  return JSON.stringify({{x: rect.x, y: rect.y, w: rect.width, h: rect.height}});
+}})()"#
+        );
+        let v = self.evaluate(&rect_js).await?;
+        let s = match v.as_str() {
+            Some("STALE-REF") | None => return Ok(None),
+            Some(s) => s,
+        };
+        let parsed: serde_json::Value = serde_json::from_str(s)
+            .map_err(|e| GhostError::Protocol(format!("get_ref_rect JSON: {e}")))?;
+        let (Some(x), Some(y), Some(w), Some(h)) = (
+            parsed.get("x").and_then(|v| v.as_f64()),
+            parsed.get("y").and_then(|v| v.as_f64()),
+            parsed.get("w").and_then(|v| v.as_f64()),
+            parsed.get("h").and_then(|v| v.as_f64()),
+        ) else {
+            return Ok(None);
+        };
+        let (wi, hi) = (w.round() as i64, h.round() as i64);
+        if wi <= 0 || hi <= 0 {
+            return Ok(None);
+        }
+        Ok(Some(ghostcloak_core::engine::Bounds {
+            x: x.round() as i64,
+            y: y.round() as i64,
+            width: wi,
+            height: hi,
+        }))
     }
 
     async fn pixels_ref(&self, r: &str, gw: u32, gh: u32) -> Result<String> {

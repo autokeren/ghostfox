@@ -390,6 +390,47 @@ export class PageHandler {
     return { data: dataURL.substring(dataURL.indexOf(',') + 1) };
   }
 
+  async ['Page.captureSurface']({ x, y, width, height }) {
+    // M2.5 — compositor pixel read. `drawSnapshot` paints straight from
+    // the compositor into a CHROME-realm canvas: page scripts cannot
+    // hook, poison or even observe this path. Raw RGBA bytes out — no
+    // PNG encode, no toDataURL (which page-level hooks can intercept).
+    const w = Math.max(1, Math.floor(width));
+    const h = Math.max(1, Math.floor(height));
+    if (w * h > 4194304)
+      throw new Error('captureSurface: region exceeds 4M pixels (use a smaller rect)');
+    const rect = new DOMRect(x, y, w, h);
+    const browsingContext = this._pageTarget.linkedBrowser().browsingContext;
+    let snapshot;
+    while (!snapshot) {
+      try {
+        snapshot = await browsingContext.currentWindowGlobal.drawSnapshot(
+          rect, 1, 'rgb(255,255,255)');
+      } catch (e) {
+        await new Promise(r => setTimeout(r, 50));
+      }
+    }
+    const win = browsingContext.topChromeWindow;
+    const canvas = win.document.createElementNS('http://www.w3.org/1999/xhtml', 'canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(snapshot, 0, 0);
+    snapshot.close();
+    const imageData = ctx.getImageData(0, 0, w, h);
+    const bytes = imageData.data; // Uint8ClampedArray, RGBA
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 8192) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + 8192, bytes.length)));
+    }
+    return {
+      data: btoa(binary),
+      width: w,
+      height: h,
+    };
+  }
+
+
   async ['Page.getContentQuads'](options) {
     return await this._contentPage.send('getContentQuads', options);
   }

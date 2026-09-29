@@ -12,6 +12,7 @@ mod receipts;
 mod recipes;
 mod recording;
 mod server;
+mod vision;
 
 use server::GhostcloakServer;
 
