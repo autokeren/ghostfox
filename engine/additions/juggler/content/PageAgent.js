@@ -741,6 +741,16 @@ export class PageAgent {
         if (stringProperty in attributes)
           tree[stringProperty] = attributes[stringProperty];
       }
+
+      // Native layout bounds (CSS pixels) — the trusted geometry for
+      // M2 semantic clicks. JS can lie about getBoundingClientRect;
+      // this comes from the accessibility tree itself.
+      {
+        let bx = {}, by = {}, bw = {}, bh = {};
+        accElement.getBoundsInCSSPixels(bx, by, bw, bh);
+        if (bw.value > 0 && bh.value > 0)
+          tree.bounds = { x: bx.value, y: by.value, width: bw.value, height: bh.value };
+      }
       const children = [];
 
       for (let child = accElement.firstChild; child; child = child.nextSibling) {
