@@ -81,6 +81,19 @@ First Rust runtime + Camoufox engine fork. MCP round-trip E2E working.
   headless X-isolation.
 
 ### Field lessons (hard-won — don't repeat)
+- **THE 8-HOUR HOST WEDGE (2026-09-29)**: every host-spawned engine hung
+  at Browser.enable while Docker on the same kernel worked instantly.
+  Every theory died (env ×6, uid, netns, cgroup, inotify, /dev/shm,
+  mounts) — root cause: 7272 DANGLING SYMLINKS in the dev engine dist,
+  pointing into a workspace deleted during disk cleanup. Chrome
+  components silently fail to load when their files are dead links.
+  Lesson: after deleting anything, `find -type l -xtype l` before
+  blaming the kernel.
+- **a11y lazy-init blocks on the ATK bridge**: on hosts without an
+  AT-SPI bus, atk_bridge_adaptor_init blocks the main thread forever
+  (socket read). AND Firefox force-sets NO_AT_BRIDGE=0, ignoring the
+  env. Fix shipped: atk-bridge-env.patch (respect the env) + runtime
+  sets NO_AT_BRIDGE=1.
 - **Fake engine deaths from CPU contention**: Browser.enable "timeouts"
   were actually heavy renders on the same host + the userns fork-probe
   hanging under load. Fix: 120s bootstrap + the `MOZ_ASSUME_USER_NS=0`
@@ -119,9 +132,13 @@ First Rust runtime + Camoufox engine fork. MCP round-trip E2E working.
 actuator. The brain lives in the runtime/MCP.
 Framing: every milestone unlocks one more "sense" for the agent.
 
-### M1 — 👁 Structured sight ✅ (wiring done)
-`Page.getFullAXTree` + flatten → `page_a11y native=true` — the trusted a11y
-tree. Remaining: E2E + actionable native refs (a backendNodeId-style registry).
+### M1 — 👁 Structured sight ✅ SHIPPED
+`Accessibility.getFullAXTree` (note: the Accessibility domain, not Page —
+v0.7 engines had it under Page) + flatten → `page_a11y native=true` — the
+trusted a11y tree. E2E verified on the host: 230 elements in 0s (richer
+than the 199-element JS walker; real hrefs in `value`, elements the walker
+misses). Engine-side shipped: atk-bridge-env.patch + NO_AT_BRIDGE=1 at
+spawn. Remaining: actionable native refs (a backendNodeId-style registry).
 
 ### M2 — ✋ Touch: the native click/type broker
 `semantic_click(ref)` — resolve the accessible → the NATIVE layout rect
