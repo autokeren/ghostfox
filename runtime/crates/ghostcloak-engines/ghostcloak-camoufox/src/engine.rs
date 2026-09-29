@@ -148,6 +148,12 @@ impl CamoufoxEngine {
             std::mem::forget(resp_tx);
         }
 
+        // The engine's a11y ATK bridge export is never needed by an MCP
+        // agent, and on hosts without an AT-SPI bus it can block the main
+        // thread forever during a11y init (atk-bridge-env.patch honors
+        // this env). The INTERNAL a11y tree — our native observation
+        // source — builds without the bridge.
+        cmd.env("NO_AT_BRIDGE", "1");
         if opts.headless {
             cmd.arg("--headless");
             // A headless engine must never touch the user's desktop
@@ -1748,25 +1754,30 @@ impl PageHandle for CamoufoxPage {
     /// Juggler `Page.getFullAXTree` (the ariaSnapshot plumbing Playwright
     /// uses), which our engine build already carries.
     async fn a11y_tree_native(&self) -> Result<serde_json::Value> {
-        // KNOWN ENGINE BLOCKER (spike finding, 2026-09-28): in the current
-        // engine build, Page.getFullAXTree deadlocks when a11y was not
-        // already initialized at startup — the call runs synchronously on
-        // the main thread and the lazy a11y init needs the main-thread
-        // event loop it is blocking (re-entrancy deadlock). Reproduced
-        // headless in pristine Docker: >240s, no response.
-        //
-        // The fix lands engine-side: force a11y on at engine startup
-        // (accessibility.force_disabled=0 + a startup-init hook in the
-        // juggler additions) so the tree exists BEFORE any pipe request.
-        // Until then: fail fast with a clear error instead of wedging
-        // the session silently.
-        let _ = self.session_id().await?;
-        Err(GhostError::PageOp(
-            "native a11y unavailable in this engine build: the a11y tree \
-             must be initialized at engine startup (engine PR pending) — \
-             use the default JS-walk source"
-                .into(),
-        ))
+        // Native a11y observation. The engine PR pre-initializes the a11y
+        // service at startup (Juggler.js final-ui-startup hook) and honors
+        // NO_AT_BRIDGE=1 (atk-bridge-env.patch) so the internal tree builds
+        // without blocking on the desktop AT-SPI socket. This call then
+        // only walks the already-built tree. 30s guard: if the tree is not
+        // ready (or an older engine build is in use), fail with an
+        // actionable error instead of wedging the session.
+        let sid = self.session_id().await?;
+        let res = self
+            .conn
+            .request_session_t(
+                "Accessibility.getFullAXTree",
+                serde_json::json!({}),
+                Some(&sid),
+                std::time::Duration::from_secs(30),
+            )
+            .await
+            .map_err(|e| {
+                GhostError::PageOp(format!(
+                    "native a11y tree unavailable: {e} (engine needs the a11y \
+                 startup-init build, or NO_AT_BRIDGE=1 is missing)"
+                ))
+            })?;
+        Ok(res)
     }
 
     async fn read_ref_full(&self, r: &str) -> Result<String> {

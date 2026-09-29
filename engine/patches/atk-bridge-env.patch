@@ -1,0 +1,28 @@
+diff --git a/accessible/atk/Platform.cpp b/accessible/atk/Platform.cpp
+--- a/accessible/atk/Platform.cpp
++++ b/accessible/atk/Platform.cpp
+@@ -111,6 +111,18 @@
+-  // Init atk-bridge now
+-  PR_SetEnv("NO_AT_BRIDGE=0");
+-  nsresult rv = LoadGtkModule(sAtkBridge);
+-  if (NS_SUCCEEDED(rv)) {
+-    (*sAtkBridge.init)(nullptr, nullptr);
+-  }
++  // Init atk-bridge now — unless the operator disabled it. The bridge
++  // connects Firefox's a11y tree to the desktop AT-SPI bus; on hosts
++  // without that bus (servers, containers, headless agents),
++  // atk_bridge_adaptor_init can block the MAIN THREAD forever on a
++  // socket (observed: main thread stuck in __skb_wait_for_more_packets).
++  // The INTERNAL a11y tree (DocAccessible etc.) — which is what the
++  // MCP native observation reads — does not need the bridge at all.
++  // Note: the old code PR_SetEnv'd NO_AT_BRIDGE=0 here, overwriting any
++  // operator setting; read the env BEFORE touching it.
++  const char* bridgeDisable = PR_GetEnv("NO_AT_BRIDGE");
++  const bool bridgeWanted = !(bridgeDisable && strcmp(bridgeDisable, "1") == 0);
++  if (bridgeWanted) {
++    PR_SetEnv("NO_AT_BRIDGE=0");
++    nsresult rv = LoadGtkModule(sAtkBridge);
++    if (NS_SUCCEEDED(rv)) {
++      (*sAtkBridge.init)(nullptr, nullptr);
++    }
++  }
