@@ -154,8 +154,8 @@ Lessons from THIS run:
 
 ## Status today
 
-- **48 MCP tools** (CI green, clippy 0-0, test suite green)
-- Channels: PyPI 0.8.1 · npm 0.8.1 · GHCR 0.8.0 · MCP Registry — all live
+- **56 MCP tools** (CI green, clippy 0-0, test suite green, consistency audit in CI)
+- Channels: PyPI 0.9.0 · npm 0.9.0 · GHCR 0.8.0 · MCP Registry — publish pending user device
 - Production proofs: bilibili 6/6 · hCaptcha on 2 real signups · TikTok
   OAuth+OTP · the LinkedIn self-post · Docker E2E
 - Early traction: ~215 installs/day (PyPI+npm) before any real campaign;
@@ -166,8 +166,8 @@ Lessons from THIS run:
 - [x] M1 native a11y E2E → shipped in v0.8.2
 - [x] M2 native click broker → shipped (page_click_native, E2E verified)
 - [x] M2.5 compositor pixel capture → shipped (captureSurface + buffer reads)
-- [ ] **M2.9 the sixth sense** → Layer X-Ray + native framebuffer reads first
-  (see the M2.9 section — closes the hidden-canvas hole the E2E fell into)
+- [x] **M2.9 the sixth sense** → GfxXray C++ (native canvas buffer reads) +
+  Layer X-Ray (ForceVisibleContent) shipped — closes the hidden-canvas hole
 - [x] M3 hearing v1: mutation whispers (page_mutations) — AccEvent diff +
   WebSocket frames remain
 - [x] **M5 the Critic v1: page_ui_audit SHIPPED** — visual QA for
@@ -182,13 +182,40 @@ Lessons from THIS run:
 - [x] M3.5 smell v1: page_wait_stable (render-settled signal — whispers +
   rect-hash quiet across two polls; HN settles in 543ms). Timing sense
   + jank detector remain.
-- [ ] M4/M4.5 proprioception + interoception (body state, session health)
-- [ ] M5 taste: persona metamorphosis (session state + fingerprint coherence)
+- [x] M4/M4.5 proprioception + interoception — page_proprio (body state +
+  caret receipt), page_cookie_events (session heartbeat), session_vitals
+  (process-group health) shipped
+- [ ] M5 taste: persona metamorphosis (session state + fingerprint coherence) — NEXT
 - [ ] Streamable HTTP transport (rmcp has it; the fork proved demand)
 - [ ] Network interception spike (verify Juggler route/setInterception — 1 day, then 3-5 days to build)
 - [ ] WebGPU v1 persona spoofing (close the Win/Mac-ARM leak; 2h per build cycle)
 - [ ] PR #782: watch for upstream beta.31 assets
 - [ ] MCP Registry: publish 0.8.2+ (needs user device authorization)
+
+### The typing-gap saga → CLOSED (2026-09-30)
+
+- Flutter web in semantics mode edits via the ACCESSIBILITY layer —
+  zero DOM listeners; DOM routes write a mirror nobody reads.
+- setTextContents is ACCEPTED but not consumed; the real contract (from
+  the framework source) = focus → set .value → trusted input event.
+- The a11y protocol schema rejects unknown return properties — tool
+  results must stay minimal.
+- **WebGL**: the engine's hardening blocks WebGL → Flutter falls back
+  to CPU-only CanvasKit → some screens crash (RangeError 0-sized
+  gradients). Fix: GHOSTFOX_WEBGL=1 writes the enabling prefs into the
+  profile user.js — for app E2E, not general stealth.
+- **netcap**: Juggler Network events are FLAT (url/status at params
+  top level), not CDP-shaped; both listeners needed the fix and the
+  first-insert race masked it until both were corrected.
+- **Google captcha**: ddddocr/tesseract both fail the warped text —
+  a heavier OCR (CRNN/vision) is a roadmap item; the audio route is
+  the practical fallback.
+
+### History hygiene (2026-09-30)
+
+- A test phone number slipped into JOURNEY — scrubbed from the file
+  AND the git history (filter-repo + force-push). Rule: test creds
+  and real phone numbers NEVER enter the repo, not even in docs.
 
 ## Horizon — the C++ arc: an AI's five senses at the Gecko level
 
