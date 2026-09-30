@@ -170,7 +170,9 @@ Lessons from THIS run:
   Queued upgrades: full-box walk (empty divs are pruned from the a11y
   tree — overlap of plain boxes needs the DOM geometry), per-element
   contrast via compositor sampling, screenshot evidence per issue.
-- [ ] M3.5 smell: visual-stability events + timing sense + jank detector
+- [x] M3.5 smell v1: page_wait_stable (render-settled signal — whispers +
+  rect-hash quiet across two polls; HN settles in 543ms). Timing sense
+  + jank detector remain.
 - [ ] M4/M4.5 proprioception + interoception (body state, session health)
 - [ ] M5 taste: persona metamorphosis (session state + fingerprint coherence)
 - [ ] Streamable HTTP transport (rmcp has it; the fork proved demand)
