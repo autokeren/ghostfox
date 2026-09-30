@@ -66,6 +66,27 @@ impl CamoufoxEngine {
         // Camoufox refuses to boot without an existing profile directory.
         std::fs::create_dir_all(&profile)?;
 
+        // Flutter/CanvasKit apps need a real WebGL context: the hardening
+        // prefs block it and the CPU-rendering fallback crashes on some
+        // screens (0-sized radial gradients). GHOSTFOX_WEBGL=1 re-enables
+        // it per-launch — for app E2E, not for general stealth.
+        if std::env::var("GHOSTFOX_WEBGL").as_deref() == Ok("1") {
+            let user_js = profile.join("user.js");
+            if !user_js.exists() {
+                std::fs::write(
+                    &user_js,
+                    concat!(
+                        "user_pref(\"webgl.disabled\", false);\n",
+                        "user_pref(\"webgl.force-enabled\", true);\n",
+                        "user_pref(\"webgl.enable-webgl2\", true);\n",
+                        "user_pref(\"webgl.allow-windows-native-gl\", true);\n",
+                        "user_pref(\"webgl.msaa-force\", false);\n",
+                        "user_pref(\"privacy.resistFingerprinting\", false);\n",
+                    ),
+                )?;
+            }
+        }
+
         // NOTE: the launcher (`ghostfox`/`camoufox`) re-execs `-bin` WITHOUT
         // preserving the juggler pipes. Always spawn the -bin binary.
         let mut cmd = std::process::Command::new(home.join(bin_name));

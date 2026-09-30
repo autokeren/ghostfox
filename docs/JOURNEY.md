@@ -366,6 +366,19 @@ the text but the Dart controllers don't. Research findings (2026-09-30):
   params top level), not CDP-shaped (request/url) — both listeners
   needed the fix; the first-insert race meant the old listener's
   empty-url entries masked the fix until both were corrected.
+- **PULSA E2E COMPLETE (live)**: Pulsa → XXXX-REDACTED (Indosat
+  detected) → products load → 5rb Rp6.195 → PIN sheet → pay →
+  POST /api/v1/member/ppob/txns → result screen: "Pembayaran Gagal —
+  supplier menolak: Saldo tidak cukup (Saldo 0)" = the backend's
+  honest business answer, not an app bug.
+- **Flutter web needs WebGL**: the engine's hardening prefs block
+  WebGL → Flutter falls back to CPU-only CanvasKit → the Pulsa screen
+  crashes (RangeError: max must be in range 0 < max ≤ 2^32, was 0 —
+  a 0-sized radial gradient in the fallback path). Fix = profile
+  user.js prefs (webgl.disabled=false + force-enabled + RFP off) —
+  now exposed as GHOSTFOX_WEBGL=1 on the engine launch for app E2E.
+  The Android app itself = clean: Transfer works, the console shows
+  no app-level exceptions.
 
 ### BUS app E2E (the user's real koperasi app, 2026-09-30)
 `/home/ubuntu/bus-core/app` — build web sukses (backend :
