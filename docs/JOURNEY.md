@@ -345,11 +345,27 @@ the text but the Dart controllers don't. Research findings (2026-09-30):
   fields accepted it (ok:true) where every DOM route failed.
 - **Next-layer finding**: the Flutter semantics text field ACCEPTS
   setTextContents but does NOT consume it — the DOM mirrors stay
-  empty after the write. The framework's semantics-mode input contract
-  (the SemanticsAction.setText path, likely via the action interface
-  or the semantics input's own event stream) needs the framework
-  source (flutter/packages/flutter/lib/src/semantics + the web
-  engine's semantics handler) to find the exact route.
+  empty after the write.
+- **CLOSED — the exact contract, from the framework source**
+  (flutter/engine lib/web_ui/lib/src/engine/semantics/text_field.dart +
+  text_editing.dart): SemanticsTextEditingStrategy activates on FOCUS
+  and the input handler reads EditingState.fromDomElement — the
+  element's .value. So the winning route = takeFocus + set .value +
+  trusted InputEvent('input', {inputType:'insertText', data}). The
+  `page_a11y_set_text` dom-input route. Also: the a11y schema rejects
+  unknown return properties (the `route` field broke the dispatch) —
+  keep the tool result minimal.
+- **BUS E2E COMPLETE (live)**: semantics enable → click_native →
+  a11y_set_text BUS-0001 + 123456 → click_native Masuk →
+  POST /api/v1/auth/member-login 200 → the member dashboard loads
+  (Transfer/Pulsa/Token PLN/BPJS/Pinjaman, Total simpanan
+  Rp1.001.05x, Beranda/Bayar/Riwayat) with the full endpoint fan-out.
+  The "Sesi tidak valid" seen earlier = the backend's honest reply to
+  a wrong credential — the pipeline itself = proven end-to-end.
+- **netcap lesson**: Juggler Network events are FLAT (url/status at
+  params top level), not CDP-shaped (request/url) — both listeners
+  needed the fix; the first-insert race meant the old listener's
+  empty-url entries masked the fix until both were corrected.
 
 ### BUS app E2E (the user's real koperasi app, 2026-09-30)
 `/home/ubuntu/bus-core/app` — build web sukses (backend :
