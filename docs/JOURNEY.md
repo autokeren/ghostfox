@@ -81,6 +81,15 @@ First Rust runtime + Camoufox engine fork. MCP round-trip E2E working.
   headless X-isolation.
 
 ### Field lessons (hard-won — don't repeat)
+- **Patches must be audited hunk-by-hunk**: the dev engine tree carries
+  foreign (upstream/camoufox) uncommitted changes — a naive `git diff`
+  sweeps them into OUR patches and breaks every CI engine build (the
+  ComputeActiveness hunk incident, 0.9.0). Every generated patch:
+  `grep '^@@'` and confirm each hunk is ours.
+- **The rename audit**: mass renames leave stragglers in places grep
+  misses at first pass (Dockerfile asset names, npm installer config
+  keys). After ANY rename: grep ALL file types, then audit the
+  workflows' asset-name contracts end-to-end.
 - **THE 8-HOUR HOST WEDGE (2026-09-29)**: every host-spawned engine hung
   at Browser.enable while Docker on the same kernel worked instantly.
   Every theory died (env ×6, uid, netns, cgroup, inotify, /dev/shm,
