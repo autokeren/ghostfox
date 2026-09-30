@@ -218,6 +218,19 @@ humans want to watch the agent work.
 (`events.jsonl`), full page snapshots and the identity it used under
 `~/.ghostfox/recordings/` — fetch it any time with `session_evidence`.
 
+## Sponsor
+
+Ghostfox is independent and self-funded. If it saves your team from
+captcha walls or vibe-code UI bugs, help keep the house open:
+
+- [GitHub Sponsors](https://github.com/sponsors/autokeren) — monthly
+  support, any amount
+- [Buy Me a Coffee](https://www.buymeacoffee.com/autokeren) — one-time
+
+Companies: sponsorship + early access to the hosted Visual QA service
+is open — [sponsor the repo](https://github.com/sponsors/autokeren)
+or open an issue with the title `sponsorship`.
+
 **Or install in one command** (Linux x86_64):
 
 ```bash
