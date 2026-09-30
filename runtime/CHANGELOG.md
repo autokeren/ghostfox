@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `page_ui_audit` (M5 the Critic): visual QA for AI-generated UIs —
+  clipped captions, missing padding, viewport overflow, overlaps and
+  crowding detected from the engine's native a11y geometry.
 - `page_mutations` (M3 hearing): privileged DOM-change whispers — every
   childList/attributes/characterData mutation as pullable records,
   observed from the unhookable frame-script realm.

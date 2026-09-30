@@ -161,12 +161,15 @@ Lessons from THIS run:
   (see the M2.9 section — closes the hidden-canvas hole the E2E fell into)
 - [x] M3 hearing v1: mutation whispers (page_mutations) — AccEvent diff +
   WebSocket frames remain
-- [ ] **M5 the Critic: page_ui_audit** — visual QA for AI-generated UIs
-  (clipped captions, missing padding, overlaps, viewport overflow,
-  crowding, contrast) computed from native a11y bounds + compositor
-  pixels. Positioning: "the browser that can SEE" — second buyer after
-  automation agents: AI frontend devs (vibe-coders). Monetization wedge:
-  Visual QA as a Service on the open core.
+- [x] **M5 the Critic v1: page_ui_audit SHIPPED** — visual QA for
+  AI-generated UIs (text-clipped, no-padding, viewport-overflow,
+  overlap, crowded) from native a11y bounds. E2E on an ugly test page:
+  the +171px clipped caption caught as an error. Positioning: "the
+  browser that can SEE" — second buyer: AI frontend devs (vibe-coders).
+  Monetization wedge: Visual QA as a Service on the open core.
+  Queued upgrades: full-box walk (empty divs are pruned from the a11y
+  tree — overlap of plain boxes needs the DOM geometry), per-element
+  contrast via compositor sampling, screenshot evidence per issue.
 - [ ] M3.5 smell: visual-stability events + timing sense + jank detector
 - [ ] M4/M4.5 proprioception + interoception (body state, session health)
 - [ ] M5 taste: persona metamorphosis (session state + fingerprint coherence)
