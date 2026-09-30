@@ -1,0 +1,43 @@
+diff --git a/netwerk/protocol/http/nsCORSListenerProxy.cpp b/netwerk/protocol/http/nsCORSListenerProxy.cpp
+index 22698c8392..7befd428ca 100644
+--- a/netwerk/protocol/http/nsCORSListenerProxy.cpp
++++ b/netwerk/protocol/http/nsCORSListenerProxy.cpp
+@@ -664,6 +664,18 @@ nsCORSListenerProxy::OnStartRequest(nsIRequest* aRequest) {
+ }
+ 
+ namespace {
++// Ghostfox E2E testing mode: skip CORS entirely (the Chrome
++// --disable-web-security equivalent). Local backends without
++// Access-Control-Allow-Origin headers (flutter web + localhost API)
++// become reachable. Gated by an env var — never on by default.
++bool GhostfoxInsecureCors() {
++  static bool v = []() {
++    const char* e = PR_GetEnv("GHOSTFOX_INSECURE_CORS");
++    return e && *e && strcmp(e, "0") != 0;
++  }();
++  return v;
++}
++
+ class CheckOriginHeader final : public nsIHttpHeaderVisitor {
+  public:
+   NS_DECL_ISUPPORTS
+@@ -692,6 +704,9 @@ NS_IMPL_ISUPPORTS(CheckOriginHeader, nsIHttpHeaderVisitor)
+ }  // namespace
+ 
+ nsresult nsCORSListenerProxy::CheckRequestApproved(nsIRequest* aRequest) {
++  if (GhostfoxInsecureCors()) {
++    return NS_OK;
++  }
+   // Check if this was actually a cross domain request
+   if (!mHasBeenCrossSite) {
+     return NS_OK;
+@@ -1248,6 +1263,9 @@ nsresult nsCORSListenerProxy::UpdateChannel(nsIChannel* aChannel,
+ nsresult nsCORSListenerProxy::CheckPreflightNeeded(nsIChannel* aChannel,
+                                                    UpdateType aUpdateType,
+                                                    bool aStripAuthHeader) {
++  if (GhostfoxInsecureCors()) {
++    return NS_OK;
++  }
+   // If this caller isn't using AsyncOpen, or if this *is* a preflight channel,
+   // then we shouldn't initiate preflight for this channel.
+   nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
