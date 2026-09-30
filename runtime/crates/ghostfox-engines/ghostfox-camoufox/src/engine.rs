@@ -855,12 +855,12 @@ impl Engine for CamoufoxEngine {
                                             .unwrap_or("")
                                             .to_string();
                                         let url2 = msg
-                                            .pointer("/params/request/url")
+                                            .pointer("/params/url")
                                             .and_then(|v| v.as_str())
                                             .unwrap_or("")
                                             .to_string();
                                         let mth = msg
-                                            .pointer("/params/request/method")
+                                            .pointer("/params/method")
                                             .and_then(|v| v.as_str())
                                             .unwrap_or("GET")
                                             .to_string();
@@ -902,7 +902,7 @@ impl Engine for CamoufoxEngine {
                                             .unwrap_or("")
                                             .to_string();
                                         let status = msg
-                                            .pointer("/params/response/status")
+                                            .pointer("/params/status")
                                             .and_then(|v| v.as_u64());
                                         if let (Some(ix_val), Ok(mut n)) = (
                                             buf.net_index.lock().unwrap().get(&rid).copied(),
@@ -2272,12 +2272,12 @@ impl PageHandle for CamoufoxPage {
                                     .unwrap_or("")
                                     .to_string();
                                 let url = msg
-                                    .pointer("/params/request/url")
+                                    .pointer("/params/url")
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("")
                                     .to_string();
                                 let mth = msg
-                                    .pointer("/params/request/method")
+                                    .pointer("/params/method")
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("GET")
                                     .to_string();
@@ -2319,7 +2319,7 @@ impl PageHandle for CamoufoxPage {
                                     .unwrap_or("")
                                     .to_string();
                                 let status = msg
-                                    .pointer("/params/response/status")
+                                    .pointer("/params/status")
                                     .and_then(|v| v.as_u64());
                                 if let (Some(ix_val), Ok(mut n)) = (
                                     buf2.net_index.lock().unwrap().get(&rid).copied(),

@@ -705,7 +705,7 @@ export class PageAgent {
           composed: true,
         });
         node.dispatchEvent(ev);
-        return { ok: true, route: 'dom-input' };
+        return { ok: true };
       } catch (e) {
         // fall through to the editable-text route
       }
@@ -717,7 +717,7 @@ export class PageAgent {
       return { error: 'accessible is not editable text' };
     }
     editable.setTextContents(String(text));
-    return { ok: true, route: 'editable-text' };
+    return { ok: true };
   }
 
   // M5 the Critic: every element's honest layout rect from the frame
