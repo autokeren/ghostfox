@@ -1857,7 +1857,14 @@ impl PageHandle for CamoufoxPage {
         Ok(res
             .get("whispers")
             .and_then(|w| w.as_array())
-            .cloned()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| {
+                        v.as_str()
+                            .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+                    })
+                    .collect()
+            })
             .unwrap_or_default())
     }
 

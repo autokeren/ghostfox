@@ -639,35 +639,41 @@ export class PageAgent {
   // the observer itself; it observes the REAL DOM mutations natively.
   _startMutationWhispers() {
     const win = this._frameTree.mainFrame().domWindow();
-    this._whispers = [];
     if (!this._whisperObserver) {
+      this._whispers = [];
       const push = (m) => {
         this._whispers.push(m);
         if (this._whispers.length > 300) this._whispers.shift();
       };
+      this._whisperCount = 0;
       this._whisperObserver = new win.MutationObserver((records) => {
-        for (const rec of records) {
-          const t = rec.target;
-          const tag = t && t.nodeType === 1 ? t.tagName : (t && t.nodeType === 3 ? '#text' : '#?');
-          let text = '';
-          if (rec.type === 'characterData') {
-            text = (rec.target.data || '').slice(0, 60);
-          } else if (rec.type === 'childList') {
-            const added = [];
-            for (const n of rec.addedNodes) {
-              if (n.nodeType === 1) added.push(n.tagName);
-              else if (n.nodeType === 3 && (n.data || '').trim()) added.push('text:' + n.data.trim().slice(0, 40));
+        this._whisperCount += records.length;
+        try {
+          for (const rec of records) {
+            const t = rec.target;
+            const tag = t && t.nodeType === 1 ? t.tagName : (t && t.nodeType === 3 ? '#text' : '#?');
+            let text = '';
+            if (rec.type === 'characterData') {
+              text = (rec.target.data || '').slice(0, 60);
+            } else if (rec.type === 'childList') {
+              const added = [];
+              for (const n of rec.addedNodes) {
+                if (n.nodeType === 1) added.push(n.tagName);
+                else if (n.nodeType === 3 && (n.data || '').trim()) added.push('text:' + n.data.trim().slice(0, 40));
+              }
+              text = added.slice(0, 4).join(',');
             }
-            text = added.slice(0, 4).join(',');
+            push({
+              type: rec.type,
+              tag,
+              attr: rec.type === 'attributes' ? rec.attributeName : null,
+              text,
+              added: rec.addedNodes.length,
+              removed: rec.removedNodes.length,
+            });
           }
-          push({
-            type: rec.type,
-            tag,
-            attr: rec.type === 'attributes' ? rec.attributeName : null,
-            text,
-            added: rec.addedNodes.length,
-            removed: rec.removedNodes.length,
-          });
+        } catch (e) {
+          push({ type: 'observer-error', text: String(e && e.message || e).slice(0, 120) });
         }
       });
       this._whisperObserver.observe(win.document, {
@@ -683,7 +689,7 @@ export class PageAgent {
   _readMutationWhispers({clear}) {
     const out = this._whispers || [];
     if (clear) this._whispers = [];
-    return { whispers: out };
+    return { whispers: out.map((w) => JSON.stringify(w)) };
   }
 
   async _captureCanvasBuffer({selector, ref}) {

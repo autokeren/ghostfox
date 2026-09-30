@@ -931,7 +931,7 @@ const Page = {
         clear: t.Optional(t.Boolean),
       },
       returns: {
-        whispers: t.Array(t.Object),
+        whispers: t.Array(t.String),
       },
     },
     'captureCanvasBuffer': {
