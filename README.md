@@ -6,6 +6,13 @@
 
 **The agent-native stealth browser you can own.**
 
+[![GitHub stars](https://img.shields.io/github/stars/autokeren/ghostfox?style=flat-square&label=stars)](https://github.com/autokeren/ghostfox/stargazers)
+[![npm downloads](https://img.shields.io/npm/dm/ghostfox?style=flat-square&label=npm&color=cb3837)](https://www.npmjs.com/package/ghostfox)
+[![PyPI downloads](https://img.shields.io/pypi/dm/ghostfox?style=flat-square&label=PyPI&color=3776ab)](https://pypi.org/project/ghostfox/)
+[![CI](https://img.shields.io/github/actions/workflow/status/autokeren/ghostfox/ci.yml?style=flat-square&label=CI)](https://github.com/autokeren/ghostfox/actions)
+[![MCP Registry](https://img.shields.io/badge/MCP%20Registry-io.github.autokeren%2Fghostfox-5b21b6?style=flat-square)](https://github.com/autokeren/ghostfox)
+[![Sponsor](https://img.shields.io/badge/sponsor-%E2%9D%A4-ff69b4?style=flat-square)](https://github.com/sponsors/autokeren)
+
 Self-hosted · Open source · MCP-first · Engine-level anti-detect
 
 [![License](https://img.shields.io/badge/engine-MPL--2.0-orange)](engine/LICENSE)
