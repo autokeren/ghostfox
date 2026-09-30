@@ -922,9 +922,8 @@ impl Engine for CamoufoxEngine {
                                             .and_then(|v| v.as_str())
                                             .unwrap_or("")
                                             .to_string();
-                                        let status = msg
-                                            .pointer("/params/status")
-                                            .and_then(|v| v.as_u64());
+                                        let status =
+                                            msg.pointer("/params/status").and_then(|v| v.as_u64());
                                         if let (Some(ix_val), Ok(mut n)) = (
                                             buf.net_index.lock().unwrap().get(&rid).copied(),
                                             buf.net.try_lock(),
@@ -2339,9 +2338,7 @@ impl PageHandle for CamoufoxPage {
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("")
                                     .to_string();
-                                let status = msg
-                                    .pointer("/params/status")
-                                    .and_then(|v| v.as_u64());
+                                let status = msg.pointer("/params/status").and_then(|v| v.as_u64());
                                 if let (Some(ix_val), Ok(mut n)) = (
                                     buf2.net_index.lock().unwrap().get(&rid).copied(),
                                     buf2.net.try_lock(),
