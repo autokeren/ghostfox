@@ -920,6 +920,17 @@ const Page = {
         data: t.String,
       }
     },
+    'captureCanvasBuffer': {
+      params: {
+        selector: t.String,
+      },
+      returns: {
+        data: t.Optional(t.String),
+        width: t.Optional(t.Number),
+        height: t.Optional(t.Number),
+        error: t.Optional(t.String),
+      },
+    },
     'captureSurface': {
       params: {
         x: t.Number,

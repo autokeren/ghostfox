@@ -297,6 +297,10 @@ export class PageHandler {
     this._pageNetwork.fulfillInterceptedRequest(requestId, status, statusText, headers, base64body);
   }
 
+  async ['Page.captureCanvasBuffer'](params) {
+    return await this._contentPage.send('captureCanvasBuffer', params);
+  }
+
   async ['Accessibility.scrollIntoView'](params) {
     return await this._contentPage.send('scrollAccessibleIntoView', params);
   }
@@ -399,13 +403,17 @@ export class PageHandler {
     const h = Math.max(1, Math.floor(height));
     if (w * h > 4194304)
       throw new Error('captureSurface: region exceeds 4M pixels (use a smaller rect)');
-    const rect = new DOMRect(x, y, w, h);
     const browsingContext = this._pageTarget.linkedBrowser().browsingContext;
+    // Firefox quirk: drawSnapshot returns BLACK for rects whose origin
+    // is not (0,0). Snap the FULL content viewport and crop on the
+    // canvas — the snapshot path stays compositor-native either way.
+    const vpW = this._pageTarget._window.innerWidth;
+    const vpH = this._pageTarget._window.innerHeight;
     let snapshot;
     while (!snapshot) {
       try {
         snapshot = await browsingContext.currentWindowGlobal.drawSnapshot(
-          rect, 1, 'rgb(255,255,255)');
+          new DOMRect(0, 0, vpW, vpH), 1, 'rgb(255,255,255)');
       } catch (e) {
         await new Promise(r => setTimeout(r, 50));
       }
@@ -415,7 +423,7 @@ export class PageHandler {
     canvas.width = w;
     canvas.height = h;
     const ctx = canvas.getContext('2d');
-    ctx.drawImage(snapshot, 0, 0);
+    ctx.drawImage(snapshot, -x, -y);
     snapshot.close();
     const imageData = ctx.getImageData(0, 0, w, h);
     const bytes = imageData.data; // Uint8ClampedArray, RGBA

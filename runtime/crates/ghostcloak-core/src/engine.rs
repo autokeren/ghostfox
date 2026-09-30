@@ -208,6 +208,16 @@ pub trait PageHandle: Send + Sync {
             "native a11y tree not supported by this engine".into(),
         ))
     }
+    /// M2.5: read a canvas's DRAWING BUFFER (data URL) from the
+    /// privileged frame script — the Xray wrapper calls the NATIVE
+    /// toDataURL, which page hooks cannot poison or observe. For
+    /// hidden canvases the compositor never renders (GeeTest fullbg).
+    async fn capture_canvas_buffer(&self, selector: &str) -> Result<Option<Vec<u8>>> {
+        let _ = selector;
+        Err(crate::error::GhostError::PageOp(
+            "capture_canvas_buffer not supported by this engine".into(),
+        ))
+    }
     /// M2: scroll an accessible into view via the engine's native
     /// a11y scrollToPoint, returning the resulting layout bounds.
     async fn scroll_accessible_into_view(&self, role: &str, name: &str) -> Result<Option<Bounds>> {

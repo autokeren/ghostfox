@@ -1830,6 +1830,32 @@ impl PageHandle for CamoufoxPage {
         }))
     }
 
+    async fn capture_canvas_buffer(&self, selector: &str) -> Result<Option<Vec<u8>>> {
+        use base64::Engine as _;
+        let sid = self.session_id().await?;
+        let res = self
+            .conn
+            .request_session_t(
+                "Page.captureCanvasBuffer",
+                serde_json::json!({ "selector": selector }),
+                Some(&sid),
+                std::time::Duration::from_secs(10),
+            )
+            .await?;
+        if let Some(err) = res.get("error").and_then(|e| e.as_str()) {
+            return Err(GhostError::PageOp(format!("captureCanvasBuffer: {err}")));
+        }
+        let data = match res.get("data").and_then(|d| d.as_str()) {
+            Some(d) => d,
+            None => return Ok(None),
+        };
+        let payload = data.split(',').nth(1).unwrap_or_default();
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(payload)
+            .map_err(|e| GhostError::Protocol(format!("canvas buffer base64: {e}")))?;
+        Ok(Some(bytes))
+    }
+
     async fn capture_surface(
         &self,
         x: i64,

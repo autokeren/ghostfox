@@ -1595,84 +1595,45 @@ impl GhostcloakServer {
     if (btn) window.__gfxRefs.set('gs_btn', btn);
   }}
   if (!btn) return JSON.stringify({{err: 'slider handle not found'}});
-  var rectOf = function(el) {{
-    var r = el.getBoundingClientRect();
-    return {{x: Math.floor(r.x), y: Math.floor(r.y), w: Math.max(1, Math.round(r.width)), h: Math.max(1, Math.round(r.height))}};
-  }};
-  return JSON.stringify({{bg: rectOf(bg), sl: rectOf(sl), fb: fb ? rectOf(fb) : null, ref: 'gs_btn'}});
+  return JSON.stringify({{ok: true}});
 }})()"#
         );
         let out = page
             .evaluate(&js)
             .await
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
-        let s = out.as_str().unwrap_or_default();
-        let v: serde_json::Value = serde_json::from_str(s)
+        let v: serde_json::Value = serde_json::from_str(out.as_str().unwrap_or_default())
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
         if let Some(err) = v.get("err").and_then(|e| e.as_str()).map(|e| e.to_string()) {
             return Err(rmcp::model::ErrorData::internal_error(err, None));
         }
-        let rect_of = |k: &str| -> Result<(i64, i64, u32, u32), rmcp::model::ErrorData> {
-            let rect = v.get(k).and_then(|r| r.as_object()).ok_or_else(|| {
-                rmcp::model::ErrorData::internal_error(format!("{k} canvas rect missing"), None)
-            })?;
-            let (Some(x), Some(y), Some(w), Some(h)) = (
-                rect.get("x").and_then(|v| v.as_i64()),
-                rect.get("y").and_then(|v| v.as_i64()),
-                rect.get("w").and_then(|v| v.as_u64()).map(|v| v as u32),
-                rect.get("h").and_then(|v| v.as_u64()).map(|v| v as u32),
-            ) else {
-                return Err(rmcp::model::ErrorData::internal_error(
-                    format!("{k} canvas rect malformed"),
-                    None,
-                ));
-            };
-            Ok((x, y, w, h))
+        // M2.5: read the three DRAWING BUFFERS from the privileged frame
+        // script (native toDataURL via Xray — page hooks cannot poison or
+        // observe). The fullbg canvas is hidden (CSS 0x0), so the
+        // compositor never renders it; the buffer is the honest source.
+        let buf = async |sel: &str| -> Result<Vec<u8>, rmcp::model::ErrorData> {
+            let bytes = page
+                .capture_canvas_buffer(sel)
+                .await
+                .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?
+                .ok_or_else(|| {
+                    rmcp::model::ErrorData::internal_error(
+                        format!("{sel} buffer read failed"),
+                        None,
+                    )
+                })?;
+            Ok(bytes)
         };
-        let (bgx, bgy, bgw, bgh) = rect_of("bg")?;
-        let (slx, sly, slw, slh) = rect_of("sl")?;
-        let fbx = rect_of("fb").ok();
-        let surf_bg = page
-            .capture_surface(bgx, bgy, bgw, bgh)
-            .await
-            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
-        let surf_sl = page
-            .capture_surface(slx, sly, slw, slh)
-            .await
-            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
-        let surf_fb = match fbx {
-            Some((x, y, w, h)) => Some(
-                page.capture_surface(x, y, w, h)
-                    .await
-                    .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?,
-            ),
-            None => None,
-        };
-        let bg = image::GrayImage::from_raw(
-            surf_bg.width,
-            surf_bg.height,
-            surf_bg
-                .rgba
-                .chunks_exact(4)
-                .map(|p| ((299 * p[0] as u32 + 587 * p[1] as u32 + 114 * p[2] as u32) / 1000) as u8)
-                .collect(),
-        )
-        .ok_or_else(|| rmcp::model::ErrorData::internal_error("bg buffer", None))?;
-        let sl = image::RgbaImage::from_raw(surf_sl.width, surf_sl.height, surf_sl.rgba.clone())
-            .ok_or_else(|| rmcp::model::ErrorData::internal_error("sl buffer", None))?;
-        let fb = surf_fb.and_then(|f| {
-            image::GrayImage::from_raw(
-                f.width,
-                f.height,
-                f.rgba
-                    .chunks_exact(4)
-                    .map(|p| {
-                        ((299 * p[0] as u32 + 587 * p[1] as u32 + 114 * p[2] as u32) / 1000) as u8
-                    })
-                    .collect(),
-            )
-        });
-        let drag_x = crate::geetest::slide_gap(&bg, &sl, fb.as_ref().unwrap_or(&bg))
+        let bg = image::load_from_memory(&buf("canvas.geetest_canvas_bg").await?)
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?
+            .to_luma8();
+        let sl = image::load_from_memory(&buf("canvas.geetest_canvas_slice").await?)
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?
+            .to_rgba8();
+        let fb = image::load_from_memory(&buf("canvas.geetest_canvas_fullbg").await?)
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?
+            .to_luma8();
+        let drag_x = crate::geetest::slide_gap(&bg, &sl, &fb)
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
         // 2. Human drag.
         page.drag_ref("gs_btn", "", drag_x as f64, 0.0)
@@ -2066,7 +2027,7 @@ impl GhostcloakServer {
   if (!rr || !rl || !ck || !rs) return JSON.stringify({{err: 'stale refs — rerun page_a11y and re-set refs'}});
   var read = function() {{
     var out = [];
-    document.querySelectorAll('[class*=alert],[class*=status],[class*=result],[class*=success],[class*=error],[class*=message],[class*=tip]').forEach(function(el){{
+    document.querySelectorAll('[class*=alert],[class*=status],[class*=result],[class*=success],[class*=error],[class*=message],[class*=tip],[role=alert],[role=status]').forEach(function(el){{
       var t = (el.innerText||'').trim();
       var st = getComputedStyle(el);
       if (t && t.length < 70 && st.display !== 'none' && el.getBoundingClientRect().width > 0) out.push(t.slice(0,55));
@@ -2123,10 +2084,10 @@ impl GhostcloakServer {
   var btns = document.querySelectorAll('button');
   btns.forEach(function(b) {{
     var t = (b.innerText||'').trim();
-    if (t.indexOf('向右') >= 0) window.__gfxRefs.set({rr}, b);
-    if (t.indexOf('向左') >= 0) window.__gfxRefs.set({rl}, b);
-    if (t.indexOf('检查') >= 0) window.__gfxRefs.set({ck}, b);
-    if (t.indexOf('重置') >= 0) window.__gfxRefs.set({rs}, b);
+    if (t.indexOf('向右') >= 0 || t.toLowerCase().indexOf('rotate right') >= 0) window.__gfxRefs.set({rr}, b);
+    if (t.indexOf('向左') >= 0 || t.toLowerCase().indexOf('rotate left') >= 0) window.__gfxRefs.set({rl}, b);
+    if (t.indexOf('检查') >= 0 || t.toLowerCase().indexOf('check') >= 0) window.__gfxRefs.set({ck}, b);
+    if (t.indexOf('重置') >= 0 || t.toLowerCase().indexOf('reset') >= 0) window.__gfxRefs.set({rs}, b);
   }});
   return 'OK';
 }})()"#,

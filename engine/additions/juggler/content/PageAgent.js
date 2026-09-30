@@ -153,6 +153,7 @@ export class PageAgent {
         getContentQuads: this._getContentQuads.bind(this),
         getFullAXTree: this._getFullAXTree.bind(this),
         scrollAccessibleIntoView: this._scrollAccessibleIntoView.bind(this),
+        captureCanvasBuffer: this._captureCanvasBuffer.bind(this),
         insertText: this._insertText.bind(this),
         scrollIntoViewIfNeeded: this._scrollIntoViewIfNeeded.bind(this),
         setFileInputFiles: this._setFileInputFiles.bind(this),
@@ -629,6 +630,23 @@ export class PageAgent {
     const zero = new ctypes.intptr_t(8);
     const badptr = ctypes.cast(zero, ctypes.PointerType(ctypes.int32_t));
     badptr.contents;
+  }
+
+  async _captureCanvasBuffer({selector}) {
+    // Read a canvas's DRAWING BUFFER from the privileged frame script:
+    // the Xray wrapper calls the NATIVE toDataURL, so page-level hooks
+    // on HTMLCanvasElement.prototype cannot poison or observe the read.
+    // Needed for hidden canvases (CSS 0x0) that the compositor never
+    // renders — the GeeTest fullbg case.
+    const doc = this._frameTree.mainFrame().domWindow().document;
+    const el = doc.querySelector(selector);
+    if (!el || el.tagName !== 'CANVAS')
+      return { error: `canvas not found: ${selector}` };
+    try {
+      return { data: el.toDataURL(), width: el.width, height: el.height };
+    } catch (e) {
+      return { error: 'buffer read failed: ' + e.message };
+    }
   }
 
   async _scrollAccessibleIntoView({role, name}) {
