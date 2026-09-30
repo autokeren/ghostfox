@@ -159,7 +159,14 @@ Lessons from THIS run:
 - [x] M2.5 compositor pixel capture → shipped (captureSurface + buffer reads)
 - [ ] **M2.9 the sixth sense** → Layer X-Ray + native framebuffer reads first
   (see the M2.9 section — closes the hidden-canvas hole the E2E fell into)
-- [ ] M3 hearing: a11y AccEvent diff + mutation whispers + WebSocket frames
+- [x] M3 hearing v1: mutation whispers (page_mutations) — AccEvent diff +
+  WebSocket frames remain
+- [ ] **M5 the Critic: page_ui_audit** — visual QA for AI-generated UIs
+  (clipped captions, missing padding, overlaps, viewport overflow,
+  crowding, contrast) computed from native a11y bounds + compositor
+  pixels. Positioning: "the browser that can SEE" — second buyer after
+  automation agents: AI frontend devs (vibe-coders). Monetization wedge:
+  Visual QA as a Service on the open core.
 - [ ] M3.5 smell: visual-stability events + timing sense + jank detector
 - [ ] M4/M4.5 proprioception + interoception (body state, session health)
 - [ ] M5 taste: persona metamorphosis (session state + fingerprint coherence)
@@ -327,7 +334,8 @@ Progress (2026-09-30, continued):
 Origin allowlists, enforced confirmations, redacted evidence.
 
 **Execution order**: M1 E2E → v0.8.2 → M2 → M2.5 → M2.9 (sixth sense) →
-M3/M3.5 → M4/M4.5 → M5.
+M3 (whispers shipped; AccEvent/WS pending) → **M5 jump-started: the Critic**
+(page_ui_audit — the eyes applied to AI-generated UIs) → M3.5 → M4/M4.5.
 **The most "ghostfox" ones first**: cookie heartbeat + visual stability —
 both connect directly to field experience (the silently-revoked session,
 sleep-guessing in the playbook).
