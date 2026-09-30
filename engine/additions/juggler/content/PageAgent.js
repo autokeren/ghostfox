@@ -805,10 +805,16 @@ export class PageAgent {
     if (!target) return null;
     const win = this._frameTree.mainFrame().domWindow();
     const cssScale = win.devicePixelRatio || 1;
-    // Content-area origin inside the browser window — fixed offset,
-    // independent of scroll (window properties are always fresh).
-    const chromeX = win.mozInnerScreenX - win.screenX;
-    const chromeY = win.mozInnerScreenY - win.screenY;
+    // Content-area origin inside the browser window — window-relative
+    // via the doc accessible's origin (immune to the window's screen
+    // position; scroll compensated). Fresh after the a11y settle.
+    let chromeX = 0, chromeY = 0;
+    {
+      let ox = {}, oy = {}, ow = {}, oh = {};
+      docAcc.getBoundsInCSSPixels(ox, oy, ow, oh);
+      chromeX = ox.value / cssScale + win.scrollX;
+      chromeY = oy.value / cssScale + win.scrollY;
+    }
     const readBounds = () => {
       let bx = {}, by = {}, bw = {}, bh = {};
       target.getBoundsInCSSPixels(bx, by, bw, bh);
@@ -855,12 +861,19 @@ export class PageAgent {
     const docAcc = service.getAccessibleFor(document);
 
     // a11y bounds are window-relative; page CSS is content-viewport-
-    // relative. The content-area origin inside the browser window is a
-    // fixed offset: mozInnerScreenY - screenY. Window properties are
-    // always fresh — no a11y staleness, no scroll compensation.
+    // relative. The DOCUMENT accessible's own origin is the anchor —
+    // window-relative, immune to the window's screen position (the
+    // mozInnerScreenX-screenX trick breaks when a WM places the window
+    // off-origin, e.g. x=294 on a remote desktop). The doc origin moves
+    // with scroll, so the fixed chrome = docOrigin + scroll.
     const cwin = this._frameTree.mainFrame().domWindow();
-    const docOriginX = cwin.mozInnerScreenX - cwin.screenX;
-    const docOriginY = cwin.mozInnerScreenY - cwin.screenY;
+    let docOriginX = 0, docOriginY = 0;
+    {
+      let ox = {}, oy = {}, ow = {}, oh = {};
+      docAcc.getBoundsInCSSPixels(ox, oy, ow, oh);
+      docOriginX = ox.value / cssScale + cwin.scrollX;
+      docOriginY = oy.value / cssScale + cwin.scrollY;
+    }
 
     while (docAcc.document.isUpdatePendingForJugglerAccessibility)
       await new Promise(x => this._frameTree.mainFrame().domWindow().requestAnimationFrame(x));
