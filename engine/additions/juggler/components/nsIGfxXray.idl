@@ -1,0 +1,26 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "nsISupports.idl"
+
+/**
+ * GfxXray — the sixth sense: read rendering state the page cannot hide.
+ * This interface exposes engine-level pixel reads that no page script
+ * can hook, poison or even observe (the reads live below the JS layer).
+ */
+[scriptable, uuid(8c3f9d21-5a1e-4b6c-9e04-2f7a0c51d4b2)]
+interface nsIGfxXray : nsISupports
+{
+  /**
+   * Snapshot a canvas element's DRAWING BUFFER natively — covers 2D
+   * contexts, WebGL contexts and worker-transferred OffscreenCanvas
+   * (via the display helper). No JS involved: page hooks on
+   * toDataURL/readPixels cannot poison or observe this read, and
+   * hidden/zero-size canvases are read exactly like visible ones.
+   *
+   * Returns "WxH:base64-packed-RGBA", or an empty string when the
+   * element is not a canvas / has no frame yet.
+   */
+  AString canvasBuffer(in nsISupports aElement);
+};

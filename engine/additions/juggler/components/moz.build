@@ -4,3 +4,27 @@
 
 XPCOM_MANIFESTS += ["components.conf"]
 
+XPIDL_SOURCES += [
+    'nsIGfxXray.idl',
+]
+
+XPIDL_MODULE = 'jugglercomponents'
+
+SOURCES += [
+    'GfxXray.cpp',
+]
+
+EXPORTS += [
+    'GfxXray.h',
+]
+
+FINAL_LIBRARY = 'xul'
+
+LOCAL_INCLUDES += [
+    '!/ipc/ipdl/_ipdlheaders',
+    '/dom/canvas',
+    '/dom/html',
+    '/dom/workers',
+    '/ipc/chromium/src/',
+]
+

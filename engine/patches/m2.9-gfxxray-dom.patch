@@ -1,0 +1,58 @@
+diff --git a/dom/canvas/OffscreenCanvasDisplayHelper.h b/dom/canvas/OffscreenCanvasDisplayHelper.h
+index b2bb00667a..780f359754 100644
+--- a/dom/canvas/OffscreenCanvasDisplayHelper.h
++++ b/dom/canvas/OffscreenCanvasDisplayHelper.h
+@@ -6,6 +6,7 @@
+ #define MOZILLA_DOM_OFFSCREENCANVASDISPLAYHELPER_H_
+ 
+ #include "GLContextTypes.h"
++#include "mozilla/dom/WorkerRef.h"
+ #include "ImageContainer.h"
+ #include "mozilla/Maybe.h"
+ #include "mozilla/Mutex.h"
+@@ -65,6 +66,21 @@ class OffscreenCanvasDisplayHelper final {
+     return !!mWorkerRef;
+   }
+ 
++  // M2.9 GfxXray: the owning worker (nullptr for main-thread canvases).
++  // The ThreadSafeWorkerRef keeps the worker alive while held.
++  dom::WorkerPrivate* GetWorkerPrivate() const {
++    MutexAutoLock lock(mMutex);
++    return mWorkerRef ? mWorkerRef->Private() : nullptr;
++  }
++
++
++  // M2.9 GfxXray: the canvas itself (only valid on the owning thread —
++  // the caller must already be there or dispatch through it).
++  already_AddRefed<OffscreenCanvas> GetCanvas() const {
++    MutexAutoLock lock(mMutex);
++    return do_AddRef(mOffscreenCanvas);
++  }
++
+   void SetWriteOnly(nsIPrincipal* aExpandedReader = nullptr);
+   bool CallerCanRead(nsIPrincipal& aPrincipal) const;
+ 
+diff --git a/dom/html/HTMLCanvasElement.h b/dom/html/HTMLCanvasElement.h
+index 68852fcb58..9ca3ea5ae6 100644
+--- a/dom/html/HTMLCanvasElement.h
++++ b/dom/html/HTMLCanvasElement.h
+@@ -351,6 +351,19 @@ class HTMLCanvasElement final : public nsGenericHTMLElement,
+ 
+   bool IsOffscreen() const { return !!mOffscreenCanvas; }
+   OffscreenCanvas* GetOffscreenCanvas() const { return mOffscreenCanvas; }
++  // M2.9 GfxXray: the main-thread display helper bridging a transferred
++  // (worker-owned) offscreen canvas — its buffer read is mutex-guarded
++  // and returns the current frame.
++  OffscreenCanvasDisplayHelper* GetOffscreenDisplay() const {
++    return mOffscreenDisplay;
++  }
++  // M2.9 GfxXray: native, JS-free drawing-buffer read covering every
++  // canvas flavor (2D, WebGL, worker-transferred offscreen).
++  UniquePtr<uint8_t[]> GetImageBufferPublic(
++      CanvasUtils::ImageExtraction aExtractionBehavior, int32_t* aOutFormat,
++      gfx::IntSize* aOutImageSize) {
++    return GetImageBuffer(aExtractionBehavior, aOutFormat, aOutImageSize);
++  }
+   void FlushOffscreenCanvas();
+ 
+   layers::ImageContainer* GetImageContainer() const { return mImageContainer; }
