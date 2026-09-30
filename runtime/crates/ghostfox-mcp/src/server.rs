@@ -1203,6 +1203,63 @@ impl GhostfoxServer {
     }
 
     #[tool(
+        description = "M5 THE CRITIC: audit the CURRENT page's visual quality the way a human eye judges a design — run this after any UI change (vibe-coded layouts love clipped captions, missing padding, overlapping elements). Computed from the engine's native a11y bounds (trusted geometry) plus the viewport. Returns {issues: [{type, severity, text/a/b, bounds, detail}], counts: {errors, warns}}. Types: text-clipped (teks keluar container), no-padding (teks nempel tepi), viewport-overflow, overlap (elemen tabrakan), crowded (elemen interaktif kelewat dekat)."
+    )]
+    async fn page_ui_audit(
+        &self,
+        Parameters(PageRefParams {
+            session_id,
+            page_id,
+        }): Parameters<PageRefParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let page = session
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let raw = page
+            .a11y_tree_native()
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let viewport = page
+            .evaluate("JSON.stringify([window.innerWidth, window.innerHeight])")
+            .await
+            .ok()
+            .and_then(|v| v.as_str().map(|s| s.trim_matches('"').to_string()))
+            .and_then(|s| {
+                let parts: Vec<i64> = s
+                    .trim_matches(|c| c == '[' || c == ']')
+                    .split(',')
+                    .filter_map(|p| p.trim().parse().ok())
+                    .collect();
+                if parts.len() == 2 {
+                    Some((parts[0], parts[1]))
+                } else {
+                    None
+                }
+            })
+            .unwrap_or((1280, 800));
+        let issues = ui_audit_from_raw(&raw, viewport);
+        let (mut errors, mut warns) = (0usize, 0usize);
+        for i in &issues {
+            match i.get("severity").and_then(|v| v.as_str()) {
+                Some("error") => errors += 1,
+                _ => warns += 1,
+            }
+        }
+        Ok(text_result(
+            serde_json::to_string_pretty(&serde_json::json!({
+                "issues": issues,
+                "counts": { "errors": errors, "warns": warns },
+            }))
+            .unwrap_or_default(),
+        ))
+    }
+
+    #[tool(
         description = "M3 HEARING: drain the engine's privileged DOM-mutation whispers — every childList/attributes/characterData change the page made since the observer started, observed from the UNHOOKABLE frame-script realm (the page cannot poison or hide its own mutations from this observer). Returns {whispers: [{type, tag, attr, text, added, removed}]} capped at 300. Use after any action to see WHAT the page changed (feedback toasts, injected forms, anti-bot DOM churn) without paying for a full snapshot. clear=true resets the buffer; the observer auto-starts on first call."
     )]
     async fn page_mutations(
@@ -3616,6 +3673,201 @@ fn map_native_role(role: &str) -> Option<String> {
 /// assigned in deterministic DFS order (n1..n) — observation handles for
 /// native mode: identify elements, diff snapshots, anchor recipes. Acting
 /// still goes through role+name anchors or the walk source's refs.
+/// M5 the Critic: an audit-oriented walk over the RAW a11y tree — keeps
+/// TEXT leaves and every box (not just interactive nodes), so geometry
+/// mistakes (clipped captions, missing padding, overlaps) can be judged
+/// the way a human eye judges them.
+#[derive(Debug, Clone, serde::Serialize)]
+struct UiBox {
+    role: String,
+    name: String,
+    bounds: Option<ghostfox_core::engine::Bounds>,
+}
+
+fn collect_ui_boxes(
+    node: &serde_json::Value,
+    parent: Option<&ghostfox_core::engine::Bounds>,
+    texts: &mut Vec<(
+        String,
+        ghostfox_core::engine::Bounds,
+        Option<ghostfox_core::engine::Bounds>,
+    )>,
+    boxes: &mut Vec<UiBox>,
+) {
+    let role = node.get("role").and_then(|v| v.as_str()).unwrap_or("");
+    let name = node.get("name").and_then(|v| v.as_str()).unwrap_or("");
+    let bounds = node.get("bounds").and_then(|b| {
+        Some(ghostfox_core::engine::Bounds {
+            x: b.get("x")?.as_i64()?,
+            y: b.get("y")?.as_i64()?,
+            width: b.get("width")?.as_i64()?,
+            height: b.get("height")?.as_i64()?,
+        })
+    });
+    let is_text_leaf = matches!(role, "text leaf" | "text" | "statictext" | "text_leaf");
+    if is_text_leaf {
+        if let (Some(b), true) = (&bounds, !name.trim().is_empty()) {
+            texts.push((name.to_string(), b.clone(), parent.cloned()));
+        }
+    } else if let Some(b) = &bounds {
+        if b.width > 0 && b.height > 0 && role != "document" && role != "root" {
+            boxes.push(UiBox {
+                role: role.to_string(),
+                name: name.to_string(),
+                bounds: Some(b.clone()),
+            });
+        }
+    }
+    if let Some(children) = node.get("children").and_then(|c| c.as_array()) {
+        for child in children {
+            collect_ui_boxes(child, bounds.as_ref(), texts, boxes);
+        }
+    }
+}
+
+fn ui_audit_from_raw(raw: &serde_json::Value, viewport: (i64, i64)) -> Vec<serde_json::Value> {
+    let tree = raw.get("tree").cloned().unwrap_or_else(|| raw.clone());
+    let mut texts: Vec<(
+        String,
+        ghostfox_core::engine::Bounds,
+        Option<ghostfox_core::engine::Bounds>,
+    )> = Vec::new();
+    let mut boxes: Vec<UiBox> = Vec::new();
+    collect_ui_boxes(&tree, None, &mut texts, &mut boxes);
+    let mut issues: Vec<serde_json::Value> = Vec::new();
+
+    let intersects = |a: &ghostfox_core::engine::Bounds, b: &ghostfox_core::engine::Bounds| {
+        a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+    };
+    let contains = |a: &ghostfox_core::engine::Bounds, b: &ghostfox_core::engine::Bounds| {
+        a.x <= b.x
+            && a.y <= b.y
+            && a.x + a.width >= b.x + b.width
+            && a.y + a.height >= b.y + b.height
+    };
+
+    // 1. Clip: text leaves poking out of their container.
+    for (name, b, parent) in &texts {
+        if let Some(p) = parent {
+            let clip_r = b.x + b.width - (p.x + p.width);
+            let clip_b = b.y + b.height - (p.y + p.height);
+            let clip_l = p.x - b.x;
+            let clip_t = p.y - b.y;
+            let over_r = clip_r.max(0);
+            let over_b = clip_b.max(0);
+            if over_r > 0 || over_b > 0 {
+                issues.push(serde_json::json!({
+                    "type": "text-clipped",
+                    "severity": "error",
+                    "text": name,
+                    "bounds": b,
+                    "detail": format!(
+                        "teks keluar container: kanan +{over_r}px, bawah +{over_b}px (kiri {clip_l}px, atas {clip_t}px)"
+                    ),
+                }));
+            } else if clip_l < 1 || clip_t < 1 || clip_r.abs() < 1 || clip_b.abs() < 1 {
+                // 2. Padding: text touching the container edge.
+                let edge = if clip_l < 1 {
+                    "kiri"
+                } else if clip_t < 1 {
+                    "atas"
+                } else if clip_r.abs() < 1 {
+                    "kanan"
+                } else {
+                    "bawah"
+                };
+                issues.push(serde_json::json!({
+                    "type": "no-padding",
+                    "severity": "warn",
+                    "text": name,
+                    "bounds": b,
+                    "detail": format!("teks nempel tepi {edge} container (<1px)"),
+                }));
+            }
+        }
+    }
+
+    // 3. Viewport overflow (texts + boxes).
+    let (vw, vh) = viewport;
+    for (name, b, _) in &texts {
+        if b.x < 0 || b.y < 0 || b.x + b.width > vw || b.y + b.height > vh {
+            issues.push(serde_json::json!({
+                "type": "viewport-overflow",
+                "severity": "warn",
+                "text": name,
+                "bounds": b,
+                "detail": format!("keluar viewport {}x{}", vw, vh),
+            }));
+        }
+    }
+
+    // 4. Overlap: two boxes intersecting without containment.
+    for i in 0..boxes.len() {
+        for j in (i + 1)..boxes.len() {
+            let (a, b) = (&boxes[i], &boxes[j]);
+            let (Some(ba), Some(bb)) = (&a.bounds, &b.bounds) else {
+                continue;
+            };
+            if intersects(ba, bb) && !contains(ba, bb) && !contains(bb, ba) {
+                let big = ba.width * ba.height.max(0) + ba.height * ba.width.max(0);
+                let _ = big;
+                let inter_w = (ba.x + ba.width).min(bb.x + bb.width) - ba.x.max(bb.x);
+                let inter_h = (ba.y + ba.height).min(bb.y + bb.height) - ba.y.max(bb.y);
+                if inter_w > 2 && inter_h > 2 {
+                    issues.push(serde_json::json!({
+                        "type": "overlap",
+                        "severity": "error",
+                        "a": { "role": a.role, "name": a.name, "bounds": ba },
+                        "b": { "role": b.role, "name": b.name, "bounds": bb },
+                        "detail": format!("dua elemen tabrakan ({inter_w}x{inter_h}px)"),
+                    }));
+                }
+            }
+        }
+    }
+
+    // 5. Crowding: interactive boxes closer than 4px side by side.
+    let inter = |a: &UiBox| {
+        matches!(
+            a.role.as_str(),
+            "button" | "textbox" | "link" | "checkbox" | "radio" | "combobox" | "slider" | "tab"
+        )
+    };
+    for i in 0..boxes.len() {
+        for j in (i + 1)..boxes.len() {
+            let (a, b) = (&boxes[i], &boxes[j]);
+            if !inter(a) || !inter(b) {
+                continue;
+            }
+            let (Some(ba), Some(bb)) = (&a.bounds, &b.bounds) else {
+                continue;
+            };
+            let same_row = ba.y.max(bb.y) < ba.y.min(bb.y) + ba.height.max(bb.height);
+            if !same_row {
+                continue;
+            }
+            let gap = if ba.x >= bb.x + bb.width {
+                ba.x - (bb.x + bb.width)
+            } else if bb.x >= ba.x + ba.width {
+                bb.x - (ba.x + ba.width)
+            } else {
+                0
+            };
+            if gap < 4 {
+                issues.push(serde_json::json!({
+                    "type": "crowded",
+                    "severity": "warn",
+                    "a": { "role": a.role, "name": a.name, "bounds": ba },
+                    "b": { "role": b.role, "name": b.name, "bounds": bb },
+                    "detail": format!("elemen interaktif kelewat deket (jarak {gap}px)"),
+                }));
+            }
+        }
+    }
+
+    issues
+}
+
 fn native_a11y_flatten(raw: serde_json::Value) -> ghostfox_core::engine::A11ySnapshot {
     use ghostfox_core::engine::A11yElement;
     let tree = raw.get("tree").cloned().unwrap_or(raw);
