@@ -86,6 +86,8 @@ def install_engine(dest: Path | None = None, quiet: bool = False) -> Path:
     }
     if platform.system() == "Windows":
         engine_pat, _ = _win_assets()
+    elif platform.system() == "Darwin":
+        engine_pat, _ = _macos_assets()
     else:
         engine_pat, _ = _linux_assets()
     url = next(
@@ -93,7 +95,7 @@ def install_engine(dest: Path | None = None, quiet: bool = False) -> Path:
         None,
     )
     if not url:
-        raise RuntimeError(f"no Linux {engine_pat} engine asset in release {rel.get('tag_name')}")
+        raise RuntimeError(f"no {engine_pat} engine asset in release {rel.get('tag_name')}")
 
     if not quiet:
         print(f"downloading {url.split('/')[-1]} ...", file=sys.stderr)
@@ -117,12 +119,14 @@ def install_engine(dest: Path | None = None, quiet: bool = False) -> Path:
 
 
 def install_runtime(dest: Path | None = None, quiet: bool = False) -> Path:
-    """Download the prebuilt ``ghostfox-mcp`` runtime binary (Linux x86_64/arm64)."""
+    """Download the prebuilt ``ghostfox-mcp`` runtime binary (Linux x86_64/arm64, Windows x64, macOS)."""
     dest = dest or engine_home().parent / "mcp" / "ghostfox-mcp"
     if dest.exists():
         return dest
     if platform.system() == "Windows":
         _, runtime_asset = _win_assets()
+    elif platform.system() == "Darwin":
+        _, runtime_asset = _macos_assets()
     else:
         _, runtime_asset = _linux_assets()
     url = None
