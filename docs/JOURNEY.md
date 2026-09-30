@@ -320,6 +320,16 @@ needs the beforeinput/inputType sequence; the DOM input-event route
 doesn't sync the editing state). Next: study Flutter's text-editing
 channel + synthesize the right event order.
 
+### BUS app E2E (the user's real koperasi app, 2026-09-30)
+`/home/ubuntu/bus-core/app` — build web sukses (backend :
+`flutter build web --dart-define=API_BASE_URL=http://localhost:8080`;
+the default 10.0.2.2 = the Android emulator loopback). The login
+screen's semantics tree reads perfectly (Nomor Anggota / PIN / Masuk /
+Daftar) and native clicks hit Masuk — but the login flow is BLOCKED by
+the same Flutter typing gap (all JS routes — insertText, execCommand,
+beforeinput+input — write the DOM input but the Dart controllers
+never sync). Closing that gap unlocks real Flutter E2E.
+
 Progress (2026-09-30, continued):
 - **SHIPPED: Layer X-Ray** — RenderDocumentFlags::ForceVisibleContent
   threaded from drawSnapshot through CrossProcessPaint to
