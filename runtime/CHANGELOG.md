@@ -5,6 +5,33 @@ All notable changes to ghostfox will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `page_a11y_set_text` (M5/Flutter): the AT-native text input route —
+  the accessibly protocol action that syncs Flutter web semantics-mode
+  text fields (focus + value + trusted input event). The DOM routes
+  write a mirror nobody reads; this is the real one.
+- `page_proprio` (M4 proprioception): the honest body state — load
+  state, a11y focus, native selection/caret (the typing receipt),
+  scrollers, viewport. Frame-script reads; pages cannot fake it.
+- `page_cookie_events` (M4 proprioception): the cookie/session
+  heartbeat — every cookie change as {kind, host, name, path, flags},
+  NEVER the value. An auth cookie deletion = the earliest
+  session-death signal.
+- `session_vitals` (M4.5 interoception): the engine process-group
+  health — per-process CPU ticks + memory (Linux /proc).
+- `GHOSTFOX_WEBGL=1` launch env: re-enables WebGL for Flutter/
+  CanvasKit app E2E (the hardening prefs block it and the CPU-only
+  fallback crashes some screens).
+
+### Fixed
+- netcap: Juggler Network events are FLAT (url/status at params top
+  level), not CDP-shaped — the URLs were captured empty. Both
+  listeners corrected (the first-insert race masked the first fix).
+- a11ySetText: the schema rejects unknown return properties — the
+  tool results stay minimal now.
+
 ## [0.9.0] — 2026-09-30
 
 **The eyes release**: M2 → M2.5 → M2.9 → M3 → M3.5 → M5 in one train, plus the one-name rename. 52 tools.
