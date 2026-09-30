@@ -154,12 +154,20 @@ Lessons from THIS run:
 
 ## Active todo (execution order)
 
-- [ ] **Native a11y E2E** (blocked: host busy with renders) → **cut v0.8.2**
-- [ ] **X post v0.8** (draft ready — rate limit cleared?) + Show HN repost at US prime time
+- [x] M1 native a11y E2E → shipped in v0.8.2
+- [x] M2 native click broker → shipped (page_click_native, E2E verified)
+- [x] M2.5 compositor pixel capture → shipped (captureSurface + buffer reads)
+- [ ] **M2.9 the sixth sense** → Layer X-Ray + native framebuffer reads first
+  (see the M2.9 section — closes the hidden-canvas hole the E2E fell into)
+- [ ] M3 hearing: a11y AccEvent diff + mutation whispers + WebSocket frames
+- [ ] M3.5 smell: visual-stability events + timing sense + jank detector
+- [ ] M4/M4.5 proprioception + interoception (body state, session health)
+- [ ] M5 taste: persona metamorphosis (session state + fingerprint coherence)
 - [ ] Streamable HTTP transport (rmcp has it; the fork proved demand)
 - [ ] Network interception spike (verify Juggler route/setInterception — 1 day, then 3-5 days to build)
 - [ ] WebGPU v1 persona spoofing (close the Win/Mac-ARM leak; 2h per build cycle)
 - [ ] PR #782: watch for upstream beta.31 assets
+- [ ] MCP Registry: publish 0.8.2+ (needs user device authorization)
 
 ## Horizon — the C++ arc: an AI's five senses at the Gecko level
 
@@ -288,8 +296,8 @@ Priority: 1+2 first (they close the exact hole the E2E fell into), then
 ### M5 — 🛡 Policy layer
 Origin allowlists, enforced confirmations, redacted evidence.
 
-**Execution order**: M1 E2E → v0.8.2 → M2 (+M2.5 together) → M3/M3.5 →
-M4/M4.5 → M5.
+**Execution order**: M1 E2E → v0.8.2 → M2 → M2.5 → M2.9 (sixth sense) →
+M3/M3.5 → M4/M4.5 → M5.
 **The most "ghostfox" ones first**: cookie heartbeat + visual stability —
 both connect directly to field experience (the silently-revoked session,
 sleep-guessing in the playbook).
