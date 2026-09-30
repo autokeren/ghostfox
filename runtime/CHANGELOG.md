@@ -5,7 +5,9 @@ All notable changes to ghostfox will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.9.0] — 2026-09-30
+
+**The eyes release**: M2 → M2.5 → M2.9 → M3 → M3.5 → M5 in one train, plus the one-name rename. 52 tools.
 
 ### Added
 - `page_wait_stable` (M3.5 smell): wait until the render truly settles

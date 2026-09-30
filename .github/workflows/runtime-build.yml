@@ -34,6 +34,9 @@ jobs:
           - runner: windows-2022
             asset: ghostfox-mcp.exe
             container: windows
+          - runner: macos-14
+            asset: ghostfox-mcp-darwin
+            container: macos
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -47,6 +50,15 @@ jobs:
           cargo build --release -p ghostfox-mcp
           Copy-Item target\release\ghostfox-mcp.exe -Destination "$env:RUNNER_TEMP\${{ matrix.asset }}"
           Get-Item "$env:RUNNER_TEMP\${{ matrix.asset }}"
+
+      - name: Build on macOS (native cargo)
+        if: matrix.container == 'macos'
+        run: |
+          rustup default stable
+          cd runtime
+          cargo build --release -p ghostfox-mcp
+          cp target/release/ghostfox-mcp "$RUNNER_TEMP/${{ matrix.asset }}"
+          ls -la "$RUNNER_TEMP/${{ matrix.asset }}"
 
       - name: Build inside ubuntu:24.04 (native arch)
         if: matrix.container != 'windows'

@@ -44,6 +44,21 @@ def _win_assets() -> tuple[str, str]:
     )
 
 
+def _macos_assets() -> tuple[str, str]:
+    """(engine asset substring, runtime asset name) for macOS.
+
+    The engine itself is Linux-only for now — macOS gets the runtime
+    binary (ghostfox-mcp-darwin) for driving remote engines or
+    from-source builds.
+    """
+    if platform.machine().lower() in ("x86_64", "amd64", "arm64", "aarch64"):
+        return "mac.x86_64", "ghostfox-mcp-darwin"
+    raise RuntimeError(
+        "prebuilt runtime for macOS is x86_64/arm64 only "
+        "(engine from source: see the repo README)"
+    )
+
+
 def _linux_assets() -> tuple[str, str]:
     """(engine asset substring, runtime asset name) for this Linux arch."""
     mach = platform.machine().lower()
