@@ -21,6 +21,8 @@ use crate::juggler::JugglerConnection;
 pub struct CamoufoxEngine {
     conn: Arc<JugglerConnection>,
     identity: Identity,
+    /// The engine process PID — the M4.5 vitals walk keys off it.
+    pid: u32,
     #[allow(dead_code)]
     home: PathBuf,
     /// Ephemeral profile dir to remove on shutdown (None = user-provided,
@@ -232,6 +234,7 @@ impl CamoufoxEngine {
         }
 
         let engine = Arc::new(Self {
+            pid,
             conn,
             identity,
             home,
@@ -327,7 +330,7 @@ impl CamoufoxEngine {
                     "target {target_id} is not attached (open popup unknown?)"
                 ))
             })?;
-        let handle = CamoufoxPage::new(self.conn.clone(), target_id.to_string());
+        let handle = CamoufoxPage::new(self.conn.clone(), target_id.to_string(), self.pid);
         *handle.session_id.lock().await = Some(sid.clone());
         if let Some((cx, fid)) = self.contexts.lock().await.get(&sid).cloned() {
             *handle.execution_context_id.lock().await = Some(cx);
@@ -457,6 +460,9 @@ fn autodetect_engine() -> Option<(PathBuf, &'static str)> {
 pub struct CamoufoxPage {
     conn: Arc<JugglerConnection>,
     target_id: String,
+    /// The engine's PID — the M4.5 vitals walk keys off this process
+    /// group (the child's setsid makes the engine the group leader).
+    engine_pid: u32,
     /// Juggler session for this target; all Page/Runtime commands must be
     /// routed through it, not the root session.
     session_id: Mutex<Option<String>>,
@@ -470,10 +476,11 @@ pub struct CamoufoxPage {
 use tokio::sync::Mutex;
 
 impl CamoufoxPage {
-    fn new(conn: Arc<JugglerConnection>, target_id: String) -> Arc<Self> {
+    fn new(conn: Arc<JugglerConnection>, target_id: String, engine_pid: u32) -> Arc<Self> {
         Arc::new(Self {
             conn,
             target_id,
+            engine_pid,
             session_id: Mutex::new(None),
             main_frame_id: Mutex::new(None),
             frame_id: Mutex::new(None),
@@ -568,7 +575,7 @@ impl Engine for CamoufoxEngine {
             })?
             .to_string();
 
-        let handle = CamoufoxPage::new(self.conn.clone(), target_id);
+        let handle = CamoufoxPage::new(self.conn.clone(), target_id, self.pid);
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
         loop {
             if std::time::Instant::now() > deadline {
@@ -1848,6 +1855,103 @@ impl PageHandle for CamoufoxPage {
                 height: b.get("height")?.as_i64()?,
             })
         }))
+    }
+
+    async fn proprio_state(&self) -> Result<serde_json::Value> {
+        let sid = self.session_id().await?;
+        let res = self
+            .conn
+            .request_session_t(
+                "Page.getProprioState",
+                serde_json::json!({}),
+                Some(&sid),
+                std::time::Duration::from_secs(10),
+            )
+            .await?;
+        if let Some(err) = res.get("error").and_then(|e| e.as_str()) {
+            return Err(GhostError::PageOp(format!("getProprioState: {err}")));
+        }
+        Ok(res.get("state").cloned().unwrap_or(serde_json::Value::Null))
+    }
+
+    async fn read_cookie_events(&self, clear: bool) -> Result<Vec<serde_json::Value>> {
+        let sid = self.session_id().await?;
+        let res = self
+            .conn
+            .request_session_t(
+                "Page.readCookieEvents",
+                serde_json::json!({ "clear": clear }),
+                Some(&sid),
+                std::time::Duration::from_secs(10),
+            )
+            .await?;
+        if let Some(err) = res.get("error").and_then(|e| e.as_str()) {
+            return Err(GhostError::PageOp(format!("readCookieEvents: {err}")));
+        }
+        Ok(res
+            .get("events")
+            .and_then(|e| e.as_array())
+            .cloned()
+            .unwrap_or_default())
+    }
+
+    async fn session_vitals(&self) -> Result<serde_json::Value> {
+        // Linux only: walk /proc for the engine's process group. CPU ticks
+        // (utime+stime) are cumulative — the agent diffs successive reads.
+        #[cfg(target_os = "linux")]
+        {
+            let mut procs: Vec<serde_json::Value> = Vec::new();
+            if let Ok(entries) = std::fs::read_dir("/proc") {
+                for entry in entries.flatten() {
+                    let name = entry.file_name();
+                    let Some(pid) = name.to_str().and_then(|v| v.parse::<u32>().ok()) else {
+                        continue;
+                    };
+                    let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) else {
+                        continue;
+                    };
+                    let fields: Vec<&str> = stat.split_whitespace().collect();
+                    if fields.len() < 24 {
+                        continue;
+                    }
+                    let ppid: u32 = fields[3].parse().unwrap_or(0);
+                    let pgrp: u32 = fields[4].parse().unwrap_or(0);
+                    if pid != self.engine_pid && ppid != self.engine_pid && pgrp != self.engine_pid
+                    {
+                        continue;
+                    }
+                    let comm = fields[1].trim_matches(|c| c == '(' || c == ')').to_string();
+                    let state = fields[2].to_string();
+                    let utime: u64 = fields[13].parse().unwrap_or(0);
+                    let stime: u64 = fields[14].parse().unwrap_or(0);
+                    let vsize_kb: u64 = fields[22].parse::<u64>().unwrap_or(0) / 1024;
+                    let rss_kb: u64 = fields[23].parse::<u64>().unwrap_or(0) * 4;
+                    procs.push(serde_json::json!({
+                        "pid": pid,
+                        "comm": comm,
+                        "state": state,
+                        "utime": utime,
+                        "stime": stime,
+                        "vsizeKb": vsize_kb,
+                        "rssKb": rss_kb,
+                    }));
+                }
+            }
+            procs.sort_by_key(|p| p.get("pid").and_then(|v| v.as_u64()).unwrap_or(0));
+            Ok(serde_json::json!({
+                "enginePid": self.engine_pid,
+                "processes": procs,
+            }))
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = self.engine_pid;
+            Ok(serde_json::json!({
+                "enginePid": self.engine_pid,
+                "processes": [],
+                "note": "vitals are Linux-only for now",
+            }))
+        }
     }
 
     async fn a11y_set_text(&self, role: &str, name: &str, text: &str) -> Result<bool> {

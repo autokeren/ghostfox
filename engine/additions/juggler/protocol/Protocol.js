@@ -937,6 +937,20 @@ const Page = {
         rects: t.Array(t.String),
       },
     },
+    'getProprioState': {
+      params: {},
+      returns: {
+        state: t.Object,
+      },
+    },
+    'readCookieEvents': {
+      params: {
+        clear: t.Optional(t.Boolean),
+      },
+      returns: {
+        events: t.Array(t.Object),
+      },
+    },
     'startMutationWhispers': {
       params: {},
       returns: {

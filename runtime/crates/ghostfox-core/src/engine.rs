@@ -247,6 +247,30 @@ pub trait PageHandle: Send + Sync {
             "a11y_set_text not supported by this engine".into(),
         ))
     }
+    /// M4 Proprioception: the honest body state — load state, a11y focus,
+    /// native selection/caret, scrollers, viewport (frame-script read).
+    async fn proprio_state(&self) -> Result<serde_json::Value> {
+        Err(crate::error::GhostError::PageOp(
+            "proprio_state not supported by this engine".into(),
+        ))
+    }
+    /// M4 Proprioception: the cookie/session heartbeat — {kind, host,
+    /// name, path, flags} for every cookie change since the page opened.
+    /// Values are NEVER recorded. An auth cookie deletion = the earliest
+    /// session-death signal.
+    async fn read_cookie_events(&self, clear: bool) -> Result<Vec<serde_json::Value>> {
+        let _ = clear;
+        Err(crate::error::GhostError::PageOp(
+            "read_cookie_events not supported by this engine".into(),
+        ))
+    }
+    /// M4.5 Interoception: the engine process-group health — per-process
+    /// CPU ticks + memory (Linux /proc; graceful degradation elsewhere).
+    async fn session_vitals(&self) -> Result<serde_json::Value> {
+        Err(crate::error::GhostError::PageOp(
+            "session_vitals not supported by this engine".into(),
+        ))
+    }
     /// M5 the Critic: every element's honest layout rect (frame-script
     /// Xray walk — includes elements the a11y tree prunes).
     async fn collect_all_rects(&self) -> Result<Vec<UiRect>> {

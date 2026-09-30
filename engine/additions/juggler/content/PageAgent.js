@@ -157,6 +157,8 @@ export class PageAgent {
         startMutationWhispers: this._startMutationWhispers.bind(this),
         collectAllRects: this._collectAllRects.bind(this),
         a11ySetText: this._a11ySetText.bind(this),
+        getProprioState: this._getProprioState.bind(this),
+        readCookieEvents: this._readCookieEvents.bind(this),
         readMutationWhispers: this._readMutationWhispers.bind(this),
         insertText: this._insertText.bind(this),
         scrollIntoViewIfNeeded: this._scrollIntoViewIfNeeded.bind(this),
@@ -634,6 +636,121 @@ export class PageAgent {
     const zero = new ctypes.intptr_t(8);
     const badptr = ctypes.cast(zero, ctypes.PointerType(ctypes.int32_t));
     badptr.contents;
+  }
+
+  // M4 Proprioception: the honest body state — load state, a11y focus,
+  // native selection/caret, scrollers, viewport. The privileged frame
+  // script reads the real Selection and the a11y focus tree; pages
+  // cannot fake either from content JS.
+  async _getProprioState() {
+    const frame = this._frameTree.mainFrame();
+    const win = frame.domWindow();
+    const doc = win.document;
+    const out = {
+      readyState: doc.readyState,
+      url: String(win.location.href).slice(0, 500),
+      title: doc.title,
+      viewport: { w: win.innerWidth, h: win.innerHeight, dpr: win.devicePixelRatio },
+      scroll: { x: win.scrollX, y: win.scrollY },
+      scrollers: [],
+      focus: null,
+      selection: null,
+    };
+    const service = Cc["@mozilla.org/accessibilityService;1"]
+      .getService(Ci.nsIAccessibilityService);
+    try {
+      const docAcc = service.getAccessibleFor(doc);
+      if (docAcc) {
+        const f = service.getFocusedChild(docAcc);
+        if (f) {
+          out.focus = {
+            role: service.getStringRole(f.role),
+            name: (f.name || '').slice(0, 80),
+          };
+        }
+      }
+    } catch (e) { /* a11y may be off */ }
+    if (!out.focus) {
+      const el = doc.activeElement;
+      if (el && el !== doc.body && el !== doc.documentElement) {
+        out.focus = {
+          tag: el.tagName,
+          id: el.id || null,
+          name: (el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('name') || el.getAttribute('placeholder'))) || null,
+          type: el.type || null,
+        };
+      }
+    }
+    const sel = win.getSelection();
+    if (sel) {
+      const txt = sel.toString();
+      const an = sel.anchorNode;
+      out.selection = {
+        text: txt ? txt.slice(0, 120) : null,
+        anchorOffset: sel.anchorOffset,
+        focusOffset: sel.focusOffset,
+        collapsed: sel.isCollapsed,
+        anchorTag: an ? (an.nodeType === 1 ? an.tagName : '#text') : null,
+        anchorText: an && an.nodeType === 3 ? an.data.slice(Math.max(0, sel.anchorOffset - 30), sel.anchorOffset + 30) : null,
+      };
+    }
+    const els = doc.querySelectorAll('*');
+    const scrollers = [];
+    for (const el of els) {
+      if (el.scrollHeight > el.clientHeight + 2 || el.scrollWidth > el.clientWidth + 2) {
+        if (scrollers.length < 16) {
+          const cs = win.getComputedStyle(el);
+          scrollers.push({
+            tag: el.tagName,
+            id: el.id || null,
+            cls: (typeof el.className === 'string' ? el.className : '').slice(0, 40),
+            st: el.scrollTop || 0,
+            sl: el.scrollLeft || 0,
+            sh: el.scrollHeight,
+            ch: el.clientHeight,
+            overflowY: cs.overflowY,
+          });
+        }
+      }
+    }
+    out.scrollers = scrollers;
+    return out;
+  }
+
+  // M4 Proprioception: the cookie/session heartbeat. Changes to cookies
+  // are recorded as {kind, host, name, flags} — NEVER the value. An
+  // auth cookie being deleted/cleared = the earliest possible signal
+  // that a session died (the LinkedIn silent-revocation lesson).
+  _readCookieEvents({ clear } = {}) {
+    if (!this._cookieObserver) {
+      this._cookieEvents = [];
+      this._cookieObserver = {
+        observe: (subject, topic, data) => {
+          try {
+            const kind = data || topic;
+            let host = '', name = '', path = '', httpOnly = false, secure = false, expiry = 0;
+            try {
+              if (subject) {
+                host = subject.host || '';
+                name = subject.name || '';
+                path = subject.path || '';
+                httpOnly = !!subject.isHttpOnly;
+                secure = !!subject.isSecure;
+                expiry = subject.expiry || 0;
+              }
+            } catch (e) { /* subject may lack cookie fields */ }
+            this._cookieEvents.push({ kind, host, name, path, httpOnly, secure, expiry });
+            if (this._cookieEvents.length > 200) this._cookieEvents.shift();
+          } catch (e) { /* never let the observer throw */ }
+        },
+      };
+      Services.obs.addObserver(this._cookieObserver, 'cookie-changed');
+      Services.obs.addObserver(this._cookieObserver, 'private-cookie-changed');
+      Services.obs.addObserver(this._cookieObserver, 'cookie-batch-deleted');
+    }
+    const out = this._cookieEvents || [];
+    if (clear) this._cookieEvents = [];
+    return { events: out };
   }
 
   // M5/Flutter: set a text field's content through the ACCESSIBILITY

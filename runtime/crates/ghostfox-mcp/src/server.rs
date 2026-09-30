@@ -134,6 +134,13 @@ struct InitScriptParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+struct CookieEventsParams {
+    session_id: String,
+    page_id: String,
+    clear: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct NetParams {
     session_id: String,
     page_id: String,
@@ -1249,6 +1256,87 @@ impl GhostfoxServer {
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
         Ok(text_result(
             serde_json::to_string_pretty(&serde_json::json!({ "ok": ok })).unwrap_or_default(),
+        ))
+    }
+
+    #[tool(
+        description = "M4 proprioception: the browser's honest body state — load state, focused element (a11y tree), native selection/caret (the typing receipt: where the caret actually landed), scrollers, viewport. Read from the privileged frame script, pages cannot fake it."
+    )]
+    async fn page_proprio(
+        &self,
+        Parameters(PageRefParams {
+            session_id,
+            page_id,
+            ..
+        }): Parameters<PageRefParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let page = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let state = page
+            .proprio_state()
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        Ok(text_result(
+            serde_json::to_string_pretty(&state).unwrap_or_default(),
+        ))
+    }
+
+    #[tool(
+        description = "M4 proprioception: the cookie/session heartbeat — every cookie change (added/changed/deleted/cleared) since the page opened, as {kind, host, name, path, flags}. Values are NEVER recorded. An auth cookie being deleted = the earliest session-death signal (silent revocations can't hide). clear=true resets the buffer."
+    )]
+    async fn page_cookie_events(
+        &self,
+        Parameters(CookieEventsParams {
+            session_id,
+            page_id,
+            clear,
+        }): Parameters<CookieEventsParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let page = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let events = page
+            .read_cookie_events(clear.unwrap_or(false))
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        Ok(text_result(
+            serde_json::to_string_pretty(&events).unwrap_or_default(),
+        ))
+    }
+
+    #[tool(
+        description = "M4.5 interoception: the engine process-group health — per-process CPU ticks + memory (RSS/VmSize). A leaking tab shows as a growing content process; diff successive reads to feel the leak. Linux-only for now."
+    )]
+    async fn session_vitals(
+        &self,
+        Parameters(PageRefParams {
+            session_id,
+            page_id,
+            ..
+        }): Parameters<PageRefParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let page = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let v = page
+            .session_vitals()
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        Ok(text_result(
+            serde_json::to_string_pretty(&v).unwrap_or_default(),
         ))
     }
 

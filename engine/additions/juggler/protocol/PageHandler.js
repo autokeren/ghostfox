@@ -301,6 +301,14 @@ export class PageHandler {
     return await this._contentPage.send('a11ySetText', params);
   }
 
+  async ['Page.getProprioState'](params) {
+    return await this._contentPage.send('getProprioState', params || {});
+  }
+
+  async ['Page.readCookieEvents'](params) {
+    return await this._contentPage.send('readCookieEvents', params || {});
+  }
+
   async ['Page.collectAllRects'](params) {
     return await this._contentPage.send('collectAllRects', params || {});
   }
