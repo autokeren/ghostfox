@@ -366,7 +366,7 @@ the text but the Dart controllers don't. Research findings (2026-09-30):
   params top level), not CDP-shaped (request/url) — both listeners
   needed the fix; the first-insert race meant the old listener's
   empty-url entries masked the fix until both were corrected.
-- **PULSA E2E COMPLETE (live)**: Pulsa → XXXX-REDACTED (Indosat
+- **PULSA E2E COMPLETE (live)**: Pulsa → nomor uji (Indosat
   detected) → products load → 5rb Rp6.195 → PIN sheet → pay →
   POST /api/v1/member/ppob/txns → result screen: "Pembayaran Gagal —
   supplier menolak: Saldo tidak cukup (Saldo 0)" = the backend's
