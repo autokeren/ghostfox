@@ -239,6 +239,14 @@ pub trait PageHandle: Send + Sync {
             "capture_canvas_buffer not supported by this engine".into(),
         ))
     }
+    /// M5/Flutter: set a text field's content via the AT-native
+    /// a11y editable-text action (the route Flutter semantics listens on).
+    async fn a11y_set_text(&self, role: &str, name: &str, text: &str) -> Result<bool> {
+        let _ = (role, name, text);
+        Err(crate::error::GhostError::PageOp(
+            "a11y_set_text not supported by this engine".into(),
+        ))
+    }
     /// M5 the Critic: every element's honest layout rect (frame-script
     /// Xray walk — includes elements the a11y tree prunes).
     async fn collect_all_rects(&self) -> Result<Vec<UiRect>> {

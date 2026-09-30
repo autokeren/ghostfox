@@ -61,6 +61,18 @@ struct DragParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+struct A11ySetTextParams {
+    session_id: String,
+    page_id: String,
+    /// Native a11y role of the field (e.g. "entry", "textbox").
+    role: String,
+    /// Native a11y name of the field (e.g. "Nomor Anggota").
+    name: String,
+    /// The text to set.
+    text: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct WaitStableParams {
     session_id: String,
     page_id: String,
@@ -1207,6 +1219,36 @@ impl GhostfoxServer {
                 "grid": grid,
             }))
             .unwrap_or_default(),
+        ))
+    }
+
+    #[tool(
+        description = "M5/FLUTTER: set a text field's content through the ACCESSIBILITY protocol (nsIAccessibleEditableText.setTextContents) — the AT-native route. Flutter web in semantics mode edits via the a11y layer, not DOM input events, so this is the route that syncs the Dart controllers. Pass the role+name as seen in page_a11y(native=true). Returns ok/error."
+    )]
+    async fn page_a11y_set_text(
+        &self,
+        Parameters(A11ySetTextParams {
+            session_id,
+            page_id,
+            role,
+            name,
+            text,
+        }): Parameters<A11ySetTextParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let page = session
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let ok = page
+            .a11y_set_text(&role, &name, &text)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        Ok(text_result(
+            serde_json::to_string_pretty(&serde_json::json!({ "ok": ok })).unwrap_or_default(),
         ))
     }
 

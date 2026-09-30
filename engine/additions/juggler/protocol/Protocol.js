@@ -920,6 +920,17 @@ const Page = {
         data: t.String,
       }
     },
+    'a11ySetText': {
+      params: {
+        role: t.String,
+        name: t.String,
+        text: t.String,
+      },
+      returns: {
+        ok: t.Optional(t.Boolean),
+        error: t.Optional(t.String),
+      },
+    },
     'collectAllRects': {
       params: {},
       returns: {

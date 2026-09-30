@@ -297,6 +297,10 @@ export class PageHandler {
     this._pageNetwork.fulfillInterceptedRequest(requestId, status, statusText, headers, base64body);
   }
 
+  async ['Page.a11ySetText'](params) {
+    return await this._contentPage.send('a11ySetText', params);
+  }
+
   async ['Page.collectAllRects'](params) {
     return await this._contentPage.send('collectAllRects', params || {});
   }

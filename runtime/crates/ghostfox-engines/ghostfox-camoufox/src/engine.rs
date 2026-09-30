@@ -1830,6 +1830,23 @@ impl PageHandle for CamoufoxPage {
         }))
     }
 
+    async fn a11y_set_text(&self, role: &str, name: &str, text: &str) -> Result<bool> {
+        let sid = self.session_id().await?;
+        let res = self
+            .conn
+            .request_session_t(
+                "Page.a11ySetText",
+                serde_json::json!({ "role": role, "name": name, "text": text }),
+                Some(&sid),
+                std::time::Duration::from_secs(10),
+            )
+            .await?;
+        if let Some(err) = res.get("error").and_then(|e| e.as_str()) {
+            return Err(GhostError::PageOp(format!("a11ySetText: {err}")));
+        }
+        Ok(res.get("ok").and_then(|v| v.as_bool()).unwrap_or(false))
+    }
+
     async fn collect_all_rects(&self) -> Result<Vec<ghostfox_core::engine::UiRect>> {
         let sid = self.session_id().await?;
         let res = self

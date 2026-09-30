@@ -156,6 +156,7 @@ export class PageAgent {
         captureCanvasBuffer: this._captureCanvasBuffer.bind(this),
         startMutationWhispers: this._startMutationWhispers.bind(this),
         collectAllRects: this._collectAllRects.bind(this),
+        a11ySetText: this._a11ySetText.bind(this),
         readMutationWhispers: this._readMutationWhispers.bind(this),
         insertText: this._insertText.bind(this),
         scrollIntoViewIfNeeded: this._scrollIntoViewIfNeeded.bind(this),
@@ -633,6 +634,55 @@ export class PageAgent {
     const zero = new ctypes.intptr_t(8);
     const badptr = ctypes.cast(zero, ctypes.PointerType(ctypes.int32_t));
     badptr.contents;
+  }
+
+  // M5/Flutter: set a text field's content through the ACCESSIBILITY
+  // protocol (nsIAccessibleEditableText.setTextContents) — the AT-native
+  // route. Flutter web in semantics mode edits via the a11y layer, not
+  // DOM input events, so the AT action is the only route that syncs the
+  // Dart controllers.
+  async _a11ySetText({role, name, text}) {
+    const service = Cc["@mozilla.org/accessibilityService;1"]
+      .getService(Ci.nsIAccessibilityService);
+    const win = this._frameTree.mainFrame().domWindow();
+    const docAcc = service.getAccessibleFor(win.document);
+    if (!docAcc) return { error: 'no document accessible' };
+    // The tree builds lazily — wait for the a11y update to complete
+    // before walking (same loop as _getFullAXTree).
+    let waits = 0;
+    while (docAcc.document.isUpdatePendingForJugglerAccessibility && waits++ < 50) {
+      await new Promise(x => win.requestAnimationFrame(x));
+    }
+    const find = (acc) => {
+      const r = service.getStringRole(acc.role);
+      if (r === role && acc.name && acc.name.includes(name))
+        return acc;
+      for (let child = acc.firstChild; child; child = child.nextSibling) {
+        const hit = find(child);
+        if (hit) return hit;
+      }
+      return null;
+    };
+    const target = find(docAcc);
+    if (!target) {
+      const seen = [];
+      const dump = (acc) => {
+        if (seen.length < 20) {
+          seen.push(service.getStringRole(acc.role) + ':' + (acc.name || '').slice(0, 24));
+        }
+        for (let child = acc.firstChild; child; child = child.nextSibling) dump(child);
+      };
+      dump(docAcc);
+      return { error: `no accessible for role=${role} name=${name} — tree: ${seen.join(' | ')}` };
+    }
+    let editable = null;
+    try {
+      editable = target.QueryInterface(Ci.nsIAccessibleEditableText);
+    } catch (e) {
+      return { error: 'accessible is not editable text' };
+    }
+    editable.setTextContents(String(text));
+    return { ok: true };
   }
 
   // M5 the Critic: every element's honest layout rect from the frame
