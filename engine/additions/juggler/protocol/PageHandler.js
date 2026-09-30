@@ -297,6 +297,10 @@ export class PageHandler {
     this._pageNetwork.fulfillInterceptedRequest(requestId, status, statusText, headers, base64body);
   }
 
+  async ['Page.collectAllRects'](params) {
+    return await this._contentPage.send('collectAllRects', params || {});
+  }
+
   async ['Page.startMutationWhispers'](params) {
     return await this._contentPage.send('startMutationWhispers', params || {});
   }

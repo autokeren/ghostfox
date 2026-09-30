@@ -1242,7 +1242,8 @@ impl GhostfoxServer {
                 }
             })
             .unwrap_or((1280, 800));
-        let issues = ui_audit_from_raw(&raw, viewport);
+        let full_rects = page.collect_all_rects().await.unwrap_or_default();
+        let issues = ui_audit_from_raw(&raw, viewport, &full_rects);
         let (mut errors, mut warns) = (0usize, 0usize);
         for i in &issues {
             match i.get("severity").and_then(|v| v.as_str()) {
@@ -3725,7 +3726,11 @@ fn collect_ui_boxes(
     }
 }
 
-fn ui_audit_from_raw(raw: &serde_json::Value, viewport: (i64, i64)) -> Vec<serde_json::Value> {
+fn ui_audit_from_raw(
+    raw: &serde_json::Value,
+    viewport: (i64, i64),
+    full_rects: &[ghostfox_core::engine::UiRect],
+) -> Vec<serde_json::Value> {
     let tree = raw.get("tree").cloned().unwrap_or_else(|| raw.clone());
     let mut texts: Vec<(
         String,
@@ -3736,10 +3741,10 @@ fn ui_audit_from_raw(raw: &serde_json::Value, viewport: (i64, i64)) -> Vec<serde
     collect_ui_boxes(&tree, None, &mut texts, &mut boxes);
     let mut issues: Vec<serde_json::Value> = Vec::new();
 
-    let intersects = |a: &ghostfox_core::engine::Bounds, b: &ghostfox_core::engine::Bounds| {
+    let _intersects = |a: &ghostfox_core::engine::Bounds, b: &ghostfox_core::engine::Bounds| {
         a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
     };
-    let contains = |a: &ghostfox_core::engine::Bounds, b: &ghostfox_core::engine::Bounds| {
+    let _contains = |a: &ghostfox_core::engine::Bounds, b: &ghostfox_core::engine::Bounds| {
         a.x <= b.x
             && a.y <= b.y
             && a.x + a.width >= b.x + b.width
@@ -3801,24 +3806,35 @@ fn ui_audit_from_raw(raw: &serde_json::Value, viewport: (i64, i64)) -> Vec<serde
         }
     }
 
-    // 4. Overlap: two boxes intersecting without containment.
-    for i in 0..boxes.len() {
-        for j in (i + 1)..boxes.len() {
-            let (a, b) = (&boxes[i], &boxes[j]);
-            let (Some(ba), Some(bb)) = (&a.bounds, &b.bounds) else {
+    // UiRect geometry helpers (the UiRect fields are x/y/w/h).
+    let r_intersects = |a: &ghostfox_core::engine::UiRect, b: &ghostfox_core::engine::UiRect| {
+        a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+    };
+    let r_contains = |a: &ghostfox_core::engine::UiRect, b: &ghostfox_core::engine::UiRect| {
+        a.x <= b.x && a.y <= b.y && a.x + a.w >= b.x + b.w && a.y + a.h >= b.y + b.h
+    };
+
+    // 4. Overlap: FULL-DOM rects (empty divs included) — computed from
+    // the privileged frame-script walk, not the pruned a11y tree.
+    // Skip ancestor/descendant pairs via containment; skip tiny noise.
+    for i in 0..full_rects.len() {
+        let a = &full_rects[i];
+        if a.w * a.h < 64 {
+            continue;
+        }
+        for b in full_rects.iter().skip(i + 1) {
+            if b.w * b.h < 64 {
                 continue;
-            };
-            if intersects(ba, bb) && !contains(ba, bb) && !contains(bb, ba) {
-                let big = ba.width * ba.height.max(0) + ba.height * ba.width.max(0);
-                let _ = big;
-                let inter_w = (ba.x + ba.width).min(bb.x + bb.width) - ba.x.max(bb.x);
-                let inter_h = (ba.y + ba.height).min(bb.y + bb.height) - ba.y.max(bb.y);
+            }
+            if r_intersects(a, b) && !r_contains(a, b) && !r_contains(b, a) {
+                let inter_w = (a.x + a.w).min(b.x + b.w) - a.x.max(b.x);
+                let inter_h = (a.y + a.h).min(b.y + b.h) - a.y.max(b.y);
                 if inter_w > 2 && inter_h > 2 {
                     issues.push(serde_json::json!({
                         "type": "overlap",
                         "severity": "error",
-                        "a": { "role": a.role, "name": a.name, "bounds": ba },
-                        "b": { "role": b.role, "name": b.name, "bounds": bb },
+                        "a": { "tag": a.tag, "bounds": a },
+                        "b": { "tag": b.tag, "bounds": b },
                         "detail": format!("dua elemen tabrakan ({inter_w}x{inter_h}px)"),
                     }));
                 }

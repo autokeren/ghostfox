@@ -920,6 +920,12 @@ const Page = {
         data: t.String,
       }
     },
+    'collectAllRects': {
+      params: {},
+      returns: {
+        rects: t.Array(t.String),
+      },
+    },
     'startMutationWhispers': {
       params: {},
       returns: {

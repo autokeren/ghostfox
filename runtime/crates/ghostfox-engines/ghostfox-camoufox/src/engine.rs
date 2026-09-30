@@ -1830,6 +1830,40 @@ impl PageHandle for CamoufoxPage {
         }))
     }
 
+    async fn collect_all_rects(&self) -> Result<Vec<ghostfox_core::engine::UiRect>> {
+        let sid = self.session_id().await?;
+        let res = self
+            .conn
+            .request_session_t(
+                "Page.collectAllRects",
+                serde_json::json!({}),
+                Some(&sid),
+                std::time::Duration::from_secs(10),
+            )
+            .await?;
+        Ok(res
+            .get("rects")
+            .and_then(|w| w.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| {
+                        v.as_str()
+                            .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+                    })
+                    .filter_map(|v| {
+                        Some(ghostfox_core::engine::UiRect {
+                            tag: v.get("tag")?.as_str()?.to_string(),
+                            x: v.get("x")?.as_i64()?,
+                            y: v.get("y")?.as_i64()?,
+                            w: v.get("w")?.as_i64()?,
+                            h: v.get("h")?.as_i64()?,
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default())
+    }
+
     async fn start_mutation_whispers(&self) -> Result<()> {
         let sid = self.session_id().await?;
         self.conn

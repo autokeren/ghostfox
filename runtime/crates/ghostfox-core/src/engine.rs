@@ -153,6 +153,16 @@ pub struct CanvasBuffer {
     pub height: u32,
 }
 
+/// M5 the Critic: a plain DOM element's layout rect (tag + geometry).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UiRect {
+    pub tag: String,
+    pub x: i64,
+    pub y: i64,
+    pub w: i64,
+    pub h: i64,
+}
+
 /// M2.5: raw RGBA pixels of a viewport rectangle, straight from the
 /// compositor (no page-realm canvas, no toDataURL, no PNG round-trip).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -227,6 +237,13 @@ pub trait PageHandle: Send + Sync {
         let _ = target;
         Err(crate::error::GhostError::PageOp(
             "capture_canvas_buffer not supported by this engine".into(),
+        ))
+    }
+    /// M5 the Critic: every element's honest layout rect (frame-script
+    /// Xray walk — includes elements the a11y tree prunes).
+    async fn collect_all_rects(&self) -> Result<Vec<UiRect>> {
+        Err(crate::error::GhostError::PageOp(
+            "collect_all_rects not supported by this engine".into(),
         ))
     }
     /// M3 Hearing: start the privileged mutation-whisper observer.

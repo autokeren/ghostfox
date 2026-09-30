@@ -155,6 +155,7 @@ export class PageAgent {
         scrollAccessibleIntoView: this._scrollAccessibleIntoView.bind(this),
         captureCanvasBuffer: this._captureCanvasBuffer.bind(this),
         startMutationWhispers: this._startMutationWhispers.bind(this),
+        collectAllRects: this._collectAllRects.bind(this),
         readMutationWhispers: this._readMutationWhispers.bind(this),
         insertText: this._insertText.bind(this),
         scrollIntoViewIfNeeded: this._scrollIntoViewIfNeeded.bind(this),
@@ -632,6 +633,29 @@ export class PageAgent {
     const zero = new ctypes.intptr_t(8);
     const badptr = ctypes.cast(zero, ctypes.PointerType(ctypes.int32_t));
     badptr.contents;
+  }
+
+  // M5 the Critic: every element's honest layout rect from the frame
+  // script (Xray getBoundingClientRect — page hooks cannot reach this
+  // call). The a11y tree prunes non-accessible elements; the full DOM
+  // walk sees empty divs too (the overlap detector needs them).
+  _collectAllRects() {
+    const doc = this._frameTree.mainFrame().domWindow().document;
+    const out = [];
+    const els = doc.querySelectorAll('*');
+    for (const el of els) {
+      const r = el.getBoundingClientRect();
+      if (r.width < 2 || r.height < 2) continue;
+      out.push({
+        tag: el.tagName,
+        x: Math.round(r.x),
+        y: Math.round(r.y),
+        w: Math.round(r.width),
+        h: Math.round(r.height),
+      });
+      if (out.length >= 1200) break;
+    }
+    return { rects: out.map((r) => JSON.stringify(r)) };
   }
 
   // M3 Hearing: unhookable DOM-change whispers. The observer lives in
