@@ -341,10 +341,15 @@ the text but the Dart controllers don't. Research findings (2026-09-30):
   the ACCESSIBILITY layer — zero DOM listeners attached, so DOM routes
   write a mirror nobody reads. The AT-native route works:
   `page_a11y_set_text` (nsIAccessibleEditableText.setTextContents with
-  the a11y-update wait loop) — the BUS app's Nomor Anggota accepted it
-  (ok:true) where every DOM route failed. The PIN field's raw role
-  string differs ("password text"-family) — confirm from the tree dump
-  and the full login flow follows.
+  the a11y-update wait loop, name-only match) — the BUS app's BOTH
+  fields accepted it (ok:true) where every DOM route failed.
+- **Next-layer finding**: the Flutter semantics text field ACCEPTS
+  setTextContents but does NOT consume it — the DOM mirrors stay
+  empty after the write. The framework's semantics-mode input contract
+  (the SemanticsAction.setText path, likely via the action interface
+  or the semantics input's own event stream) needs the framework
+  source (flutter/packages/flutter/lib/src/semantics + the web
+  engine's semantics handler) to find the exact route.
 
 ### BUS app E2E (the user's real koperasi app, 2026-09-30)
 `/home/ubuntu/bus-core/app` — build web sukses (backend :
