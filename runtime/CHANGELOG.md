@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **M2.9 (the sixth sense)** scoped in docs/JOURNEY.md: Layer X-Ray,
   native framebuffer reads (worker OffscreenCanvas), unhookable mutation
   whispers, profiler nervous system, truth-vs-lie detector, ghost frame.
+- **GfxXray**: native, JS-free canvas buffer reads (2D/WebGL/offscreen)
+  from a new XPCOM service — hidden canvases read exactly like visible
+  ones; page hooks cannot poison or observe the read.
 - **M2.5 compositor pixel capture**: `Page.captureSurface` — raw RGBA of
   any content-viewport rect straight from the compositor (`drawSnapshot`
   onto a CHROME-realm canvas). No page-realm canvas, no toDataURL, no

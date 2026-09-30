@@ -263,6 +263,23 @@ The six (engine-level, C++ not JS):
 Priority: 1+2 first (they close the exact hole the E2E fell into), then
 3+4 fold into M3.
 
+Progress (2026-09-30):
+- **SHIPPED: GfxXray** — an XPCOM service reading canvas DRAWING BUFFERS
+  at the C++ level (`HTMLCanvasElement::GetImageBuffer`, Unrestricted
+  extraction): 2D, WebGL and transferred OffscreenCanvas. Zero JS in the
+  pixel path. E2E: a display:none canvas read natively (RGB stripes
+  exact); geetest slide regression passed. WebGL trap covered too
+  (readPixels beats the preserveDrawingBuffer:false blank).
+- **Known gap (upstream)**: 2D OffscreenCanvas on WORKERS — the
+  compositor-side snapshot relies on GetFrontBufferSnapshot, which 2D
+  contexts never implement. Fix = dispatch our own runnable calling
+  OffscreenCanvas::GetSurfaceSnapshot on the owning worker thread.
+- **Found: page-realm expandos are INVISIBLE to frame scripts** (Xray
+  AND waiveXrays) — every 'stale ref' mystery traced to this. Ref
+  resolution now uses a marker attribute + privileged querySelector.
+- Next: worker-2D readback runnable, then the CrossProcessPaint
+  'PaintAllLayers' flag for the Layer X-Ray.
+
 ### M3 — 👂 Hearing: incremental updates + whisper streams
 - AccEvent diff (`Agent.observeDiff`) — the a11y tree as a stream, not
   full snapshots.
