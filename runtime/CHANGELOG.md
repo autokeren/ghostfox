@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `page_mutations` (M3 hearing): privileged DOM-change whispers — every
+  childList/attributes/characterData mutation as pullable records,
+  observed from the unhookable frame-script realm.
+- **Layer X-Ray**: `page_pixels include_hidden=true` — hidden
+  (visibility:hidden/collapsed) content paints in the privileged
+  snapshot via a new RenderDocumentFlags::ForceVisibleContent.
+- **One name**: ghostcloak* renamed to ghostfox* everywhere — crates,
+  `ghostfox-mcp` binary, RUST_LOG targets, CI assets.
 - **Page.captureCanvasBuffer**: canvas DRAWING BUFFER reads from the
   privileged frame script (native toDataURL via Xray — page hooks
   cannot poison or observe). For canvases the compositor never renders

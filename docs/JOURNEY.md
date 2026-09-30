@@ -280,6 +280,19 @@ Progress (2026-09-30):
 - Next: worker-2D readback runnable, then the CrossProcessPaint
   'PaintAllLayers' flag for the Layer X-Ray.
 
+Progress (2026-09-30, continued):
+- **SHIPPED: Layer X-Ray** — RenderDocumentFlags::ForceVisibleContent
+  threaded from drawSnapshot through CrossProcessPaint to
+  PresShell::RenderDocument with a scoped nsIFrame override: hidden
+  (visibility:hidden/collapsed) content paints in the privileged
+  snapshot. E2E: a hidden green strip renders white normally, GREEN
+  with include_hidden. Persisted: m2.9-layer-xray.patch.
+- **SHIPPED: page_mutations (M3 hearing)** — privileged MutationObserver
+  whispers: every DOM change as pullable records, unhookable.
+- **SHIPPED: the ONE-NAME rename** — ghostcloak* -> ghostfox everywhere
+  (crates, binary ghostfox-mcp, RUST_LOG targets, CI assets, docs).
+  Two names were historical baggage; the repo is single-brand now.
+
 ### M3 — 👂 Hearing: incremental updates + whisper streams
 - AccEvent diff (`Agent.observeDiff`) — the a11y tree as a stream, not
   full snapshots.
