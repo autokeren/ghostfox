@@ -75,6 +75,8 @@ struct PixelsParams {
     y: Option<i64>,
     width: Option<u32>,
     height: Option<u32>,
+    /// M2.9 Layer X-Ray: also paint visibility:hidden content.
+    include_hidden: Option<bool>,
     /// Grid width in cells (default 32).
     grid_w: Option<u32>,
     /// Grid height in cells (default 21).
@@ -1051,6 +1053,7 @@ impl GhostcloakServer {
             height,
             grid_w,
             grid_h,
+            include_hidden,
         }): Parameters<PixelsParams>,
     ) -> Result<CallToolResult, rmcp::model::ErrorData> {
         let session = self
@@ -1162,7 +1165,7 @@ impl GhostcloakServer {
                 ));
             }
             let surface = page
-                .capture_surface(b.x, b.y, bw, bh)
+                .capture_surface(b.x, b.y, bw, bh, include_hidden.unwrap_or(false))
                 .await
                 .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
             (

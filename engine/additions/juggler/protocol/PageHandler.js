@@ -394,7 +394,7 @@ export class PageHandler {
     return { data: dataURL.substring(dataURL.indexOf(',') + 1) };
   }
 
-  async ['Page.captureSurface']({ x, y, width, height }) {
+  async ['Page.captureSurface']({ x, y, width, height, includeHidden }) {
     // M2.5 — compositor pixel read. `drawSnapshot` paints straight from
     // the compositor into a CHROME-realm canvas: page scripts cannot
     // hook, poison or even observe this path. Raw RGBA bytes out — no
@@ -413,7 +413,8 @@ export class PageHandler {
     while (!snapshot) {
       try {
         snapshot = await browsingContext.currentWindowGlobal.drawSnapshot(
-          new DOMRect(0, 0, vpW, vpH), 1, 'rgb(255,255,255)');
+          new DOMRect(0, 0, vpW, vpH), 1, 'rgb(255,255,255)', false,
+          includeHidden === true);
       } catch (e) {
         await new Promise(r => setTimeout(r, 50));
       }

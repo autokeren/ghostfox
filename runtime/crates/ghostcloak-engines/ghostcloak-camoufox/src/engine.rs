@@ -1879,6 +1879,7 @@ impl PageHandle for CamoufoxPage {
         y: i64,
         width: u32,
         height: u32,
+        include_hidden: bool,
     ) -> Result<ghostcloak_core::engine::SurfacePixels> {
         use base64::Engine as _;
         let sid = self.session_id().await?;
@@ -1886,7 +1887,10 @@ impl PageHandle for CamoufoxPage {
             .conn
             .request_session(
                 "Page.captureSurface",
-                serde_json::json!({ "x": x, "y": y, "width": width, "height": height }),
+                serde_json::json!({
+                    "x": x, "y": y, "width": width, "height": height,
+                    "includeHidden": include_hidden,
+                }),
                 Some(&sid),
             )
             .await?;

@@ -939,6 +939,7 @@ const Page = {
         y: t.Number,
         width: t.Number,
         height: t.Number,
+        includeHidden: t.Optional(t.Boolean),
       },
       returns: {
         data: t.String,

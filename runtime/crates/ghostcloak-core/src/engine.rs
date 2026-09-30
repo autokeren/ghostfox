@@ -257,8 +257,9 @@ pub trait PageHandle: Send + Sync {
         y: i64,
         width: u32,
         height: u32,
+        include_hidden: bool,
     ) -> Result<SurfacePixels> {
-        let _ = (x, y, width, height);
+        let _ = (x, y, width, height, include_hidden);
         Err(crate::error::GhostError::PageOp(
             "capture_surface not supported by this engine".into(),
         ))
