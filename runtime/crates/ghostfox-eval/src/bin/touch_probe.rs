@@ -25,8 +25,7 @@ async fn main() -> anyhow::Result<()> {
         ..Default::default()
     };
     // Debug: exactly what the engine will receive.
-    let loaded =
-        ghostfox_fingerprint::Identity::load_or_generate(Some(profile.to_str().unwrap()))?;
+    let loaded = ghostfox_fingerprint::Identity::load_or_generate(Some(profile.to_str().unwrap()))?;
     for (k, v) in ghostfox_camoufox::config::env_for_identity(
         &loaded,
         std::path::Path::new(

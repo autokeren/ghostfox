@@ -106,10 +106,7 @@ pub fn resolve_anchor<'a>(
 
 /// Resolve the anchor behind a recorded ref (captured at record time) from
 /// a live snapshot — used by the note hook in the MCP layer.
-pub fn anchor_from_ref(
-    snap: &ghostfox_core::engine::A11ySnapshot,
-    r#ref: &str,
-) -> Option<Anchor> {
+pub fn anchor_from_ref(snap: &ghostfox_core::engine::A11ySnapshot, r#ref: &str) -> Option<Anchor> {
     snap.elements
         .iter()
         .find(|el| el.r#ref == r#ref)

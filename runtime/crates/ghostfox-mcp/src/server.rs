@@ -3198,8 +3198,7 @@ impl GhostfoxServer {
 
     #[tool(description = "Generate a new coherent browser identity, returned as TOML.")]
     async fn identity_generate(&self) -> Result<CallToolResult, rmcp::model::ErrorData> {
-        let id =
-            ghostfox_fingerprint::generate(&ghostfox_fingerprint::GenerateOptions::default());
+        let id = ghostfox_fingerprint::generate(&ghostfox_fingerprint::GenerateOptions::default());
         let toml_str = id
             .to_toml()
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
