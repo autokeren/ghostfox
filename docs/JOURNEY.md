@@ -323,10 +323,20 @@ the a11y bounds used screen coords that break when a WM positions
 the window off-origin (+294,-23 on the NX desktop) — replaced with
 the window-relative docAcc anchor.
 KNOWN GAP: typing INTO Flutter text fields — the DOM input receives
-the text but the Dart controllers don't (Flutter's editing protocol
-needs the beforeinput/inputType sequence; the DOM input-event route
-doesn't sync the editing state). Next: study Flutter's text-editing
-channel + synthesize the right event order.
+the text but the Dart controllers don't. Research findings (2026-09-30):
+- Flutter web's editing listener = on the ACTIVE element (hidden input;
+  in semantics mode the semantics inputs ARE the active elements).
+  handleChange reads EditingState.fromDomElement + compares to
+  lastEditingState — a value change + an 'input' event SHOULD sync.
+- The DOM routes tested (execCommand insertText, beforeinput+input,
+  setter+input) all wrote the DOM value but never produced the
+  member-login request — the framework's sync still didn't fire.
+  Needs live instrumentation: patch addEventListener in the page to
+  trace whether handleChange runs on our 'input' event.
+- Non-semantics mode: the hidden editing input is only created on a
+  TRUSTED focus (synthesized MouseEvents on flt-glass-pane are ignored
+  by Flutter's hit-test) — a raw `page_click_at {x,y}` tool (trusted
+  coords click without the a11y tree) is needed to focus it.
 
 ### BUS app E2E (the user's real koperasi app, 2026-09-30)
 `/home/ubuntu/bus-core/app` — build web sukses (backend :
