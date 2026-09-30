@@ -76,7 +76,7 @@ async function install() {
       : "ghostfox-mcp";
     const url = assets[rtAsset];
     if (!url) throw new Error("no prebuilt runtime asset on the latest release — build it from source (see the repo README)");
-    log("downloading ghostcloak-mcp runtime...");
+    log("downloading ghostfox-mcp runtime...");
     fs.mkdirSync(path.dirname(MCP_BIN), { recursive: true });
     await download(url, MCP_BIN);
     fs.chmodSync(MCP_BIN, 0o755);
@@ -137,7 +137,7 @@ function config() {
     JSON.stringify(
       {
         mcpServers: {
-          ghostcloak: { command: "npx", args: ["-y", "ghostfox", "mcp"], env: { GHOSTFOX_HOME: home } },
+          ghostfox: { command: "npx", args: ["-y", "ghostfox", "mcp"], env: { GHOSTFOX_HOME: home } },
         },
       },
       null,

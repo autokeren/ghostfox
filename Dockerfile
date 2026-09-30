@@ -9,7 +9,7 @@
 # it under an MCP gateway. For quick inspection, GHOSTFOX_LIVE_VIEW_PORT
 # serves the live view on the mapped port.
 #
-# Base is ubuntu:24.04 (noble): the prebuilt ghostcloak-mcp binary links
+# Base is ubuntu:24.04 (noble): the prebuilt ghostfox-mcp binary links
 # against the onnxruntime static libs from `ort` download-binaries, which
 # require glibc >= 2.38 / libstdc++ from GCC 13 — bookworm (glibc 2.36)
 # cannot satisfy them.
@@ -31,7 +31,7 @@ ARG GHOSTFOX_REPO=autokeren/ghostfox
 RUN curl -fsSL "https://api.github.com/repos/${GHOSTFOX_REPO}/releases/tags/${GHOSTFOX_VERSION}" \
         -o /tmp/rel.json \
  && ENGINE_URL=$(grep -o '"browser_download_url": *"[^"]*lin\.x86_64\.zip"' /tmp/rel.json | head -1 | sed 's/.*"\(https[^"]*\)"/\1/') \
- && RUNTIME_URL=$(grep -o '"browser_download_url": *"[^"]*ghostcloak-mcp"' /tmp/rel.json | head -1 | sed 's/.*"\(https[^"]*\)"/\1/') \
+ && RUNTIME_URL=$(grep -o '"browser_download_url": *"[^"]*ghostfox-mcp"' /tmp/rel.json | head -1 | sed 's/.*"\(https[^"]*\)"/\1/') \
  && test -n "${ENGINE_URL:-}" && test -n "${RUNTIME_URL:-}" \
  && curl -fL --retry 3 "$ENGINE_URL" -o /tmp/engine.zip \
  && mkdir -p /opt/ghostfox/engine \
@@ -46,8 +46,8 @@ RUN curl -fsSL "https://api.github.com/repos/${GHOSTFOX_REPO}/releases/tags/${GH
     fi \
  && chmod +x /opt/ghostfox/engine/ghostfox-bin \
  && mkdir -p /opt/ghostfox/mcp \
- && curl -fL --retry 3 "$RUNTIME_URL" -o /opt/ghostfox/mcp/ghostcloak-mcp \
- && chmod +x /opt/ghostfox/mcp/ghostcloak-mcp \
+ && curl -fL --retry 3 "$RUNTIME_URL" -o /opt/ghostfox/mcp/ghostfox-mcp \
+ && chmod +x /opt/ghostfox/mcp/ghostfox-mcp \
  && rm -rf /tmp/*
 
 ENV GHOSTFOX_HOME=/opt/ghostfox/engine \
@@ -58,4 +58,4 @@ VOLUME /data
 WORKDIR /data
 EXPOSE 7900
 
-ENTRYPOINT ["/opt/ghostfox/mcp/ghostcloak-mcp"]
+ENTRYPOINT ["/opt/ghostfox/mcp/ghostfox-mcp"]
