@@ -105,10 +105,11 @@ fn mcp_stdio_contract_lists_and_calls_identity_tools() {
         "session_evidence",
         "captcha_solve",
         "page_fill",
+        "page_a11y_set_text",
     ] {
         assert!(names.contains(&expected), "missing tool {expected}");
     }
-    assert_eq!(names.len(), 52, "tools: {names:?}");
+    assert_eq!(names.len(), 53, "tools: {names:?}");
 
     let generated = request(
         &mut child,
