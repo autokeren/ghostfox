@@ -142,6 +142,17 @@ pub struct Bounds {
     pub height: i64,
 }
 
+/// M2.5: a canvas drawing buffer read from the privileged frame script.
+/// `raw` = plain RGBA from a WebGL readPixels (no image header);
+/// otherwise `bytes` = an encoded image (PNG/JPEG data URL payload).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CanvasBuffer {
+    pub bytes: Vec<u8>,
+    pub raw: bool,
+    pub width: u32,
+    pub height: u32,
+}
+
 /// M2.5: raw RGBA pixels of a viewport rectangle, straight from the
 /// compositor (no page-realm canvas, no toDataURL, no PNG round-trip).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -212,7 +223,7 @@ pub trait PageHandle: Send + Sync {
     /// privileged frame script — the Xray wrapper calls the NATIVE
     /// toDataURL, which page hooks cannot poison or observe. For
     /// hidden canvases the compositor never renders (GeeTest fullbg).
-    async fn capture_canvas_buffer(&self, selector: &str) -> Result<Option<Vec<u8>>> {
+    async fn capture_canvas_buffer(&self, selector: &str) -> Result<Option<CanvasBuffer>> {
         let _ = selector;
         Err(crate::error::GhostError::PageOp(
             "capture_canvas_buffer not supported by this engine".into(),

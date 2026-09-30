@@ -1830,7 +1830,10 @@ impl PageHandle for CamoufoxPage {
         }))
     }
 
-    async fn capture_canvas_buffer(&self, selector: &str) -> Result<Option<Vec<u8>>> {
+    async fn capture_canvas_buffer(
+        &self,
+        selector: &str,
+    ) -> Result<Option<ghostcloak_core::engine::CanvasBuffer>> {
         use base64::Engine as _;
         let sid = self.session_id().await?;
         let res = self
@@ -1849,11 +1852,17 @@ impl PageHandle for CamoufoxPage {
             Some(d) => d,
             None => return Ok(None),
         };
-        let payload = data.split(',').nth(1).unwrap_or_default();
+        let raw = res.get("raw").and_then(|r| r.as_bool()).unwrap_or(false);
+        let payload = data.split(',').nth(1).unwrap_or(data);
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(payload)
             .map_err(|e| GhostError::Protocol(format!("canvas buffer base64: {e}")))?;
-        Ok(Some(bytes))
+        Ok(Some(ghostcloak_core::engine::CanvasBuffer {
+            bytes,
+            raw,
+            width: res.get("width").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+            height: res.get("height").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+        }))
     }
 
     async fn capture_surface(

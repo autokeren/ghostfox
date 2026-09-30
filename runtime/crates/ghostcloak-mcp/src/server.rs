@@ -1611,7 +1611,7 @@ impl GhostcloakServer {
         // script (native toDataURL via Xray — page hooks cannot poison or
         // observe). The fullbg canvas is hidden (CSS 0x0), so the
         // compositor never renders it; the buffer is the honest source.
-        let buf = async |sel: &str| -> Result<Vec<u8>, rmcp::model::ErrorData> {
+        let buf = async |sel: &str| -> Result<ghostcloak_core::engine::CanvasBuffer, rmcp::model::ErrorData> {
             let bytes = page
                 .capture_canvas_buffer(sel)
                 .await
@@ -1624,15 +1624,33 @@ impl GhostcloakServer {
                 })?;
             Ok(bytes)
         };
-        let bg = image::load_from_memory(&buf("canvas.geetest_canvas_bg").await?)
-            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?
-            .to_luma8();
-        let sl = image::load_from_memory(&buf("canvas.geetest_canvas_slice").await?)
-            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?
-            .to_rgba8();
-        let fb = image::load_from_memory(&buf("canvas.geetest_canvas_fullbg").await?)
-            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?
-            .to_luma8();
+        let decode = |cb: &ghostcloak_core::engine::CanvasBuffer,
+                      name: &str|
+         -> Result<image::DynamicImage, rmcp::model::ErrorData> {
+            if cb.raw {
+                // WebGL readPixels output: plain RGBA, no header.
+                let (w, h) = (cb.width, cb.height);
+                if w == 0 || h == 0 {
+                    return Err(rmcp::model::ErrorData::internal_error(
+                        format!("{name} raw buffer missing dims"),
+                        None,
+                    ));
+                }
+                let img = image::RgbaImage::from_raw(w, h, cb.bytes.clone()).ok_or_else(|| {
+                    rmcp::model::ErrorData::internal_error(
+                        format!("{name} raw buffer size mismatch"),
+                        None,
+                    )
+                })?;
+                Ok(image::DynamicImage::ImageRgba8(img))
+            } else {
+                image::load_from_memory(&cb.bytes)
+                    .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))
+            }
+        };
+        let bg = decode(&buf("canvas.geetest_canvas_bg").await?, "bg")?.to_luma8();
+        let sl = decode(&buf("canvas.geetest_canvas_slice").await?, "sl")?.to_rgba8();
+        let fb = decode(&buf("canvas.geetest_canvas_fullbg").await?, "fb")?.to_luma8();
         let drag_x = crate::geetest::slide_gap(&bg, &sl, &fb)
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
         // 2. Human drag.

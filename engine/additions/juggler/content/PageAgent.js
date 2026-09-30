@@ -634,14 +634,36 @@ export class PageAgent {
 
   async _captureCanvasBuffer({selector}) {
     // Read a canvas's DRAWING BUFFER from the privileged frame script:
-    // the Xray wrapper calls the NATIVE toDataURL, so page-level hooks
-    // on HTMLCanvasElement.prototype cannot poison or observe the read.
+    // the Xray wrapper calls the NATIVE APIs, so page-level hooks on
+    // HTMLCanvasElement.prototype cannot poison or observe the read.
     // Needed for hidden canvases (CSS 0x0) that the compositor never
     // renders — the GeeTest fullbg case.
     const doc = this._frameTree.mainFrame().domWindow().document;
     const el = doc.querySelector(selector);
     if (!el || el.tagName !== 'CANVAS')
       return { error: `canvas not found: ${selector}` };
+    // WebGL path first: toDataURL returns BLANK on WebGL canvases with
+    // preserveDrawingBuffer:false (the classic captcha trap) — read the
+    // drawing buffer straight from the GL context instead.
+    let gl = null;
+    try {
+      gl = el.getContext('webgl2') || el.getContext('webgl');
+    } catch (e) {
+      gl = null;
+    }
+    if (gl) {
+      try {
+        const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+        const buf = new Uint8Array(w * h * 4);
+        gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+        let binary = '';
+        for (let i = 0; i < buf.length; i += 8192)
+          binary += String.fromCharCode.apply(null, buf.subarray(i, Math.min(i + 8192, buf.length)));
+        return { data: btoa(binary), width: w, height: h, raw: true };
+      } catch (e) {
+        return { error: 'webgl buffer read failed: ' + e.message };
+      }
+    }
     try {
       return { data: el.toDataURL(), width: el.width, height: el.height };
     } catch (e) {
