@@ -61,6 +61,14 @@ struct DragParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+struct WaitStableParams {
+    session_id: String,
+    page_id: String,
+    /// Cap on waiting in ms (default 5000, min 500, max 20000).
+    max_ms: Option<u64>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct MutationsParams {
     session_id: String,
     page_id: String,
@@ -1197,6 +1205,68 @@ impl GhostfoxServer {
                 "height": height,
                 "source": source,
                 "grid": grid,
+            }))
+            .unwrap_or_default(),
+        ))
+    }
+
+    #[tool(
+        description = "M3.5 SMELL: wait until the page is VISUALLY ready — the render settled (no DOM mutations for two consecutive polls AND the layout rects are unchanged). The true successor to arbitrary sleep(): instead of guessing '3 seconds', wait for the signal that the page actually stopped moving. Returns {stable, waited_ms, reason}. Polls up to max_ms (default 5000)."
+    )]
+    async fn page_wait_stable(
+        &self,
+        Parameters(WaitStableParams {
+            session_id,
+            page_id,
+            max_ms,
+        }): Parameters<WaitStableParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let page = session
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let max_ms = max_ms.unwrap_or(5000).clamp(500, 20000);
+        let started = std::time::Instant::now();
+        let mut reason = "timeout";
+        let mut stable = false;
+        let mut prev_rects: Vec<ghostfox_core::engine::UiRect> = Vec::new();
+        let mut quiet_polls = 0u32;
+        while started.elapsed().as_millis() < max_ms as u128 {
+            let whispers = page
+                .read_mutation_whispers(true)
+                .await
+                .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+            let rects = page
+                .collect_all_rects()
+                .await
+                .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+            let rects_same = rects.len() == prev_rects.len()
+                && rects
+                    .iter()
+                    .zip(prev_rects.iter())
+                    .all(|(a, b)| a.x == b.x && a.y == b.y && a.w == b.w && a.h == b.h);
+            if whispers.is_empty() && rects_same {
+                quiet_polls += 1;
+                if quiet_polls >= 2 {
+                    stable = true;
+                    reason = "render-settled";
+                    break;
+                }
+            } else {
+                quiet_polls = 0;
+            }
+            prev_rects = rects;
+            tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+        }
+        Ok(text_result(
+            serde_json::to_string_pretty(&serde_json::json!({
+                "stable": stable,
+                "waited_ms": started.elapsed().as_millis() as u64,
+                "reason": reason,
             }))
             .unwrap_or_default(),
         ))
