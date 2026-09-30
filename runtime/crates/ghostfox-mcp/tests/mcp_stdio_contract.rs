@@ -108,7 +108,7 @@ fn mcp_stdio_contract_lists_and_calls_identity_tools() {
     ] {
         assert!(names.contains(&expected), "missing tool {expected}");
     }
-    assert_eq!(names.len(), 50, "tools: {names:?}");
+    assert_eq!(names.len(), 52, "tools: {names:?}");
 
     let generated = request(
         &mut child,
