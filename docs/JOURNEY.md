@@ -301,6 +301,14 @@ Progress (2026-09-30):
 - Next: worker-2D readback runnable, then the CrossProcessPaint
   'PaintAllLayers' flag for the Layer X-Ray.
 
+### CORS bypass for local E2E (shipped 2026-09-30)
+`GHOSTFOX_INSECURE_CORS=1` on the MCP server env = the engine skips
+CORS preflight + approval checks (nsCORSListenerProxy) — the Chrome
+--disable-web-security equivalent, for testing only. Flutter web
+builds against localhost backends need it (the native app never sees
+CORS). E2E: a localhost-origin fetch to localhost:8080 went through
+where it previously died on 'CORS Missing Allow Origin'.
+
 ### Flutter web E2E (2026-09-30 — the living proof)
 Flutter web apps ARE ghostfox-testable: serve `flutter build web`,
 then the engine's native a11y reads the Flutter SEMANTICS tree
