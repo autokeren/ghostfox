@@ -337,6 +337,14 @@ the text but the Dart controllers don't. Research findings (2026-09-30):
   TRUSTED focus (synthesized MouseEvents on flt-glass-pane are ignored
   by Flutter's hit-test) — a raw `page_click_at {x,y}` tool (trusted
   coords click without the a11y tree) is needed to focus it.
+- **BREAKTHROUGH (verified live)**: in semantics mode Flutter edits via
+  the ACCESSIBILITY layer — zero DOM listeners attached, so DOM routes
+  write a mirror nobody reads. The AT-native route works:
+  `page_a11y_set_text` (nsIAccessibleEditableText.setTextContents with
+  the a11y-update wait loop) — the BUS app's Nomor Anggota accepted it
+  (ok:true) where every DOM route failed. The PIN field's raw role
+  string differs ("password text"-family) — confirm from the tree dump
+  and the full login flow follows.
 
 ### BUS app E2E (the user's real koperasi app, 2026-09-30)
 `/home/ubuntu/bus-core/app` — build web sukses (backend :
