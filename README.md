@@ -225,6 +225,27 @@ humans want to watch the agent work.
 (`events.jsonl`), full page snapshots and the identity it used under
 `~/.ghostfox/recordings/` — fetch it any time with `session_evidence`.
 
+## E2E without emulators: Flutter web + any web app
+
+Android E2E normally means emulators, Appium and a farm of devices.
+Ghostfox takes the web route: build the Flutter app for the web
+(`flutter build web` — same Dart codebase) and drive it with the
+same senses used against hostile sites:
+
+- **Semantics tree, read natively** — Flutter's a11y nodes (roles,
+  labels, bounds) land in `page_a11y(native=true)` once semantics are
+  enabled (one line in the app: `SemanticsBinding.instance.ensureSemantics()`).
+- **Native clicks** — `page_click_native` fires the Flutter buttons at
+  their trusted a11y coordinates (verified: submit triggers, status
+  renders).
+- **Receipts + `page_diff` + `page_mutations` + `page_wait_stable`** —
+  the same Act→Observe→Compare evidence loop, no polling guesswork.
+- **Visual QA** — `page_ui_audit` judges the rendered UI.
+
+Honest scope: logic/flow/UI = fully covered; final visual parity with
+real devices (Impeller rendering) and platform channels (sensors,
+camera) still need a device or emulator pass.
+
 ## Sponsor
 
 Ghostfox is independent and self-funded. If it saves your team from
