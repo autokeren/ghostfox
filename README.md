@@ -146,7 +146,7 @@ python -c "import ghostfox; ghostfox.install_engine(); ghostfox.install_runtime(
 npm install -g ghostfox        # or: npx ghostfox install
 {
   "mcpServers": {
-    "ghostcloak": { "command": "npx", "args": ["-y", "ghostfox", "mcp"] }
+    "ghostfox": { "command": "npx", "args": ["-y", "ghostfox", "mcp"] }
   }
 }
 
@@ -175,8 +175,8 @@ cargo build --release
 ```json
 {
   "mcpServers": {
-    "ghostcloak": {
-      "command": "/path/to/ghostfox/runtime/target/release/ghostcloak-mcp",
+    "ghostfox": {
+      "command": "/path/to/ghostfox/runtime/target/release/ghostfox-mcp",
       "env": { "GHOSTFOX_HOME": "/opt/ghostfox" }
     }
   }
@@ -230,7 +230,7 @@ see [engine/README.md](engine/README.md) — `make dir && make build`.
 ## Repository layout
 
 ````
-runtime/   Rust: ghostcloak-{core,fingerprint,mcp,eval}     (MIT OR Apache-2.0)
+runtime/   Rust: ghostfox-{core,fingerprint,mcp,eval}     (MIT OR Apache-2.0)
 engine/    Browser fork: patches, branding, build system    (MPL-2.0)
 AGENTS.md  The agent playbook — how AI agents drive Ghostfox like a human
 docs/JOURNEY.md  The dev-log, todo list and the road ahead (the five senses)

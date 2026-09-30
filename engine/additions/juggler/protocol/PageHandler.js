@@ -297,6 +297,14 @@ export class PageHandler {
     this._pageNetwork.fulfillInterceptedRequest(requestId, status, statusText, headers, base64body);
   }
 
+  async ['Page.startMutationWhispers'](params) {
+    return await this._contentPage.send('startMutationWhispers', params || {});
+  }
+
+  async ['Page.readMutationWhispers'](params) {
+    return await this._contentPage.send('readMutationWhispers', params || {});
+  }
+
   async ['Page.captureCanvasBuffer'](params) {
     return await this._contentPage.send('captureCanvasBuffer', params);
   }

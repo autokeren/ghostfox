@@ -3,7 +3,7 @@ name: docker
 # Build + push the runtime image (engine + MCP server) to GHCR.
 #
 # Trigger: after the "Engine builds" workflow completes for a tag — the
-# image build downloads the engine zip and ghostcloak-mcp binary from
+# image build downloads the engine zip and ghostfox-mcp binary from
 # the release assets, which only exist once engine-build (and
 # runtime-build) have finished. Releasing on `release: published` fired
 # ~2h too early (before assets landed) and always failed.
@@ -48,13 +48,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.rel.outputs.tag }}
         run: |
-          # engine zip (2h build) + ghostcloak-mcp (15min build) must both
+          # engine zip (2h build) + ghostfox-mcp (15min build) must both
           # be attached before the image can be built. Normally they are
           # already here; poll up to 30 min as a safety net.
           for i in $(seq 1 60); do
             ASSETS=$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json assets -q '.assets[].name' 2>/dev/null || true)
             ENGINE_OK=$(echo "$ASSETS" | grep -c 'lin\.x86_64\.zip' || true)
-            RUNTIME_OK=$(echo "$ASSETS" | grep -c '^ghostcloak-mcp$' || true)
+            RUNTIME_OK=$(echo "$ASSETS" | grep -c '^ghostfox-mcp$' || true)
             if [ "$ENGINE_OK" -ge 1 ] && [ "$RUNTIME_OK" -ge 1 ]; then
               echo "assets ready: engine=$ENGINE_OK runtime=$RUNTIME_OK"
               exit 0
@@ -62,7 +62,7 @@ jobs:
             echo "waiting for assets (engine=$ENGINE_OK runtime=$RUNTIME_OK, attempt $i/60)..."
             sleep 30
           done
-          echo "::error::release $TAG is missing engine or ghostcloak-mcp assets"
+          echo "::error::release $TAG is missing engine or ghostfox-mcp assets"
           exit 1
 
       - uses: docker/login-action@v3

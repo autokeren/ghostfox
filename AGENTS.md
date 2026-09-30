@@ -555,7 +555,7 @@ ground for challenge-tier accuracy.
 
 ## 6c. ALL-NATIVE CAPTCHA TOOLSET (v0.6.7)
 
-Every family now has a native MCP tool in ghostcloak-mcp (no Python in
+Every family now has a native MCP tool in ghostfox-mcp (no Python in
 the solve path — Python stays only as the R&D lab):
 
 | tool | family | engine |

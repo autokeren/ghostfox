@@ -5,7 +5,7 @@ Python surface for the Ghostfox stack:
 - ``ghostfox.GhostfoxMCP`` — drive the runtime (the same MCP server agents
   use) from plain Python
 
-The runtime is a Rust binary (``ghostcloak-mcp``); this package wraps it so
+The runtime is a Rust binary (``ghostfox-mcp``); this package wraps it so
 the Python world gets the same one-command story as ``pip install browser-use``.
 """
 

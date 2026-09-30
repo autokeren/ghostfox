@@ -14,7 +14,7 @@ Then wire it into any MCP client (Claude Code, Cursor, ...):
 ```json
 {
   "mcpServers": {
-    "ghostcloak": { "command": "npx", "args": ["-y", "ghostfox", "mcp"] }
+    "ghostfox": { "command": "npx", "args": ["-y", "ghostfox", "mcp"] }
   }
 }
 ```

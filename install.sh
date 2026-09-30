@@ -5,7 +5,7 @@
 #
 # What it does:
 #   1. Downloads the prebuilt Ghostfox engine (Linux x86_64/arm64) from Releases
-#   2. Installs the ghostcloak-mcp runtime (prebuilt binary, or builds from
+#   2. Installs the ghostfox-mcp runtime (prebuilt binary, or builds from
 #      source with cargo when the prebuilt one can't run)
 #   3. Prints the MCP client configuration
 #
@@ -17,8 +17,8 @@ DEST="${GHOSTFOX_HOME_ROOT:-$HOME/.ghostfox}"
 OS="$(uname -s)"
 ARCH="$(uname -m)"
 case "$OS/$ARCH" in
-    Linux/x86_64)  ENGINE_ARCH="x86_64"; RUNTIME_ASSET="ghostcloak-mcp" ;;
-    Linux/aarch64) ENGINE_ARCH="arm64";   RUNTIME_ASSET="ghostcloak-mcp-arm64" ;;
+    Linux/x86_64)  ENGINE_ARCH="x86_64"; RUNTIME_ASSET="ghostfox-mcp" ;;
+    Linux/aarch64) ENGINE_ARCH="arm64";   RUNTIME_ASSET="ghostfox-mcp-arm64" ;;
     *) die "prebuilt engine currently Linux x86_64/arm64 only (from-source builds for other platforms: see the repo README)" ;;
 esac
 
@@ -61,15 +61,15 @@ else
 fi
 
 # --- 2) Runtime (MCP server) ---------------------------------------------------
-MCP_BIN="$DEST/mcp/ghostcloak-mcp"
+MCP_BIN="$DEST/mcp/ghostfox-mcp"
 if [ ! -x "$MCP_BIN" ]; then
     say "fetching runtime release info"
     RUNTIME_URL="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
         | grep -o "\"browser_download_url\": *\"[^\"]*/$RUNTIME_ASSET\"" \
         | head -1 | sed 's/.*"\(https[^"]*\)"/\1/')" || true
-    if [ -n "${RUNTIME_URL:-}" ] && curl -fsSL --retry 2 -o /tmp/ghostcloak-mcp "$RUNTIME_URL"; then
+    if [ -n "${RUNTIME_URL:-}" ] && curl -fsSL --retry 2 -o /tmp/ghostfox-mcp "$RUNTIME_URL"; then
         mkdir -p "$DEST/mcp"
-        mv /tmp/ghostcloak-mcp "$MCP_BIN"
+        mv /tmp/ghostfox-mcp "$MCP_BIN"
         chmod +x "$MCP_BIN"
     elif command -v cargo >/dev/null 2>&1; then
         say "no prebuilt runtime — building from source (needs ~3 min)"
@@ -78,9 +78,9 @@ if [ ! -x "$MCP_BIN" ]; then
             curl -fsSL --retry 3 "https://github.com/$REPO/archive/refs/heads/main.tar.gz" | tar -xz -C "$DEST/src"
             mv "$DEST/src/ghostfox-main" "$DEST/src/ghostfox" 2>/dev/null || true
         fi
-        (cd "$DEST/src/ghostfox/runtime" && cargo build --release -p ghostcloak-mcp)
+        (cd "$DEST/src/ghostfox/runtime" && cargo build --release -p ghostfox-mcp)
         mkdir -p "$DEST/mcp"
-        cp "$DEST/src/ghostfox/runtime/target/release/ghostcloak-mcp" "$MCP_BIN"
+        cp "$DEST/src/ghostfox/runtime/target/release/ghostfox-mcp" "$MCP_BIN"
     else
         die "no prebuilt runtime for this platform and no cargo to build one — see the repo README"
     fi
@@ -98,7 +98,7 @@ Add to your MCP client (e.g. ~/.claude.json, .mcp.json, Cursor config):
 
 {
   "mcpServers": {
-    "ghostcloak": {
+    "ghostfox": {
       "command": "$MCP_BIN",
       "env": { "GHOSTFOX_HOME": "$DEST/engine" }
     }

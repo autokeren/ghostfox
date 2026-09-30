@@ -1,4 +1,4 @@
-# ghostcloak
+# ghostfox
 
 **A stealth browser runtime for AI agents. Rust-native, MCP-first, fingerprint-coherent.**
 
@@ -8,10 +8,10 @@
      └──────────────┬──────────────────────────┘
                     │ MCP (stdio / streamable HTTP)
      ┌──────────────▼──────────────────────────┐
-     │  ghostcloak-mcp                          │
+     │  ghostfox-mcp                          │
      │  narrow, typed tools                    │
      ├──────────────────────────────────────────┤
-     │  ghostcloak-core                         │
+     │  ghostfox-core                         │
      │  sessions · identity vault · engine API  │
      ├──────────┬───────────────┬───────────────┤
      │ chromium │ firefox(fork) │ servo (exp.)  │
@@ -20,12 +20,12 @@
 
 ## Credits & upstream dependencies
 
-ghostcloak stands on the shoulders of giants — please know them:
+ghostfox stands on the shoulders of giants — please know them:
 
 - **[Camoufox](https://github.com/daijro/camoufox)** (MPL-2.0, by daijro) — the
   patched-Firefox engine doing C++-level fingerprint spoofing (navigator, screen,
-  WebGL, fonts, WebRTC, audio, timezone). ghostcloak's default engine builds on
-  top of Camoufox's patches. Without this project, ghostcloak would be an order
+  WebGL, fonts, WebRTC, audio, timezone). ghostfox's default engine builds on
+  top of Camoufox's patches. Without this project, ghostfox would be an order
   of magnitude smaller. 🙏
 - **[Mozilla Firefox](https://www.mozilla.org/firefox/)** (MPL-2.0) — the
   browser underneath everything.
@@ -46,7 +46,7 @@ licensed MPL-2.0 via its upstream.
 | Browserbase / Steel | yes (paid) | ~ | ~ | no |
 | playwright-mcp | no | yes | none | no (node) |
 | Camoufox | no | no | strong (C++ patches) | no (python) |
-| **ghostcloak** | **no** | **yes** | **layered, eval-scored** | **yes** |
+| **ghostfox** | **no** | **yes** | **layered, eval-scored** | **yes** |
 
 ## Quick start
 
@@ -54,13 +54,13 @@ licensed MPL-2.0 via its upstream.
 cargo build --release
 
 # The stealth referee: generate + audit 50 identities offline
-cargo run -p ghostcloak-eval -- identity --count 50
+cargo run -p ghostfox-eval -- identity --count 50
 
 # End-to-end probe: real page, real identity, real snapshot
-cargo run -p ghostcloak-eval --bin web_probe -- https://example.com
+cargo run -p ghostfox-eval --bin web_probe -- https://example.com
 
 # MCP server (stdio) — wire into any MCP client
-cargo run -p ghostcloak-mcp
+cargo run -p ghostfox-mcp
 ```
 
 Wire into Claude Code (`~/.claude.json` or project `.mcp.json`):
@@ -68,8 +68,8 @@ Wire into Claude Code (`~/.claude.json` or project `.mcp.json`):
 ```json
 {
   "mcpServers": {
-    "ghostcloak": {
-      "command": "/home/ubuntu/ghostcloak/target/release/ghostcloak-mcp"
+    "ghostfox": {
+      "command": "/home/ubuntu/ghostfox/target/release/ghostfox-mcp"
     }
   }
 }
@@ -86,7 +86,7 @@ Then the agent can: `session_create` → `page_open` → `page_snapshot` →
    DevicePreset; the auditor re-checks. A spoofed browser's worst enemy is
    itself saying "4 cores on a MacBook".
 3. **The eval harness is the referee.** Every stealth change must pass
-   `ghostcloak-eval` before merge. Scores are JSONL, diffable between commits.
+   `ghostfox-eval` before merge. Scores are JSONL, diffable between commits.
 4. **JS-layer spoofing is the floor, not the ceiling.** The init scripts get
    you past naive detectors. Engine patches (the Firefox fork) are the real
    ceiling — see `docs/roadmap.md`.
@@ -97,16 +97,16 @@ Then the agent can: `session_create` → `page_open` → `page_snapshot` →
 
 | crate | role |
 |---|---|
-| `ghostcloak-core` | engine trait, sessions, registry — no browser code |
-| `ghostcloak-fingerprint` | identity schema, coherent generator, auditor |
-| `ghostcloak-chromium` | CDP adapter + stealth init scripts |
-| `ghostcloak-camoufox` | **primary engine**: patched Firefox (C++-level spoofing) driven over the Juggler pipe, fd 3/4, `\0`-framed JSON — Rust-native, zero Python/Node at runtime |
-| `ghostcloak-mcp` | MCP server: the agent-facing surface |
-| `ghostcloak-eval` | the stealth referee (identity + web modes) |
+| `ghostfox-core` | engine trait, sessions, registry — no browser code |
+| `ghostfox-fingerprint` | identity schema, coherent generator, auditor |
+| `ghostfox-chromium` | CDP adapter + stealth init scripts |
+| `ghostfox-camoufox` | **primary engine**: patched Firefox (C++-level spoofing) driven over the Juggler pipe, fd 3/4, `\0`-framed JSON — Rust-native, zero Python/Node at runtime |
+| `ghostfox-mcp` | MCP server: the agent-facing surface |
+| `ghostfox-eval` | the stealth referee (identity + web modes) |
 
 ## The Camoufox engine
 
-`ghostcloak-camoufox` speaks the Juggler protocol directly (the one
+`ghostfox-camoufox` speaks the Juggler protocol directly (the one
 Playwright uses with Firefox):
 
 - launch `camoufox-bin` with `--juggler-pipe`; the channel is **fd 3**

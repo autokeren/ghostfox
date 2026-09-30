@@ -1,13 +1,13 @@
 name: runtime-build
 
-# Builds the Rust MCP runtime (ghostcloak-mcp) as release assets for
+# Builds the Rust MCP runtime (ghostfox-mcp) as release assets for
 # linux x86_64 and linux arm64 (native arm runner).
 #
 # Why a container build? The binary links onnxruntime static libs from
 # `ort` download-binaries, which require glibc >= 2.38 / GCC 13 libstdc++.
 # Building inside ubuntu:24.04 guarantees a binary that also runs inside
 # the ubuntu:24.04 Docker image (Dockerfile) and on modern hosts.
-# Asset names: "ghostcloak-mcp" (x86_64) and "ghostcloak-mcp-arm64" —
+# Asset names: "ghostfox-mcp" (x86_64) and "ghostfox-mcp-arm64" —
 # the Dockerfile, install.sh and the Python/npm SDKs look for these names.
 
 on:
@@ -26,13 +26,13 @@ jobs:
       matrix:
         include:
           - runner: ubuntu-latest
-            asset: ghostcloak-mcp
+            asset: ghostfox-mcp
             container: ubuntu:24.04
           - runner: ubuntu-24.04-arm
-            asset: ghostcloak-mcp-arm64
+            asset: ghostfox-mcp-arm64
             container: ubuntu:24.04
           - runner: windows-2022
-            asset: ghostcloak-mcp.exe
+            asset: ghostfox-mcp.exe
             container: windows
     runs-on: ${{ matrix.runner }}
     steps:
@@ -44,8 +44,8 @@ jobs:
         run: |
           rustup default stable
           cd runtime
-          cargo build --release -p ghostcloak-mcp
-          Copy-Item target\release\ghostcloak-mcp.exe -Destination "$env:RUNNER_TEMP\${{ matrix.asset }}"
+          cargo build --release -p ghostfox-mcp
+          Copy-Item target\release\ghostfox-mcp.exe -Destination "$env:RUNNER_TEMP\${{ matrix.asset }}"
           Get-Item "$env:RUNNER_TEMP\${{ matrix.asset }}"
 
       - name: Build inside ubuntu:24.04 (native arch)
@@ -72,13 +72,13 @@ jobs:
               mkdir -p /work
               (cd /src && tar --exclude=./target -cf - .) | tar -xf - -C /work
               cd /work
-              cargo build --release -p ghostcloak-mcp --target-dir /target 2>&1 | tail -5
-              strip /target/release/ghostcloak-mcp
-              cp /target/release/ghostcloak-mcp /out/ghostcloak-mcp
+              cargo build --release -p ghostfox-mcp --target-dir /target 2>&1 | tail -5
+              strip /target/release/ghostfox-mcp
+              cp /target/release/ghostfox-mcp /out/ghostfox-mcp
             '
           sudo chown -R "$(id -u):$(id -g)" /tmp/gf-out
-          if [ "${{ matrix.asset }}" != "ghostcloak-mcp" ]; then
-            mv /tmp/gf-out/ghostcloak-mcp "/tmp/gf-out/${{ matrix.asset }}"
+          if [ "${{ matrix.asset }}" != "ghostfox-mcp" ]; then
+            mv /tmp/gf-out/ghostfox-mcp "/tmp/gf-out/${{ matrix.asset }}"
           fi
           ls -la "/tmp/gf-out/${{ matrix.asset }}"
 

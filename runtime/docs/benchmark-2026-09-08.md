@@ -1,6 +1,6 @@
 # Benchmark results — 2026-09-08
 
-## T0: Identity coherence (offline, `ghostcloak-eval -- identity`)
+## T0: Identity coherence (offline, `ghostfox-eval -- identity`)
 
 | Metric | Result |
 |---|---|
@@ -17,7 +17,7 @@ and rejected **zero**.
 Run it yourself:
 
 ```sh
-cargo run -p ghostcloak-eval --bin ghostcloak-eval -- identity --count 500
+cargo run -p ghostfox-eval --bin ghostfox-eval -- identity --count 500
 ```
 
 ## T1: JS surface vs identity (live engine, Ghostfox 152.0.4-beta.30)
@@ -51,7 +51,7 @@ run — that is on the roadmap (see ROADMAP.md).
 
 ## T3: Live-target probe (2026-09-08, engine 152.0.4 + touch patch)
 
-`ghostcloak-eval targets --headless`, run from a datacenter IP (biased against
+`ghostfox-eval targets --headless`, run from a datacenter IP (biased against
 us — gate rates are higher from DC ranges):
 
 | Target | Status | Detail |
@@ -64,7 +64,7 @@ us — gate rates are higher from DC ranges):
 **4/4 OK, 0 gated.** Run it yourself:
 
 ```sh
-cargo run --release -p ghostcloak-eval -- targets --headless
+cargo run --release -p ghostfox-eval -- targets --headless
 ```
 
 ## Touch coherence (Android personas, engine patch navigator-touch-spoofing)

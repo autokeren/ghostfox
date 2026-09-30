@@ -37,7 +37,7 @@ def _win_assets() -> tuple[str, str]:
     """(engine asset substring, runtime asset name) for Windows."""
     mach = platform.machine().lower()
     if mach in ("x86_64", "amd64"):
-        return "win.x86_64", "ghostcloak-mcp.exe"
+        return "win.x86_64", "ghostfox-mcp.exe"
     raise RuntimeError(
         "prebuilt engine/runtime are Windows x86_64 only "
         "(from-source builds for other platforms: see the repo README)"
@@ -48,9 +48,9 @@ def _linux_assets() -> tuple[str, str]:
     """(engine asset substring, runtime asset name) for this Linux arch."""
     mach = platform.machine().lower()
     if mach == "x86_64":
-        return "lin.x86_64", "ghostcloak-mcp"
+        return "lin.x86_64", "ghostfox-mcp"
     if mach in ("aarch64", "arm64"):
-        return "lin.arm64", "ghostcloak-mcp-arm64"
+        return "lin.arm64", "ghostfox-mcp-arm64"
     raise RuntimeError(
         "prebuilt engine/runtime are Linux x86_64/arm64 only "
         "(from-source builds for other platforms: see the repo README)"
@@ -102,8 +102,8 @@ def install_engine(dest: Path | None = None, quiet: bool = False) -> Path:
 
 
 def install_runtime(dest: Path | None = None, quiet: bool = False) -> Path:
-    """Download the prebuilt ``ghostcloak-mcp`` runtime binary (Linux x86_64/arm64)."""
-    dest = dest or engine_home().parent / "mcp" / "ghostcloak-mcp"
+    """Download the prebuilt ``ghostfox-mcp`` runtime binary (Linux x86_64/arm64)."""
+    dest = dest or engine_home().parent / "mcp" / "ghostfox-mcp"
     if dest.exists():
         return dest
     if platform.system() == "Windows":
@@ -122,7 +122,7 @@ def install_runtime(dest: Path | None = None, quiet: bool = False) -> Path:
     if not url:
         raise RuntimeError("no prebuilt runtime asset — build it with cargo (see README)")
     if not quiet:
-        print("downloading ghostcloak-mcp ...", file=sys.stderr)
+        print("downloading ghostfox-mcp ...", file=sys.stderr)
     req = urllib.request.Request(url, headers={"User-Agent": "ghostfox-py"})
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(urllib.request.urlopen(req, timeout=120).read())
@@ -136,11 +136,11 @@ def default_runtime() -> Path:
         p = Path(v)
         if p.exists():
             return p
-    installed = engine_home().parent / "mcp" / "ghostcloak-mcp"
+    installed = engine_home().parent / "mcp" / "ghostfox-mcp"
     if installed.exists():
         return installed
-    if shutil.which("ghostcloak-mcp"):
-        return Path(shutil.which("ghostcloak-mcp"))
+    if shutil.which("ghostfox-mcp"):
+        return Path(shutil.which("ghostfox-mcp"))
     raise RuntimeError(
         "runtime not found: set GHOSTFOX_MCP, or call ghostfox.install_runtime()"
     )

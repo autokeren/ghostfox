@@ -1,12 +1,12 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/ghostcloak-core",
-    "crates/ghostcloak-mcp",
-    "crates/ghostcloak-fingerprint",
-    "crates/ghostcloak-engines/ghostcloak-chromium",
-    "crates/ghostcloak-engines/ghostcloak-camoufox",
-    "crates/ghostcloak-eval",
+    "crates/ghostfox-core",
+    "crates/ghostfox-mcp",
+    "crates/ghostfox-fingerprint",
+    "crates/ghostfox-engines/ghostfox-chromium",
+    "crates/ghostfox-engines/ghostfox-camoufox",
+    "crates/ghostfox-eval",
 ]
 
 [workspace.package]
@@ -14,7 +14,7 @@ version = "0.8.2"
 edition = "2021"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/ghostcloak/ghostcloak"
+repository = "https://github.com/autokeren/ghostfox"
 
 [workspace.dependencies]
 tokio = { version = "1", features = ["full"] }

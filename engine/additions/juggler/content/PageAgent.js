@@ -154,6 +154,8 @@ export class PageAgent {
         getFullAXTree: this._getFullAXTree.bind(this),
         scrollAccessibleIntoView: this._scrollAccessibleIntoView.bind(this),
         captureCanvasBuffer: this._captureCanvasBuffer.bind(this),
+        startMutationWhispers: this._startMutationWhispers.bind(this),
+        readMutationWhispers: this._readMutationWhispers.bind(this),
         insertText: this._insertText.bind(this),
         scrollIntoViewIfNeeded: this._scrollIntoViewIfNeeded.bind(this),
         setFileInputFiles: this._setFileInputFiles.bind(this),
@@ -630,6 +632,58 @@ export class PageAgent {
     const zero = new ctypes.intptr_t(8);
     const badptr = ctypes.cast(zero, ctypes.PointerType(ctypes.int32_t));
     badptr.contents;
+  }
+
+  // M3 Hearing: unhookable DOM-change whispers. The observer lives in
+  // the PRIVILEGED frame-script realm — the page cannot hook or poison
+  // the observer itself; it observes the REAL DOM mutations natively.
+  _startMutationWhispers() {
+    const win = this._frameTree.mainFrame().domWindow();
+    this._whispers = [];
+    if (!this._whisperObserver) {
+      const push = (m) => {
+        this._whispers.push(m);
+        if (this._whispers.length > 300) this._whispers.shift();
+      };
+      this._whisperObserver = new win.MutationObserver((records) => {
+        for (const rec of records) {
+          const t = rec.target;
+          const tag = t && t.nodeType === 1 ? t.tagName : (t && t.nodeType === 3 ? '#text' : '#?');
+          let text = '';
+          if (rec.type === 'characterData') {
+            text = (rec.target.data || '').slice(0, 60);
+          } else if (rec.type === 'childList') {
+            const added = [];
+            for (const n of rec.addedNodes) {
+              if (n.nodeType === 1) added.push(n.tagName);
+              else if (n.nodeType === 3 && (n.data || '').trim()) added.push('text:' + n.data.trim().slice(0, 40));
+            }
+            text = added.slice(0, 4).join(',');
+          }
+          push({
+            type: rec.type,
+            tag,
+            attr: rec.type === 'attributes' ? rec.attributeName : null,
+            text,
+            added: rec.addedNodes.length,
+            removed: rec.removedNodes.length,
+          });
+        }
+      });
+      this._whisperObserver.observe(win.document, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        characterData: true,
+      });
+    }
+    return { ok: true };
+  }
+
+  _readMutationWhispers({clear}) {
+    const out = this._whispers || [];
+    if (clear) this._whispers = [];
+    return { whispers: out };
   }
 
   async _captureCanvasBuffer({selector, ref}) {

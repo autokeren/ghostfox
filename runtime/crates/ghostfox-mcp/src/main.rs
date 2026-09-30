@@ -1,0 +1,29 @@
+//! ghostfox-mcp: exposes the browser runtime to AI agents over MCP (stdio).
+
+use rmcp::service::serve_server;
+use rmcp::transport::stdio;
+mod captcha;
+mod ddddocr;
+mod geetest;
+mod hcaptcha;
+mod liveview;
+mod ocr;
+mod receipts;
+mod recipes;
+mod recording;
+mod server;
+mod vision;
+
+use server::GhostfoxServer;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt()
+        .with_env_filter(std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into()))
+        .with_writer(std::io::stderr)
+        .init();
+
+    let service = serve_server(GhostfoxServer::new(), stdio()).await?;
+    service.waiting().await?;
+    Ok(())
+}

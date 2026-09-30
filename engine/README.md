@@ -9,13 +9,13 @@ screen, fonts, WebGL, WebRTC, timezone, audio), adds Ghostfox branding, and
 packages the engine.
 
 The Rust side — sessions, coherent identities, MCP server — lives in `../runtime/` (this monorepo).
-separate **ghostcloak** repository:
+separate **ghostfox** repository:
 
 ```
 Firefox (MPL-2.0)
   └─ Camoufox (anti-detect patches, by daijro)
        └─ Ghostfox   ← this repo: our own builds + branding
-            └─ driven by ghostcloak (Rust MCP runtime)
+            └─ driven by ghostfox (Rust MCP runtime)
 ```
 
 ## Why a fork

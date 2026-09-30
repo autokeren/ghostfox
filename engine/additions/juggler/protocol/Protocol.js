@@ -920,6 +920,20 @@ const Page = {
         data: t.String,
       }
     },
+    'startMutationWhispers': {
+      params: {},
+      returns: {
+        ok: t.Boolean,
+      },
+    },
+    'readMutationWhispers': {
+      params: {
+        clear: t.Optional(t.Boolean),
+      },
+      returns: {
+        whispers: t.Array(t.Object),
+      },
+    },
     'captureCanvasBuffer': {
       params: {
         selector: t.Optional(t.String),

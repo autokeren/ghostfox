@@ -127,7 +127,7 @@
 ### Ghostfox Mobile (Android APK)
 - [ ] **GeckoView integration** — Camoufox patches applied to GeckoView
        (Firefox for Android as a library)
-- [ ] **Rust runtime via JNI** — ghostcloak-mcp compiled for aarch64-linux-android
+- [ ] **Rust runtime via JNI** — ghostfox-mcp compiled for aarch64-linux-android
 - [ ] **MCP over HTTP** — WebSocket/HTTP transport instead of stdio (Android
        can't do stdio MCP)
 - [ ] **Edge model support** — llama.cpp integration for on-device LLM

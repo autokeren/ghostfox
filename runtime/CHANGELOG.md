@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to ghostcloak will be documented in this file.
+All notable changes to ghostfox will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -101,11 +101,11 @@ Typing fixed everywhere.
 Linux arm64 support end-to-end.
 
 ### Added
-- `ghostcloak-mcp-arm64` release asset — the runtime builds natively on
+- `ghostfox-mcp-arm64` release asset — the runtime builds natively on
   `ubuntu-24.04-arm` runners (onnxruntime prebuilts link cleanly on aarch64).
 - Arch-aware installers: `install.sh`, Python `install_engine()` /
   `install_runtime()` and the npm installer all pick `lin.arm64` +
-  `ghostcloak-mcp-arm64` on Linux aarch64 (engine zips already shipped
+  `ghostfox-mcp-arm64` on Linux aarch64 (engine zips already shipped
   since v0.7.0; the runtime was the missing half).
 - `runtime-build.yml` now runs an x86_64 + arm64 matrix on tag pushes.
 
@@ -119,14 +119,14 @@ First public release. Rust-native agent browser runtime with a patched-Firefox e
 
 ### Added
 
-- **ghostcloak-core** — engine-agnostic runtime: `Engine`/`PageHandle` traits, session vault, engine registry.
-- **ghostcloak-fingerprint** — declarative identities as TOML: coherent device-preset generator (platform/screen/GPU/fonts that actually ship together), auditor that rejects contradictory signals, content-hash fingerprinting per identity.
-- **ghostcloak-camoufox** — patched-Firefox engine adapter speaking the Juggler wire protocol natively from Rust (fd 3/4 pipes, `\0`-framed JSON, per-target session routing, live execution-context tracking). Zero Python/Node at runtime.
+- **ghostfox-core** — engine-agnostic runtime: `Engine`/`PageHandle` traits, session vault, engine registry.
+- **ghostfox-fingerprint** — declarative identities as TOML: coherent device-preset generator (platform/screen/GPU/fonts that actually ship together), auditor that rejects contradictory signals, content-hash fingerprinting per identity.
+- **ghostfox-camoufox** — patched-Firefox engine adapter speaking the Juggler wire protocol natively from Rust (fd 3/4 pipes, `\0`-framed JSON, per-target session routing, live execution-context tracking). Zero Python/Node at runtime.
   - Identity injection via `CAMOU_CONFIG` env — spoofing happens inside the engine at the C++ level.
   - Per-character key-event typing (Enter/Tab/Space with correct key codes), named-key `press_key`, mouse-event clicks with JS-click fallback for form controls.
   - Self-healing snapshot (context-loss recovery via reload), process-group teardown, ephemeral profile lifecycle.
-- **ghostcloak-mcp** — MCP server (stdio) exposing 9 narrow, typed tools: `session_create`, `page_open`, `page_snapshot`, `page_click`, `page_type`, `page_fill`, `page_press`, `identity_generate`, `identity_audit`.
-- **ghostcloak-eval** — the stealth referee: offline identity-coherence audits (T0), JS-surface probes against live pages (T1/T2).
+- **ghostfox-mcp** — MCP server (stdio) exposing 9 narrow, typed tools: `session_create`, `page_open`, `page_snapshot`, `page_click`, `page_type`, `page_fill`, `page_press`, `identity_generate`, `identity_audit`.
+- **ghostfox-eval** — the stealth referee: offline identity-coherence audits (T0), JS-surface probes against live pages (T1/T2).
 
 ### Verified
 

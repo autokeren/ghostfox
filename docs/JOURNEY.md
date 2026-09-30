@@ -53,7 +53,7 @@ First Rust runtime + Camoufox engine fork. MCP round-trip E2E working.
   TargetRegistry.js) — MERGEABLE, waiting on maintainer beta.31 build assets.
 
 ### v0.8.0 — 2026-09-27 · arm64 + landscape check
-- Linux arm64 end-to-end: `ghostcloak-mcp-arm64` asset (native arm runner),
+- Linux arm64 end-to-end: `ghostfox-mcp-arm64` asset (native arm runner),
   arch-aware installers in pip/npm/install.sh. The `lin.arm64` engine zip
   has shipped since v0.7.0.
 - Market survey: the space EXPLODED (browser-use 116k★, Vercel

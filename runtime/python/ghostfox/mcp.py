@@ -1,4 +1,4 @@
-"""Synchronous Python client for the Ghostfox MCP runtime (ghostcloak-mcp).
+"""Synchronous Python client for the Ghostfox MCP runtime (ghostfox-mcp).
 
 The runtime is the same MCP server AI agents use; this client gives plain
 Python the same surface:
