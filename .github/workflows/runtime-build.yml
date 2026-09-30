@@ -61,7 +61,7 @@ jobs:
           ls -la "$RUNNER_TEMP/${{ matrix.asset }}"
 
       - name: Build inside ubuntu:24.04 (native arch)
-        if: matrix.container != 'windows'
+        if: matrix.container == 'ubuntu:24.04'
         run: |
           docker run --rm \
             -v "$PWD/runtime:/src:ro" \
