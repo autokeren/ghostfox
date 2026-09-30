@@ -20,11 +20,15 @@ REASON  → skip? wait? scroll? proceed? (see §2 — every signal is in the JSO
 DECIDE  → one clear next action
 ACT     → page_type_ref / page_click_ref / page_click_native / page_type / page_eval
         → then ALWAYS READ AGAIN (self-health, §4)
+        → page_mutations (M3 hearing) tells you EXACTLY what the page changed
 ```
 
 After **every** action, take a fresh `page_a11y`. Not sometimes — always.
 Actions change the DOM (editors expand, toasts appear, buttons enable), and
-the only way to know what changed is to look again.
+the only way to know what changed is to look again. `page_mutations` is the
+cheaper sibling: it streams the DOM changes themselves (what appeared,
+what got an attribute) from the unhookable frame-script observer — use it
+when you only need "what changed", not the full state.
 
 ---
 
@@ -254,10 +258,17 @@ v4 differs from v3 everywhere that matters. What we verified live:
    the wall clears: +30px drag on the slider handle, measure piece 1:1.
 
 
-### page_pixels — SUPERMAN GLASSES (v0.6.2)
+### page_pixels — SUPERMAN GLASSES (v2, M2.5 compositor)
 
 The agent SEES images as luminance grids (digits 0-9, 0=black).
 No vision model needed — text models read grids natively.
+
+Pixels come STRAIGHT from the compositor (no page-realm canvas, no
+toDataURL — unhookable), in three modes:
+- `{x, y, width, height}` — raw viewport region
+- `{role, name}` — semantic element via native a11y bounds (scroll-first)
+- `{ref}` — walk-ref; CANVAS refs read the drawing buffer (hidden
+  canvases included — the GeeTest fullbg case)
 
 - Works on: canvas elements, img elements, background-image elements.
 - Geometry: grid cols map back to image pixels via
@@ -682,6 +693,16 @@ session migrated from a Camoufox-lineage browser this way.*
   round trips.
 - **`page_diff`** — what changed since the last snapshot, without an action
   in between. Capped at 40 entries.
+- **`page_mutations` (M3 hearing)** — the privileged DOM-change whisper
+  stream: {type, tag, attr, text, added, removed} per mutation, capped at
+  300. The page cannot hide its own mutations from this observer. After an
+  action, this is the fastest "what appeared?" answer (feedback toasts,
+  injected forms, anti-bot churn) — no full snapshot needed.
+- **`page_ui_audit` (M5 the Critic)** — judge the RENDERED UI like a human
+  eye: text-clipped captions, missing padding, viewport overflow,
+  overlapping elements, crowded controls — computed from the engine's
+  native a11y geometry. Run it after ANY UI change (vibe-coded layouts
+  live and die by this).
 - **Recipes** — repeat flows WITHOUT an LLM: `recipe_record(name)` → act →
   `recipe_save()`. Later: `recipe_replay(name)` re-resolves each semantic
   anchor (role+name) against a FRESH snapshot per step — survives DOM

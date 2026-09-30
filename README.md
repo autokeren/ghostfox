@@ -233,6 +233,7 @@ see [engine/README.md](engine/README.md) — `make dir && make build`.
 runtime/   Rust: ghostfox-{core,fingerprint,mcp,eval}     (MIT OR Apache-2.0)
 engine/    Browser fork: patches, branding, build system    (MPL-2.0)
 AGENTS.md  The agent playbook — how AI agents drive Ghostfox like a human
+SKILL.md   The compact agent skill — the golden loop + tool map at a glance
 docs/JOURNEY.md  The dev-log, todo list and the road ahead (the five senses)
 ````
 
