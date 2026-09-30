@@ -28,10 +28,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Engine + runtime from the matching GitHub release (pinned by build arg).
 ARG GHOSTFOX_VERSION=v0.1.0
 ARG GHOSTFOX_REPO=autokeren/ghostfox
-RUN curl -fsSL "https://api.github.com/repos/${GHOSTFOX_REPO}/releases/tags/${GHOSTFOX_VERSION}" \
-        -o /tmp/rel.json \
- && ENGINE_URL=$(grep -o '"browser_download_url": *"[^"]*lin\.x86_64\.zip"' /tmp/rel.json | head -1 | sed 's/.*"\(https[^"]*\)"/\1/') \
- && RUNTIME_URL=$(grep -o '"browser_download_url": *"[^"]*ghostfox-mcp"' /tmp/rel.json | head -1 | sed 's/.*"\(https[^"]*\)"/\1/') \
+RUN curl -fsSL "https://api.github.com/repos/${GHOSTFOX_REPO}/releases?per_page=20" \
+        -o /tmp/rels.json \
+ && PREV_TAGS=$(grep -o '"tag_name": *"[^"]*"' /tmp/rels.json | sed 's/.*"\(v[^"]*\)"/\1/' | grep -v "^${GHOSTFOX_VERSION}$" || true) \
+ && ENGINE_URL="" RUNTIME_URL="" \
+ && for tag in ${GHOSTFOX_VERSION} ${PREV_TAGS}; do \
+      if [ -n "${ENGINE_URL:-}" ] && [ -n "${RUNTIME_URL:-}" ]; then break; fi; \
+      curl -fsSL "https://api.github.com/repos/${GHOSTFOX_REPO}/releases/tags/${tag}" -o /tmp/rel.json \
+      && ENGINE_URL=$(grep -o '"browser_download_url": *"[^"]*lin\.x86_64\.zip"' /tmp/rel.json | head -1 | sed 's/.*"\(https[^"]*\)"/\1/') \
+      && RUNTIME_URL=$(grep -o '"browser_download_url": *"[^"]*ghostfox-mcp"' /tmp/rel.json | head -1 | sed 's/.*"\(https[^"]*\)"/\1/'); \
+    done \
  && test -n "${ENGINE_URL:-}" && test -n "${RUNTIME_URL:-}" \
  && curl -fL --retry 3 "$ENGINE_URL" -o /tmp/engine.zip \
  && mkdir -p /opt/ghostfox/engine \
