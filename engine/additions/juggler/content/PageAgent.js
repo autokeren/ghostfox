@@ -632,16 +632,46 @@ export class PageAgent {
     badptr.contents;
   }
 
-  async _captureCanvasBuffer({selector}) {
+  async _captureCanvasBuffer({selector, ref}) {
     // Read a canvas's DRAWING BUFFER from the privileged frame script:
     // the Xray wrapper calls the NATIVE APIs, so page-level hooks on
     // HTMLCanvasElement.prototype cannot poison or observe the read.
     // Needed for hidden canvases (CSS 0x0) that the compositor never
     // renders — the GeeTest fullbg case.
-    const doc = this._frameTree.mainFrame().domWindow().document;
-    const el = doc.querySelector(selector);
+    const win = this._frameTree.mainFrame().domWindow();
+    const doc = win.document;
+    let el = null;
+    if (selector) {
+      el = doc.querySelector(selector);
+    } else {
+      // Page-realm Map: waive the Xray to read the page's own registry.
+      try {
+        const map = Cu.waiveXrays(win).__gfxRefs;
+        el = map ? map.get(ref) : null;
+      } catch (e) {
+        return { error: 'ref resolve failed: ' + e.message };
+      }
+    }
     if (!el || el.tagName !== 'CANVAS')
-      return { error: `canvas not found: ${selector}` };
+      return { error: `canvas not found: ${selector || ref} (el=${el ? el.tagName : 'null'}, map=${(Cu.waiveXrays(win).__gfxRefs) ? 'ada' : 'kosong'})` };
+    // transferControlToOffscreen case: the placeholder element reports
+    // 0x0 while a WORKER owns the real buffer. The GfxXray service
+    // reads the worker-side frame through the main-thread display
+    // helper (mutex-guarded, below the JS layer).
+    // GfxXray native read first — covers 2D, WebGL AND worker-transferred
+    // OffscreenCanvas with zero JS in the pixel path. Returns '' when
+    // the canvas has no frame; fall through to the JS paths otherwise.
+    try {
+      const xray = Cc["@mozilla.org/juggler/gfx-xray;1"].getService(Ci.nsIGfxXray);
+      const packed = xray.canvasBuffer(el);
+      if (packed) {
+        const sep = packed.indexOf(':');
+        const dims = packed.slice(0, sep).split('x');
+        return { data: packed.slice(sep + 1), width: parseInt(dims[0], 10), height: parseInt(dims[1], 10), raw: true };
+      }
+    } catch (e) {
+      // no GfxXray (old engine) — fall through to the JS paths
+    }
     // WebGL path first: toDataURL returns BLANK on WebGL canvases with
     // preserveDrawingBuffer:false (the classic captcha trap) — read the
     // drawing buffer straight from the GL context instead.

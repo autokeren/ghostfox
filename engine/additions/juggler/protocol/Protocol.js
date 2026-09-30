@@ -922,12 +922,14 @@ const Page = {
     },
     'captureCanvasBuffer': {
       params: {
-        selector: t.String,
+        selector: t.Optional(t.String),
+        ref: t.Optional(t.String),
       },
       returns: {
         data: t.Optional(t.String),
         width: t.Optional(t.Number),
         height: t.Optional(t.Number),
+        raw: t.Optional(t.Boolean),
         error: t.Optional(t.String),
       },
     },

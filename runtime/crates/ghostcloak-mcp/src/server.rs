@@ -1084,49 +1084,107 @@ impl GhostcloakServer {
                 let snap = native_a11y_flatten(raw);
                 let anchor = crate::recipes::Anchor { role, name };
                 crate::recipes::resolve_anchor(&snap, &anchor).and_then(|el| el.bounds.clone())
-            } else if let Some(r) = r#ref {
-                page.get_ref_rect(&r)
+            } else if let Some(r) = r#ref.as_deref() {
+                page.get_ref_rect(r)
                     .await
                     .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?
             } else {
                 None
             };
 
-        let Some(b) = rect else {
-            return Err(rmcp::model::ErrorData::invalid_params(
-                "no capture target: pass {x,y,width,height}, {role,name} or {ref}",
-                None,
-            ));
+        // Canvas refs read the DRAWING BUFFER (M2.9): the buffer is the
+        // source of truth — hidden canvases, WebGL and worker-transferred
+        // OffscreenCanvas all render nothing to the compositor.
+        let ref_is_canvas = if let Some(r) = r#ref.as_ref() {
+            let js = format!(
+                r#"JSON.stringify({{ tag: ((window.__gfxRefs || new Map()).get('{r}') || {{}}).tagName || '' }})"#,
+                r = r
+            );
+            page.evaluate(&js)
+                .await
+                .ok()
+                .and_then(|v| v.as_str().map(|s| s.contains("CANVAS")))
+                .unwrap_or(false)
+        } else {
+            false
         };
-        let (bw, bh) = (
-            b.width.clamp(1, 2048) as u32,
-            b.height.clamp(1, 2048) as u32,
-        );
-        if bw * bh > 4_194_304 {
-            return Err(rmcp::model::ErrorData::invalid_params(
-                format!("capture region {}x{} exceeds 4M pixels — crop it", bw, bh),
-                None,
-            ));
-        }
-        let surface = page
-            .capture_surface(b.x, b.y, bw, bh)
-            .await
-            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
-        let grid =
-            crate::vision::luminance_grid(&surface.rgba, surface.width, surface.height, gw, gh);
+        let (grid, width, height, source) = if ref_is_canvas {
+            let r = r#ref.as_deref().unwrap_or_default();
+            // Page-realm expandos are invisible to the frame script (Xray
+            // AND waiveXrays) — mark the element with an attribute and
+            // resolve it as a SELECTOR on the privileged side instead.
+            let mark = format!("data-gfx-px-{r}");
+            let mark_js = format!(
+                r#"(function() {{ var el = (window.__gfxRefs || new Map()).get('{r}'); if (!el) return 'STALE-REF'; el.setAttribute('{mark}', '1'); return 'ok'; }})()"#
+            );
+            match page.evaluate(&mark_js).await {
+                Ok(v) if v.as_str() == Some("STALE-REF") => {
+                    return Err(rmcp::model::ErrorData::internal_error(
+                        format!("ref {r} is stale — rerun page_a11y"),
+                        None,
+                    ))
+                }
+                Ok(_) => {}
+                Err(e) => return Err(rmcp::model::ErrorData::internal_error(e.to_string(), None)),
+            }
+            let cb = page
+                .capture_canvas_buffer(&format!("canvas[{mark}]"))
+                .await
+                .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?
+                .ok_or_else(|| {
+                    rmcp::model::ErrorData::internal_error("canvas buffer read failed", None)
+                })?;
+            let rgba = if cb.raw {
+                cb.bytes
+            } else {
+                image::load_from_memory(&cb.bytes)
+                    .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?
+                    .to_rgba8()
+                    .into_raw()
+            };
+            let grid = crate::vision::luminance_grid(&rgba, cb.width, cb.height, gw, gh);
+            (grid, cb.width, cb.height, "canvas-buffer")
+        } else {
+            let Some(b) = rect else {
+                return Err(rmcp::model::ErrorData::invalid_params(
+                    "no capture target: pass {x,y,width,height}, {role,name} or {ref}",
+                    None,
+                ));
+            };
+            let (bw, bh) = (
+                b.width.clamp(1, 2048) as u32,
+                b.height.clamp(1, 2048) as u32,
+            );
+            if bw * bh > 4_194_304 {
+                return Err(rmcp::model::ErrorData::invalid_params(
+                    format!("capture region {}x{} exceeds 4M pixels — crop it", bw, bh),
+                    None,
+                ));
+            }
+            let surface = page
+                .capture_surface(b.x, b.y, bw, bh)
+                .await
+                .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+            (
+                crate::vision::luminance_grid(&surface.rgba, surface.width, surface.height, gw, gh),
+                surface.width,
+                surface.height,
+                "compositor",
+            )
+        };
         let _ = self.recorder.record(
             &session_id,
             "page_pixels",
             Some(&page_id),
-            serde_json::json!({ "mode": "captureSurface", "bounds": b, "grid_w": gw, "grid_h": gh }),
+            serde_json::json!({ "mode": "page_pixels", "source": source, "grid_w": gw, "grid_h": gh }),
         );
         Ok(text_result(
             serde_json::to_string_pretty(&serde_json::json!({
                 "w": gw,
                 "h": gh,
-                "width": surface.width,
-                "height": surface.height,
-                "source": "compositor",
+                "width": width,
+                "height": height,
+                "source": source,
                 "grid": grid,
             }))
             .unwrap_or_default(),
@@ -1611,7 +1669,10 @@ impl GhostcloakServer {
         // script (native toDataURL via Xray — page hooks cannot poison or
         // observe). The fullbg canvas is hidden (CSS 0x0), so the
         // compositor never renders it; the buffer is the honest source.
-        let buf = async |sel: &str| -> Result<ghostcloak_core::engine::CanvasBuffer, rmcp::model::ErrorData> {
+        let buf = async |sel: &str| -> Result<
+            ghostcloak_core::engine::CanvasBuffer,
+            rmcp::model::ErrorData,
+        > {
             let bytes = page
                 .capture_canvas_buffer(sel)
                 .await

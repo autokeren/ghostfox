@@ -1832,15 +1832,22 @@ impl PageHandle for CamoufoxPage {
 
     async fn capture_canvas_buffer(
         &self,
-        selector: &str,
+        target: &str,
     ) -> Result<Option<ghostcloak_core::engine::CanvasBuffer>> {
         use base64::Engine as _;
         let sid = self.session_id().await?;
+        // A walk-ref (e12) resolves through the page's __gfxRefs; anything
+        // with a dot/hash/whitespace is treated as a CSS selector.
+        let param = if target.starts_with('e') && target[1..].chars().all(|c| c.is_ascii_digit()) {
+            serde_json::json!({ "ref": target })
+        } else {
+            serde_json::json!({ "selector": target })
+        };
         let res = self
             .conn
             .request_session_t(
                 "Page.captureCanvasBuffer",
-                serde_json::json!({ "selector": selector }),
+                param,
                 Some(&sid),
                 std::time::Duration::from_secs(10),
             )
@@ -1848,6 +1855,7 @@ impl PageHandle for CamoufoxPage {
         if let Some(err) = res.get("error").and_then(|e| e.as_str()) {
             return Err(GhostError::PageOp(format!("captureCanvasBuffer: {err}")));
         }
+        eprintln!("[CB] res={res}");
         let data = match res.get("data").and_then(|d| d.as_str()) {
             Some(d) => d,
             None => return Ok(None),

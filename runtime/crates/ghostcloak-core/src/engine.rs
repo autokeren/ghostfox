@@ -223,8 +223,8 @@ pub trait PageHandle: Send + Sync {
     /// privileged frame script — the Xray wrapper calls the NATIVE
     /// toDataURL, which page hooks cannot poison or observe. For
     /// hidden canvases the compositor never renders (GeeTest fullbg).
-    async fn capture_canvas_buffer(&self, selector: &str) -> Result<Option<CanvasBuffer>> {
-        let _ = selector;
+    async fn capture_canvas_buffer(&self, target: &str) -> Result<Option<CanvasBuffer>> {
+        let _ = target;
         Err(crate::error::GhostError::PageOp(
             "capture_canvas_buffer not supported by this engine".into(),
         ))
