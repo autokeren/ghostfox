@@ -655,7 +655,7 @@ export class PageAgent {
     }
     const find = (acc) => {
       const r = service.getStringRole(acc.role);
-      if (r === role && acc.name && acc.name.includes(name))
+      if ((role === '' || r === role) && acc.name && acc.name.includes(name))
         return acc;
       for (let child = acc.firstChild; child; child = child.nextSibling) {
         const hit = find(child);
@@ -843,7 +843,7 @@ export class PageAgent {
     if (!docAcc) return null;
     const find = (acc) => {
       const r = service.getStringRole(acc.role);
-      if (r === role && acc.name && acc.name.includes(name))
+      if ((role === '' || r === role) && acc.name && acc.name.includes(name))
         return acc;
       for (let child = acc.firstChild; child; child = child.nextSibling) {
         const hit = find(child);
