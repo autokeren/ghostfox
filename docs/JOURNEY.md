@@ -301,6 +301,25 @@ Progress (2026-09-30):
 - Next: worker-2D readback runnable, then the CrossProcessPaint
   'PaintAllLayers' flag for the Layer X-Ray.
 
+### Flutter web E2E (2026-09-30 — the living proof)
+Flutter web apps ARE ghostfox-testable: serve `flutter build web`,
+then the engine's native a11y reads the Flutter SEMANTICS tree
+(roles + labels + bounds) once semantics are on — either via
+`SemanticsBinding.instance.ensureSemantics()` in the app (after
+WidgetsFlutterBinding.ensureInitialized()) or Flutter's
+"Enable accessibility" affordance. Native clicks hit Flutter
+buttons correctly (submit fired, status rendered). Field bugs found
+and fixed along the way: the bootstrap script path must be served
+from the build dir ROOT (root-absolute /flutter_bootstrap.js), and
+the a11y bounds used screen coords that break when a WM positions
+the window off-origin (+294,-23 on the NX desktop) — replaced with
+the window-relative docAcc anchor.
+KNOWN GAP: typing INTO Flutter text fields — the DOM input receives
+the text but the Dart controllers don't (Flutter's editing protocol
+needs the beforeinput/inputType sequence; the DOM input-event route
+doesn't sync the editing state). Next: study Flutter's text-editing
+channel + synthesize the right event order.
+
 Progress (2026-09-30, continued):
 - **SHIPPED: Layer X-Ray** — RenderDocumentFlags::ForceVisibleContent
   threaded from drawSnapshot through CrossProcessPaint to
