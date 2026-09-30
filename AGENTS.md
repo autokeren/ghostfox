@@ -669,6 +669,19 @@ camofox-browser, ...):
 announcement) was published by the Ghostfox runtime itself, using a
 session migrated from a Camoufox-lineage browser this way.*
 
+## 8b. Android E2E via Flutter web — the no-emulator route
+
+Flutter apps run E2E in ghostfox as WEB builds (same Dart codebase):
+`flutter build web --dart-define=API_BASE_URL=http://<host>:8080` —
+serve the build dir as the root, enable semantics (ensureSemantics or
+the "Enable accessibility" affordance), then the native a11y tree
+reads the widgets and page_click_native fires them. Verified on the
+user's real koperasi app: the login screen's tree read perfectly
+(Nomor Anggota / PIN / Masuk). Two gaps: typing into Flutter fields
+(WIP — the Dart controllers don't sync from DOM routes) and CORS
+against local backends (use the engine's CORS bypass mode). Final
+visual/sensor parity still needs a device pass.
+
 ## 9. The agent-reliability toolset (v0.8.2 era) — use these first
 
 - **`page_extract(fields)`** — before dumping a full `page_a11y`, ask for

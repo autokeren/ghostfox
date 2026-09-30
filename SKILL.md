@@ -59,6 +59,28 @@ again until `counts.errors` is zero.
 - `include_hidden: true` on `page_pixels` paints visibility:hidden
   content (the Layer X-Ray) — the compositor's refusal is optional.
 
+## Android E2E via Flutter web (no emulator)
+
+Build the Flutter app for the web and drive it with the senses:
+
+1. `flutter build web --dart-define=API_BASE_URL=http://localhost:8080`
+   (the default `10.0.2.2` is the Android emulator's loopback alias).
+2. Serve the build dir as the ROOT (Flutter's bootstrap script is
+   root-absolute: `/flutter_bootstrap.js`): `python3 -m http.server 8898
+   --directory build/web`.
+3. Open it, then enable Flutter semantics ONCE (the app must call
+   `SemanticsBinding.instance.ensureSemantics()` after
+   `WidgetsFlutterBinding.ensureInitialized()`, or click Flutter's
+   "Enable accessibility" affordance via the DOM).
+4. `page_a11y(native=true)` now reads the Flutter widgets — textboxes,
+   buttons, labels, with trusted bounds. `page_click_native` fires
+   them. `page_wait_stable` + `page_diff` + receipts close the loop.
+
+Known gaps: typing INTO Flutter text fields (the DOM input receives
+the text but the Dart controllers don't sync — WIP); CORS against a
+local backend (the engine's CORS bypass mode covers this — set
+`GHOSTFOX_INSECURE_CORS=1` for local testing).
+
 ## Gotchas
 
 - Refs are ephemeral (e12, n3) — re-walk after DOM churn; recipes use
