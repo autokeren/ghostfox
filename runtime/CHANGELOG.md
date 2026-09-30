@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Page.captureCanvasBuffer**: canvas DRAWING BUFFER reads from the
+  privileged frame script (native toDataURL via Xray — page hooks
+  cannot poison or observe). For canvases the compositor never renders
+  (CSS 0x0, display:none — the GeeTest fullbg case).
+- Rotate solver: feedback reader now covers `[role=alert]`/`[role=status]`
+  and the human-replay re-registration matches English button labels
+  (the 2captcha demo re-rendered as an English mock).
+- **M2.9 (the sixth sense)** scoped in docs/JOURNEY.md: Layer X-Ray,
+  native framebuffer reads (worker OffscreenCanvas), unhookable mutation
+  whispers, profiler nervous system, truth-vs-lie detector, ghost frame.
 - **M2.5 compositor pixel capture**: `Page.captureSurface` — raw RGBA of
   any content-viewport rect straight from the compositor (`drawSnapshot`
   onto a CHROME-realm canvas). No page-realm canvas, no toDataURL, no

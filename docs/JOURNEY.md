@@ -106,6 +106,41 @@ First Rust runtime + Camoufox engine fork. MCP round-trip E2E working.
 - A display belongs to a human: never spawn headful windows on a display
   someone is using, never pkill broadly — ask first.
 
+### 8-family E2E field notes (2026-09-30, headful on the host)
+
+| # | Family | Target | Result |
+|---|---|---|---|
+| 1 | GeeTest v3 slide | demos.geetest.com/slide-popup.html | ✅ 验证成功 (drag_x=133) |
+| 2 | Rotate | 2captcha.com/demo/rotatecaptcha | ✅ solved:true (after 2 fixes) |
+| 3 | Normal OCR | 2captcha.com/demo/normal | ✅ "Captcha is passed successfully!" (w9h5k, first try) |
+| 4 | Turnstile | demo.turnstile.workers.dev | ✅ XXXX.DUMMY.TOKEN.XXXX + sign-in |
+| 5 | Icon-click | passport.bilibili.com (REAL) | 🟡 rounds advance (clicks accepted) but next-round image throttled on our flagged session; full pass proven 2026-09-21 |
+| 6 | TikTok OTP | tiktok.com | prior evidence (2026-09-21, logged in) |
+| 7 | GeeTest v4 radar | demos.geetest.com/fullpage.html | ✅ 验证成功 (radar→slide escalation, drag_x=131) |
+| 8 | hCaptcha | accounts.hcaptcha.com/demo | ⏸ ran out of time in this session (production pass proven earlier) |
+
+Lessons from THIS run:
+- **geetest demo URLs moved**: `demos.geetest.com/<x>` 404s now — the
+  working paths end in `.html` (slide-popup.html, fullpage.html,
+  click-popup.html). Index: demos.geetest.com/ lists them all.
+- **2captcha demos are SVG mocks now**: rotate/normal/turnstile pages
+  re-rendered as marketing mockups; the rotate demo's feedback lives in
+  `[role=alert]` ("Incorrect captcha angle...") and the replay labels
+  are ENGLISH ("Check"/"Reset") — solver updated bilingual. The normal
+  demo's captcha img = `captcha-*.jpg` (find it, the walk won't list it).
+  The turnstile demo widget never renders — use
+  demo.turnstile.workers.dev (Cloudflare's official dummy) instead.
+- **Persistent-profile startupCache serves STALE engine JS** after an
+  omni.ja swap — clear `profile/startupCache/` when deploying engine
+  changes to a reused profile.
+- **Hidden-canvas rule**: any canvas the compositor never renders
+  (CSS 0x0, display:none) must be read from its BUFFER, not
+  captureSurface. That's why Page.captureCanvasBuffer exists.
+- **Human-like E2E rig**: keep the browser ALIVE across the tour — a
+  persistent MCP bridge (unix socket, /tmp/opencode/gf_bridge.py +
+  gf.py) + one session + tool-by-tool interaction, like an agent seeing
+  the page for the first time. The user watches headful on the desktop.
+
 ---
 
 ## Status today
@@ -181,6 +216,44 @@ Field lessons:
   `__gfxRefs` Map is unreliable through the frame script compartment —
   resolve walk-ref rects via page-realm evaluate instead; the PIXELS
   stay compositor-native either way.
+
+### M2.9 — 🔮 The Sixth Sense: see what the page HIDES
+Born from the live 8-family E2E (2026-09-30): every wound found maps to
+something the page hides from the JS agent. We own the house — the sixth
+sense is planted in Gecko/C++ bones, not page JS.
+
+Wounds that named this milestone:
+- **GeeTest fullbg canvas is CSS 0x0** — hidden canvases never reach the
+  compositor. Current fix reads the buffer via Xray; the sixth sense
+  reads it at the ENGINE level.
+- **Bilibili throttles the next round's image** — we couldn't tell
+  "loading" from "strangled". The page's nervous system is visible from
+  the profiler.
+- **Feedback appears as [role=alert]** — the rotate sweep missed it. We
+  need a "what just appeared" stream (also M3's whisper).
+- **A11y tree showed 7 elements on a page with hundreds** — frames,
+  canvas internals and widget guts are invisible to both walkers.
+
+The six (engine-level, C++ not JS):
+1. **Layer X-Ray**: patch/own `drawSnapshot` to capture ANY layer —
+   `display:none`, `opacity:0`, `translateX(-9999)`, hidden canvases.
+   The compositor refuses them today; we stop refusing.
+2. **Native framebuffer reads**: canvas + WebGL backing stores read in
+   C++, including OffscreenCanvas inside Web Workers (GeeTest renders
+   puzzles in workers).
+3. **Mutation whispers**: hook nsIMutationObserver natively — every DOM
+   change as an event stream, unhookable (JS MutationObserver is
+   detectable and the page can lie).
+4. **Profiler nervous system**: after each action, which JS ran, how
+   long, what it touched — anti-bot scripts light up.
+5. **Truth vs Lie detector**: compositor-real innerWidth/scroll/DPR vs
+   the page-claimed (spoofed) values — the delta is the trap map.
+6. **Ghost frame**: our own shadow frame that renders hidden content
+   INTERACTIVELY (not just pixels — clickable), plus storage
+   archaeology (what the page learned about us).
+
+Priority: 1+2 first (they close the exact hole the E2E fell into), then
+3+4 fold into M3.
 
 ### M3 — 👂 Hearing: incremental updates + whisper streams
 - AccEvent diff (`Agent.observeDiff`) — the a11y tree as a stream, not

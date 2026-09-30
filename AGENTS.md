@@ -580,13 +580,18 @@ recordings/zjyjgwue/screenshots/0001..0010.
 
 | # | Family | Target | Verdict | Method |
 |---|---|---|---|---|
-| 1 | GeeTest v3 slide | demos.geetest.com/slide-popup | 验证成功 | canvas bg-vs-fullbg diff, LARGEST blob = hole (JPEG-noise trap: use diff>40 + closing 5x5, not raw threshold), piece solid alpha>128 left edge, drag = hole_x0 - piece_x0 |
-| 2 | Rotate | 2captcha /demo/rotatecaptcha | 验证码通过！ | fixed-image sweep: reset -> rotate k*15deg -> check. Answer = 165deg (11 clicks). H/V edge heuristic is 4-way ambiguous (90deg period) — the SWEEP is deterministic |
-| 3 | Normal image captcha | 2captcha /demo/normal | 验证码通过！ | ddddocr classification (first try, "w9h5k") + type_ref + check |
-| 4 | Cloudflare Turnstile | 2captcha /demo/cloudflare-turnstile | response token (dummy sitekey) | behavioral: scrollIntoView + click checkbox; response appears with NO challenge. Honest note: demo uses Cloudflare's test sitekey (XXXX.DUMMY.TOKEN) — real-site proof still pending |
-| 5 | GeeTest icon-click | passport.bilibili.com (REAL) | Verification Succeeded | NATIVE MCP tool page_geetest_click (YOLOv8s + siamese_float, rten) — attempt 1 |
+| 1 | GeeTest v3 slide | demos.geetest.com/slide-popup.html | 验证成功 | canvas bg-vs-fullbg diff, LARGEST blob = hole (JPEG-noise trap: use diff>40 + closing 5x5, not raw threshold), piece solid alpha>128 left edge, drag = hole_x0 - piece_x0. Canvases read from the BUFFER (Page.captureCanvasBuffer) — the fullbg canvas is CSS 0x0 (hidden, compositor never renders it) |
+| 2 | Rotate | 2captcha.com/demo/rotatecaptcha | solved:true | fixed-image sweep: reset -> rotate k*15deg -> check. Feedback lives in [role=alert] ("Incorrect captcha angle..."); replay labels are ENGLISH (Check/Reset) — solver is bilingual now |
+| 3 | Normal image captcha | 2captcha.com/demo/normal | Captcha is passed successfully! | ddddocr (first try, "w9h5k") + type_ref + check. The captcha img = captcha-*.jpg — the walk won't list it; register it by selector |
+| 4 | Cloudflare Turnstile | demo.turnstile.workers.dev | XXXX.DUMMY.TOKEN.XXXX | Cloudflare's official dummy demo (the 2captcha one is a non-rendering mock now). Token appears via invisible-mode widget; fill + sign in |
+| 5 | GeeTest icon-click | passport.bilibili.com (REAL) | rounds advance; full pass proven 2026-09-21 | page_geetest_click (YOLOv8s + siamese_float, rten). Multi-round: widget advances after each accepted round; a flagged session gets the next round's image throttled ("Loading" forever) |
 | 6 | TikTok OAuth + email OTP | tiktok.com | logged in (Messages: 2) | prior session's popup OAuth + Gmail OTP chase; session persists |
-| 7 | GeeTest v4 radar/one-click | demos.geetest.com/fullpage | 验证成功 | radar click escalates to slide (we look suspicious after a day of solving) -> family-1 recipe solves it |
+| 7 | GeeTest v4 radar/one-click | demos.geetest.com/fullpage.html | 验证成功 | radar click escalates to slide (we look suspicious after a day of solving) -> family-1 recipe solves it |
+| 8 | hCaptcha | accounts.hcaptcha.com/demo | production pass proven | page_hcaptcha (CF Workers AI GLM vision, multi-round until token). Needs CLOUDFLARE_API_KEY/ACCOUNT_ID |
+
+2026-09-30 field rules: geetest demo URLs need `.html` (the bare paths 404);
+persistent profiles need startupCache/ cleared after engine omni.ja swaps;
+any canvas the compositor won't render must be read from its buffer.
 
 Slide drag numbers vary per challenge (132 / 89 px measured today) —
 always re-derive from the current canvases, never cache.
