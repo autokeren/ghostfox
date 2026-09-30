@@ -675,6 +675,41 @@ export class PageAgent {
       dump(docAcc);
       return { error: `no accessible for role=${role} name=${name} — tree: ${seen.join(' | ')}` };
     }
+    // The Flutter web semantics text field consumes edits through its
+    // OWN DOM element: the strategy activates on focus and the input
+    // handler reads the element's .value (EditingState.fromDomElement).
+    // setTextContents writes the a11y mirror but nobody reads it, so
+    // the winning route = focus + set value + trusted input event.
+    target.takeFocus();
+    for (let i = 0; i < 2; i++)
+      await new Promise(x => win.requestAnimationFrame(x));
+    let node = null;
+    try {
+      node = target.DOMNode;
+    } catch (e) {
+      node = null;
+    }
+    if (node) {
+      try {
+        node.value = String(text);
+        try {
+          node.setSelectionRange(String(text).length, String(text).length);
+        } catch (e) {
+          // Xray may refuse the selection set on some inputs — the
+          // value itself is what the framework's input handler reads.
+        }
+        const ev = new node.ownerGlobal.InputEvent('input', {
+          inputType: 'insertText',
+          data: String(text),
+          bubbles: true,
+          composed: true,
+        });
+        node.dispatchEvent(ev);
+        return { ok: true, route: 'dom-input' };
+      } catch (e) {
+        // fall through to the editable-text route
+      }
+    }
     let editable = null;
     try {
       editable = target.QueryInterface(Ci.nsIAccessibleEditableText);
@@ -682,7 +717,7 @@ export class PageAgent {
       return { error: 'accessible is not editable text' };
     }
     editable.setTextContents(String(text));
-    return { ok: true };
+    return { ok: true, route: 'editable-text' };
   }
 
   // M5 the Critic: every element's honest layout rect from the frame
