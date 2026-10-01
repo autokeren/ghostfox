@@ -36,16 +36,22 @@ impl Session {
         &self.engine
     }
 
-    /// M5 taste: swap the engine (persona metamorphosis). The old engine
-    /// is shut down best-effort and the page registry is cleared — the
-    /// caller reopens the pages against the new identity.
-    pub async fn swap_engine(&self, engine: Arc<dyn Engine>) -> Result<()> {
+    /// M5 taste: stop the current engine (shutdown + reap). The caller
+    /// relaunches against the now-free profile and installs the new
+    /// engine via set_engine. Stopping FIRST is the whole point: a new
+    /// engine booting while the old one still holds the profile lock
+    /// deadlocks at Browser.enable.
+    pub async fn stop_engine(&self) -> Result<()> {
         let old = self.engine.lock().await.clone();
-        let _ = old.shutdown().await;
+        old.shutdown().await
+    }
+
+    /// M5 taste: install a freshly launched engine (after stop_engine)
+    /// and clear the dead page registry.
+    pub async fn set_engine(&self, engine: Arc<dyn Engine>) {
         let mut guard = self.engine.lock().await;
         *guard = engine;
         self.pages.lock().await.clear();
-        Ok(())
     }
     pub async fn new_page(&self, url: Option<&str>) -> Result<Arc<dyn PageHandle>> {
         let engine = self.engine.lock().await.clone();

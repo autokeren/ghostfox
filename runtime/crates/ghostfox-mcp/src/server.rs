@@ -3521,14 +3521,18 @@ impl GhostfoxServer {
             std::fs::write(&file, toml_str)
                 .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
         }
-        // Relaunch the engine against the same profile + swap it in.
+        // Stop the OLD engine FIRST (shutdown + reap). Launching the new
+        // engine before the old one releases the profile lock deadlocks
+        // it at Browser.enable — the swap race found in E2E.
+        session
+            .stop_engine()
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        // Now the profile is free: relaunch with the new identity.
         let engine = ghostfox_camoufox::launch(&launch)
             .await
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
-        session
-            .swap_engine(engine)
-            .await
-            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        session.set_engine(engine).await;
         let toml_str = id
             .to_toml()
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
