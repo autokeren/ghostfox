@@ -11,7 +11,7 @@ pub struct Session {
     pub id: String,
     pub identity: String,
     pub engine_kind: EngineKind,
-    engine: Arc<dyn Engine>,
+    engine: tokio::sync::Mutex<Arc<dyn Engine>>,
     pages: tokio::sync::Mutex<HashMap<String, Arc<dyn PageHandle>>>,
 }
 
@@ -27,17 +27,29 @@ impl Session {
             id,
             identity: identity.into(),
             engine_kind,
-            engine,
+            engine: tokio::sync::Mutex::new(engine),
             pages: Default::default(),
         }
     }
 
-    pub fn engine(&self) -> &Arc<dyn Engine> {
+    pub fn engine(&self) -> &tokio::sync::Mutex<Arc<dyn Engine>> {
         &self.engine
     }
 
+    /// M5 taste: swap the engine (persona metamorphosis). The old engine
+    /// is shut down best-effort and the page registry is cleared — the
+    /// caller reopens the pages against the new identity.
+    pub async fn swap_engine(&self, engine: Arc<dyn Engine>) -> Result<()> {
+        let old = self.engine.lock().await.clone();
+        let _ = old.shutdown().await;
+        let mut guard = self.engine.lock().await;
+        *guard = engine;
+        self.pages.lock().await.clear();
+        Ok(())
+    }
     pub async fn new_page(&self, url: Option<&str>) -> Result<Arc<dyn PageHandle>> {
-        let page = self.engine.new_page(&HashMap::new()).await?;
+        let engine = self.engine.lock().await.clone();
+        let page = engine.new_page(&HashMap::new()).await?;
         if let Some(url) = url {
             page.navigate(url).await?;
         }
@@ -59,7 +71,8 @@ impl Session {
     /// opened pages AND site-opened popups. Popups are auto-attached and
     /// registered so the agent gets a page_id it can use directly.
     pub async fn pages_overview(&self) -> Vec<(String, String, String)> {
-        let targets = self.engine.list_targets().await.unwrap_or_default();
+        let engine = self.engine.lock().await.clone();
+        let targets = engine.list_targets().await.unwrap_or_default();
         // Existing handles first.
         let mut out: Vec<(String, String, String)> = vec![];
         let mut known: Vec<String> = vec![];
@@ -76,7 +89,7 @@ impl Session {
             if tid.is_empty() || known.contains(&tid) {
                 continue;
             }
-            if let Ok(page) = self.engine.attach_target(&tid).await {
+            if let Ok(page) = engine.attach_target(&tid).await {
                 let pid = crate::util::short_id();
                 let url = page.url().await.unwrap_or_default();
                 self.pages.lock().await.insert(pid.clone(), page);
@@ -159,7 +172,7 @@ impl SessionVault {
             id: crate::util::short_id(),
             identity: identity.into(),
             engine_kind: self.default_engine,
-            engine,
+            engine: tokio::sync::Mutex::new(engine),
             pages: Default::default(),
         })
     }

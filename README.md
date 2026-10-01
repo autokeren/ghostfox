@@ -200,7 +200,7 @@ origin device** (platform, timezone, locale, screen) — a session that
 suddenly changes identity looks like an impossible login and anti-fraud
 systems revoke it. Proven flow, see `AGENTS.md` §8.
 
-**Full tool surface (56 tools):**
+**Full tool surface (57 tools):**
 
 | Category | Tools |
 |---|---|

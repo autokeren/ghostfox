@@ -493,6 +493,14 @@ struct PagePressParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+struct IdentityMorphParams {
+    session_id: String,
+    /// Optional target platform: windows / macos / linux / android.
+    /// Omit for a fully random persona.
+    platform: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct IdentityAuditParams {
     identity_toml: String,
 }
@@ -506,6 +514,10 @@ pub struct GhostfoxServer {
 #[derive(Default)]
 pub(crate) struct ServerState {
     pub(crate) sessions: HashMap<String, Arc<Session>>,
+    /// M5 taste: the launch recipe per session — the morph relaunches
+    /// the engine with the same profile (cookies survive) but a fresh
+    /// identity (fingerprint changes coherently).
+    pub(crate) launches: HashMap<String, ghostfox_core::engine::LaunchOptions>,
     /// Recipe drafts in progress: session_id -> (name, steps).
     pub(crate) recipe_drafts: HashMap<String, (String, Vec<crate::recipes::RecipeStep>)>,
     /// Last a11y snapshot per page — the anchor source at record time.
@@ -711,6 +723,7 @@ impl GhostfoxServer {
                 .record_identity(&id, &identity.to_toml().unwrap_or_default());
             let _ = self.recorder.record(&id, "session_create", None, ev);
         }
+        self.state.write().await.launches.insert(id.clone(), launch);
         self.state
             .write()
             .await
@@ -3461,6 +3474,68 @@ impl GhostfoxServer {
             .to_toml()
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
         Ok(text_result(toml_str))
+    }
+
+    #[tool(
+        description = "M5 taste: PERSONA METAMORPHOSIS — change the session's identity mid-flight. Regenerates the coherent fingerprint (platform/locale/tz/geo/screen/UA/fonts together), relaunches the engine against the SAME profile dir (cookies + logins survive), and closes the old pages. Reopen with page_open after. Use when a site flagged the current persona: morph and retry from the same session."
+    )]
+    async fn identity_morph(
+        &self,
+        Parameters(IdentityMorphParams {
+            session_id,
+            platform,
+        }): Parameters<IdentityMorphParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let launch = {
+            let state = self.state.read().await;
+            state.launches.get(&session_id).cloned().ok_or_else(|| {
+                rmcp::model::ErrorData::internal_error(
+                    "no launch recipe for this session".to_string(),
+                    None,
+                )
+            })?
+        };
+        // Fresh coherent identity — the whole persona regenerates together.
+        let id = ghostfox_fingerprint::generate(&ghostfox_fingerprint::GenerateOptions {
+            platform: match platform.as_deref() {
+                Some("windows") => Some(ghostfox_fingerprint::Platform::Windows),
+                Some("macos") => Some(ghostfox_fingerprint::Platform::MacOS),
+                Some("linux") => Some(ghostfox_fingerprint::Platform::Linux),
+                Some("android") => Some(ghostfox_fingerprint::Platform::Android),
+                _ => None,
+            },
+            webrtc: None,
+        });
+        // Overwrite the profile identity — cookies stay, the fingerprint
+        // moves as one coherent unit (the session_create rule is inverted
+        // here ON PURPOSE: this is the metamorphosis).
+        if let Some(dir) = &launch.profile_dir {
+            let file = std::path::PathBuf::from(dir).join("identity.toml");
+            let toml_str = id
+                .to_toml()
+                .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+            std::fs::write(&file, toml_str)
+                .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        }
+        // Relaunch the engine against the same profile + swap it in.
+        let engine = ghostfox_camoufox::launch(&launch)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        session
+            .swap_engine(engine)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let toml_str = id
+            .to_toml()
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        Ok(text_result(format!(
+            "metamorphosis complete — pages closed, cookies preserved. Reopen with page_open.\n{}",
+            toml_str
+        )))
     }
 
     #[tool(
