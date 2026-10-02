@@ -21,6 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   session-death signal.
 - `session_vitals` (M4.5 interoception): the engine process-group
   health — per-process CPU ticks + memory (Linux /proc).
+- **MCP Streamable HTTP transport**: set `GHOSTFOX_HTTP_PORT` (e.g.
+  "5000") and the server serves the MCP Streamable HTTP protocol on
+  127.0.0.1 (stateful sessions, SSE) instead of stdio — the mode
+  remote agents and web MCP hosts connect to. E2E: initialize →
+  Mcp-Session-Id → session_create → page_open, all over HTTP.
 - `GHOSTFOX_WEBGL=1` launch env: re-enables WebGL for Flutter/
   CanvasKit app E2E (the hardening prefs block it and the CPU-only
   fallback crashes some screens).

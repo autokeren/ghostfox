@@ -20,6 +20,7 @@ ghostfox-fingerprint = { path = "../ghostfox-fingerprint" }
 ghostfox-chromium = { path = "../ghostfox-engines/ghostfox-chromium" }
 ghostfox-camoufox = { path = "../ghostfox-engines/ghostfox-camoufox" }
 rmcp.workspace = true
+axum.workspace = true
 schemars = "1"
 toml.workspace = true
 tokio.workspace = true
