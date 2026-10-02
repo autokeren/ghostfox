@@ -134,6 +134,18 @@ struct InitScriptParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+struct CaptchaVisionParams {
+    session_id: String,
+    page_id: String,
+    /// Element ref from page_a11y (the captcha img/canvas). Omit for the
+    /// whole viewport.
+    r#ref: Option<String>,
+    /// Optional override: the exact question to ask the model. Defaults
+    /// to the captcha-text prompt.
+    instruction: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct CookieEventsParams {
     session_id: String,
     page_id: String,
@@ -1829,6 +1841,47 @@ impl GhostfoxServer {
         Ok(text_result(
             serde_json::to_string_pretty(&boxes).unwrap_or_default(),
         ))
+    }
+
+    #[tool(
+        description = "TIER 5 VISION — HOST MODEL CAPTCHA READER: send the captcha element (or the whole viewport when ref is omitted) to the host vision model (Cloudflare Workers AI GLM-5.3-flash) and return what it reads — the OCR tier the local CRNN cannot reach (heavily warped text captchas like Google's). Credentials: CLOUDFLARE_API_KEY + CLOUDFLARE_ACCOUNT_ID env (same as page_hcaptcha). instruction overrides the default text-reading prompt."
+    )]
+    async fn page_captcha_vision(
+        &self,
+        Parameters(CaptchaVisionParams {
+            session_id,
+            page_id,
+            r#ref,
+            instruction,
+        }): Parameters<CaptchaVisionParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let png = self.element_png(&session_id, &page_id, r#ref).await?;
+        let account = std::env::var("CLOUDFLARE_ACCOUNT_ID").ok().or_else(|| {
+            tracing::warn!(target: "ghostfox::mcp", "no CLOUDFLARE_ACCOUNT_ID");
+            None
+        });
+        let key = std::env::var("CLOUDFLARE_API_KEY").ok();
+        let (Some(account), Some(key)) = (account, key) else {
+            return Err(rmcp::model::ErrorData::invalid_params(
+                "no CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_KEY (env) — the host vision model needs them",
+                None,
+            ));
+        };
+        let glm = crate::hcaptcha::Glm::new(account, key);
+        let prompt = instruction.unwrap_or_else(|| {
+            "This image contains a CAPTCHA. Read the characters shown. Reply with ONLY the characters/text, nothing else. If you cannot read it confidently, reply with just the word: UNCLEAR".to_string()
+        });
+        let text = glm
+            .read_text(&png, &prompt)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let _ = self.recorder.record(
+            &session_id,
+            "page_captcha_vision",
+            Some(&page_id),
+            serde_json::json!({ "chars": text.chars().count() }),
+        );
+        Ok(text_result(text))
     }
 
     #[tool(

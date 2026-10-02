@@ -281,7 +281,7 @@ pub fn is_rendered(png: &[u8]) -> bool {
     var > 250.0 // std > ~16
 }
 
-pub struct Glm {
+pub(crate) struct Glm {
     account: String,
     key: String,
 }
@@ -298,6 +298,56 @@ pub struct Solved {
 impl Glm {
     pub fn new(account: String, key: String) -> Self {
         Self { account, key }
+    }
+
+    /// Generic vision read: send an image + prompt to the host vision
+    /// model (GLM-5.3-flash) and return the model's text. The shared
+    /// call used by page_captcha_vision — the OCR tier the local CRNN
+    /// cannot reach (heavily warped text captchas).
+    pub async fn read_text(&self, png: &[u8], prompt: &str) -> Result<String> {
+        let b64 = base64::engine::general_purpose::STANDARD.encode(png);
+        let payload = serde_json::json!({
+            "messages": [{"role": "user", "content": [
+                {"type": "image_url", "image_url": {"url": format!("data:image/png;base64,{b64}")}},
+                {"type": "text", "text": prompt}
+            ]}],
+            "max_tokens": 1024
+        });
+        let client = reqwest::Client::new();
+        let url = format!(
+            "https://api.cloudflare.com/client/v4/accounts/{}/ai/run/@cf/zai-org/glm-5.3-flash",
+            self.account
+        );
+        let resp = client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", self.key))
+            .json(&payload)
+            .send()
+            .await
+            .context("GLM vision request failed")?;
+        let d: serde_json::Value = resp.json().await.context("GLM response parse")?;
+        let msg = d
+            .get("result")
+            .and_then(|r| r.get("choices"))
+            .and_then(|c| c.get(0))
+            .and_then(|c| c.get("message"))
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        let text = msg
+            .get("content")
+            .and_then(|c| c.as_str())
+            .filter(|s| !s.trim().is_empty())
+            .map(|s| s.to_string())
+            .or_else(|| {
+                msg.get("reasoning_content")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+            })
+            .unwrap_or_default();
+        if text.trim().is_empty() {
+            return Err(anyhow!("GLM vision empty answer"));
+        }
+        Ok(text)
     }
 
     /// Ask the vision model ONLY for the instruction text (its strength),

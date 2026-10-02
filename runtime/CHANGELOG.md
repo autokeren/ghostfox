@@ -21,6 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   session-death signal.
 - `session_vitals` (M4.5 interoception): the engine process-group
   health — per-process CPU ticks + memory (Linux /proc).
+- `page_captcha_vision` (tier-5 vision): send any captcha element
+  (or the viewport) to the host vision model (Workers AI GLM-5.3-flash)
+  and get what it reads — the OCR tier the local CRNN cannot reach
+  (heavily warped text captchas). Same CLOUDFLARE_API_KEY /
+  CLOUDFLARE_ACCOUNT_ID env as page_hcaptcha.
 - **MCP Streamable HTTP transport**: set `GHOSTFOX_HTTP_PORT` (e.g.
   "5000") and the server serves the MCP Streamable HTTP protocol on
   127.0.0.1 (stateful sessions, SSE) instead of stdio — the mode
