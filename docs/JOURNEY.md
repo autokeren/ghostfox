@@ -185,7 +185,9 @@ Lessons from THIS run:
 - [x] M4/M4.5 proprioception + interoception — page_proprio (body state +
   caret receipt), page_cookie_events (session heartbeat), session_vitals
   (process-group health) shipped
-- [ ] M5 taste: persona metamorphosis (session state + fingerprint coherence) — NEXT
+- [x] M5 taste: persona metamorphosis — identity_morph shipped + E2E
+  verified (stop-old → relaunch → set-new; the launch-before-shutdown
+  order deadlocked the new engine on the profile lock until fixed)
 - [ ] Streamable HTTP transport (rmcp has it; the fork proved demand)
 - [x] Network interception spike — the Juggler route is FULL: Network.setRequestInterception + resumeInterceptedRequest (url/method/headers/postData modifiable) + abortInterceptedRequest + fulfillInterceptedRequest (response mock), events FLAT-shaped (requestWillBeSent isIntercepted / responseReceived / requestFinished / requestFailed). The 3-5 day build = a page_network_intercept toolset (enable → queue → resume/abort/fulfill per requestId) on top of the existing netcap buffer.
 - [ ] WebGPU v1 persona spoofing (close the Win/Mac-ARM leak; 2h per build cycle)
