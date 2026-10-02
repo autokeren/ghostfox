@@ -187,7 +187,7 @@ Lessons from THIS run:
   (process-group health) shipped
 - [ ] M5 taste: persona metamorphosis (session state + fingerprint coherence) — NEXT
 - [ ] Streamable HTTP transport (rmcp has it; the fork proved demand)
-- [ ] Network interception spike (verify Juggler route/setInterception — 1 day, then 3-5 days to build)
+- [x] Network interception spike — the Juggler route is FULL: Network.setRequestInterception + resumeInterceptedRequest (url/method/headers/postData modifiable) + abortInterceptedRequest + fulfillInterceptedRequest (response mock), events FLAT-shaped (requestWillBeSent isIntercepted / responseReceived / requestFinished / requestFailed). The 3-5 day build = a page_network_intercept toolset (enable → queue → resume/abort/fulfill per requestId) on top of the existing netcap buffer.
 - [ ] WebGPU v1 persona spoofing (close the Win/Mac-ARM leak; 2h per build cycle)
 - [ ] PR #782: watch for upstream beta.31 assets
 - [ ] MCP Registry: publish 0.8.2+ (needs user device authorization)
