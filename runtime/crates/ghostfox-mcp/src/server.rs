@@ -384,6 +384,16 @@ struct PageOpenParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+struct ClickAtParams {
+    session_id: String,
+    page_id: String,
+    /// Content-viewport CSS x (left).
+    x: f64,
+    /// Content-viewport CSS y (top).
+    y: f64,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct PageRefParams {
     session_id: String,
     page_id: String,
@@ -3675,6 +3685,45 @@ impl GhostfoxServer {
         out["target"] = debug_target;
         Ok(text_result(
             serde_json::to_string_pretty(&out).unwrap_or_default(),
+        ))
+    }
+
+    #[tool(
+        description = "RAW TRUSTED CLICK at content-viewport coordinates — the page_click_native engine click WITHOUT the a11y resolution. For elements the a11y tree cannot name or that need a raw pointer (Flutter's semantics placeholder, canvas hotspots, anti-bot traps that hide from the tree). x,y in CSS px of the content viewport."
+    )]
+    async fn page_click_at(
+        &self,
+        Parameters(ClickAtParams {
+            session_id,
+            page_id,
+            x,
+            y,
+        }): Parameters<ClickAtParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let page = session
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        page.click_coords(x, y)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let _ = self.recorder.record(
+            &session_id,
+            "page_click_at",
+            Some(&page_id),
+            serde_json::json!({ "x": x, "y": y }),
+        );
+        Ok(text_result(
+            serde_json::to_string_pretty(&serde_json::json!({
+                "action": "click_at",
+                "x": x,
+                "y": y,
+            }))
+            .unwrap_or_default(),
         ))
     }
 
