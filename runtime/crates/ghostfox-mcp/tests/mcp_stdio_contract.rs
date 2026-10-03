@@ -112,10 +112,14 @@ fn mcp_stdio_contract_lists_and_calls_identity_tools() {
         "identity_morph",
         "page_captcha_vision",
         "page_click_at",
+        "page_network_intercept",
+        "page_network_resume",
+        "page_network_abort",
+        "page_network_fulfill",
     ] {
         assert!(names.contains(&expected), "missing tool {expected}");
     }
-    assert_eq!(names.len(), 59, "tools: {names:?}");
+    assert_eq!(names.len(), 63, "tools: {names:?}");
 
     let generated = request(
         &mut child,

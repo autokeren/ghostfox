@@ -901,6 +901,10 @@ impl Engine for CamoufoxEngine {
                                                     "requestId": rid,
                                                     "url": url2,
                                                     "method": mth,
+                                                    "intercepted": msg
+                                                        .pointer("/params/isIntercepted")
+                                                        .and_then(|v| v.as_bool())
+                                                        .unwrap_or(false),
                                                     "status": serde_json::Value::Null,
                                                     "done": false,
                                                     "ts": now_ms(),
@@ -1895,6 +1899,96 @@ impl PageHandle for CamoufoxPage {
             .unwrap_or_default())
     }
 
+    async fn network_set_interception(&self, enabled: bool) -> Result<()> {
+        let sid = self.session_id().await?;
+        self.conn
+            .request_session_t(
+                "Network.setRequestInterception",
+                serde_json::json!({ "enabled": enabled }),
+                Some(&sid),
+                std::time::Duration::from_secs(10),
+            )
+            .await?;
+        Ok(())
+    }
+
+    async fn network_resume(
+        &self,
+        request_id: &str,
+        url: Option<&str>,
+        method: Option<&str>,
+        headers: Option<serde_json::Value>,
+        post_data: Option<&str>,
+    ) -> Result<()> {
+        let sid = self.session_id().await?;
+        let mut params = serde_json::json!({ "requestId": request_id });
+        if let Some(u) = url {
+            params["url"] = serde_json::json!(u);
+        }
+        if let Some(m) = method {
+            params["method"] = serde_json::json!(m);
+        }
+        if let Some(h) = headers {
+            params["headers"] = h;
+        }
+        if let Some(pd) = post_data {
+            params["postData"] = serde_json::json!(pd);
+        }
+        self.conn
+            .request_session_t(
+                "Network.resumeInterceptedRequest",
+                params,
+                Some(&sid),
+                std::time::Duration::from_secs(10),
+            )
+            .await?;
+        Ok(())
+    }
+
+    async fn network_abort(&self, request_id: &str, error_code: &str) -> Result<()> {
+        let sid = self.session_id().await?;
+        self.conn
+            .request_session_t(
+                "Network.abortInterceptedRequest",
+                serde_json::json!({ "requestId": request_id, "errorCode": error_code }),
+                Some(&sid),
+                std::time::Duration::from_secs(10),
+            )
+            .await?;
+        Ok(())
+    }
+
+    async fn network_fulfill(
+        &self,
+        request_id: &str,
+        status: u32,
+        status_text: &str,
+        headers: Option<serde_json::Value>,
+        body: Option<&str>,
+    ) -> Result<()> {
+        let sid = self.session_id().await?;
+        let mut params = serde_json::json!({
+            "requestId": request_id,
+            "status": status,
+            "statusText": status_text,
+        });
+        if let Some(h) = headers {
+            params["headers"] = h;
+        }
+        if let Some(b) = body {
+            params["body"] = serde_json::json!(b);
+        }
+        self.conn
+            .request_session_t(
+                "Network.fulfillInterceptedRequest",
+                params,
+                Some(&sid),
+                std::time::Duration::from_secs(10),
+            )
+            .await?;
+        Ok(())
+    }
+
     async fn session_vitals(&self) -> Result<serde_json::Value> {
         // Linux only: walk /proc for the engine's process group. CPU ticks
         // (utime+stime) are cumulative — the agent diffs successive reads.
@@ -2412,6 +2506,10 @@ impl PageHandle for CamoufoxPage {
                                     "requestId": rid,
                                     "url": url,
                                     "method": mth,
+                                    "intercepted": msg
+                                        .pointer("/params/isIntercepted")
+                                        .and_then(|v| v.as_bool())
+                                        .unwrap_or(false),
                                     "status": serde_json::Value::Null,
                                     "done": false,
                                     "ts": now_ms(),

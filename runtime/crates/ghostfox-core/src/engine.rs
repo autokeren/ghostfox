@@ -264,6 +264,53 @@ pub trait PageHandle: Send + Sync {
             "read_cookie_events not supported by this engine".into(),
         ))
     }
+    /// Network interception (the spike verified the Juggler route):
+    /// enable/disable the interception on the page's session. While
+    /// enabled, every request HOLDS and waits for resume/abort/fulfill —
+    /// the agent decides per requestId (from the netcap entries).
+    async fn network_set_interception(&self, enabled: bool) -> Result<()> {
+        let _ = enabled;
+        Err(crate::error::GhostError::PageOp(
+            "network_set_interception not supported by this engine".into(),
+        ))
+    }
+    /// Resume a held intercepted request — url/method/headers/postData
+    /// optional overrides (the request MODIFIER).
+    async fn network_resume(
+        &self,
+        request_id: &str,
+        url: Option<&str>,
+        method: Option<&str>,
+        headers: Option<serde_json::Value>,
+        post_data: Option<&str>,
+    ) -> Result<()> {
+        let _ = (request_id, url, method, headers, post_data);
+        Err(crate::error::GhostError::PageOp(
+            "network_resume not supported by this engine".into(),
+        ))
+    }
+    /// Abort a held intercepted request (the blocker).
+    async fn network_abort(&self, request_id: &str, error_code: &str) -> Result<()> {
+        let _ = (request_id, error_code);
+        Err(crate::error::GhostError::PageOp(
+            "network_abort not supported by this engine".into(),
+        ))
+    }
+    /// Fulfill a held intercepted request with a mocked response
+    /// (the response FORGER — status/statusText/headers/body).
+    async fn network_fulfill(
+        &self,
+        request_id: &str,
+        status: u32,
+        status_text: &str,
+        headers: Option<serde_json::Value>,
+        body: Option<&str>,
+    ) -> Result<()> {
+        let _ = (request_id, status, status_text, headers, body);
+        Err(crate::error::GhostError::PageOp(
+            "network_fulfill not supported by this engine".into(),
+        ))
+    }
     /// M4.5 Interoception: the engine process-group health — per-process
     /// CPU ticks + memory (Linux /proc; graceful degradation elsewhere).
     async fn session_vitals(&self) -> Result<serde_json::Value> {

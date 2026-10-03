@@ -21,6 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   session-death signal.
 - `session_vitals` (M4.5 interoception): the engine process-group
   health — per-process CPU ticks + memory (Linux /proc).
+- **Network interception** (the spike became the build): `page_network_intercept`
+  (hold every request), `page_network_resume` (modify url/method/headers/
+  postData), `page_network_abort` (block), `page_network_fulfill` (mock the
+  response). The netcap entries now carry `intercepted` so the agent sees
+  which requests are held.
 - `page_captcha_vision` (tier-5 vision): send any captcha element
   (or the viewport) to the host vision model (Workers AI GLM-5.3-flash)
   and get what it reads — the OCR tier the local CRNN cannot reach

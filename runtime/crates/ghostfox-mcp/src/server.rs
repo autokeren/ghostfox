@@ -146,6 +146,44 @@ struct CaptchaVisionParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+struct InterceptParams {
+    session_id: String,
+    page_id: String,
+    enabled: bool,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ResumeParams {
+    session_id: String,
+    page_id: String,
+    /// requestId from page_network_read (the held intercepted request).
+    request_id: String,
+    url: Option<String>,
+    method: Option<String>,
+    headers: Option<serde_json::Value>,
+    post_data: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct AbortParams {
+    session_id: String,
+    page_id: String,
+    request_id: String,
+    error_code: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct FulfillParams {
+    session_id: String,
+    page_id: String,
+    request_id: String,
+    status: u32,
+    status_text: String,
+    headers: Option<serde_json::Value>,
+    body: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct CookieEventsParams {
     session_id: String,
     page_id: String,
@@ -1851,6 +1889,127 @@ impl GhostfoxServer {
         Ok(text_result(
             serde_json::to_string_pretty(&boxes).unwrap_or_default(),
         ))
+    }
+
+    #[tool(
+        description = "NETWORK INTERCEPTION — the request broker: enable/disable holding EVERY request on the page. While enabled, requests pause (netcap entries show intercepted:true) and wait for page_network_resume / page_network_abort / page_network_fulfill — the agent decides per requestId. Use for blocking trackers, modifying requests, or mocking responses."
+    )]
+    async fn page_network_intercept(
+        &self,
+        Parameters(InterceptParams {
+            session_id,
+            page_id,
+            enabled,
+        }): Parameters<InterceptParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let page = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        page.network_set_interception(enabled)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let _ = self.recorder.record(
+            &session_id,
+            "page_network_intercept",
+            Some(&page_id),
+            serde_json::json!({ "enabled": enabled }),
+        );
+        Ok(text_result(if enabled {
+            "interception ON — requests hold until resumed"
+        } else {
+            "interception OFF"
+        }))
+    }
+
+    #[tool(
+        description = "NETWORK INTERCEPTION — resume a held intercepted request. Optional overrides: url (redirect), method, headers (array of {name, value}), postData — the request MODIFIER."
+    )]
+    async fn page_network_resume(
+        &self,
+        Parameters(ResumeParams {
+            session_id,
+            page_id,
+            request_id,
+            url,
+            method,
+            headers,
+            post_data,
+        }): Parameters<ResumeParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let page = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        page.network_resume(
+            &request_id,
+            url.as_deref(),
+            method.as_deref(),
+            headers,
+            post_data.as_deref(),
+        )
+        .await
+        .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        Ok(text_result(format!("resumed {request_id}")))
+    }
+
+    #[tool(
+        description = "NETWORK INTERCEPTION — abort a held intercepted request (the blocker). errorCode like 'Failed' or 'Aborted'."
+    )]
+    async fn page_network_abort(
+        &self,
+        Parameters(AbortParams {
+            session_id,
+            page_id,
+            request_id,
+            error_code,
+        }): Parameters<AbortParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let page = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        page.network_abort(&request_id, error_code.as_deref().unwrap_or("Failed"))
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        Ok(text_result(format!("aborted {request_id}")))
+    }
+
+    #[tool(
+        description = "NETWORK INTERCEPTION — fulfill a held intercepted request with a MOCKED response (status/statusText/headers/body) — the response forger. The page receives your response as if the server sent it."
+    )]
+    async fn page_network_fulfill(
+        &self,
+        Parameters(FulfillParams {
+            session_id,
+            page_id,
+            request_id,
+            status,
+            status_text,
+            headers,
+            body,
+        }): Parameters<FulfillParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let page = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        page.network_fulfill(&request_id, status, &status_text, headers, body.as_deref())
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        Ok(text_result(format!("fulfilled {request_id} {status}")))
     }
 
     #[tool(
