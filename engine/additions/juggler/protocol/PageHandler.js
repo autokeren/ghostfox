@@ -333,6 +333,22 @@ export class PageHandler {
     return await this._contentPage.send('getFullAXTree', params);
   }
 
+  async ['Accessibility.readAccEvents'](params) {
+    return await this._contentPage.send('readAccEvents', params || {});
+  }
+
+  async ['Page.readFrameStats'](params) {
+    return await this._contentPage.send('readFrameStats', params || {});
+  }
+
+  async ['Page.readTimingReport'](params) {
+    return await this._contentPage.send('readTimingReport', params || {});
+  }
+
+  async ['Page.waitVisualStable'](params) {
+    return await this._contentPage.send('waitVisualStable', params || {});
+  }
+
   async ['Page.setFileInputFiles'](options) {
     return await this._contentPage.send('setFileInputFiles', options);
   }

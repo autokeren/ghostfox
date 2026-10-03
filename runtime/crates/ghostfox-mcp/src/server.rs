@@ -191,6 +191,30 @@ struct CookieEventsParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+struct AccEventsParams {
+    session_id: String,
+    page_id: String,
+    clear: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct FrameStatsParams {
+    session_id: String,
+    page_id: String,
+    reset: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct WaitVisualParams {
+    session_id: String,
+    page_id: String,
+    /// Consecutive quiet time at normal frame cadence (ms). Default 250.
+    quiet_ms: Option<u64>,
+    /// Hard deadline (ms). Default 5000.
+    timeout_ms: Option<u64>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct NetParams {
     session_id: String,
     page_id: String,
@@ -1383,6 +1407,116 @@ impl GhostfoxServer {
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
         Ok(text_result(
             serde_json::to_string_pretty(&events).unwrap_or_default(),
+        ))
+    }
+
+    #[tool(
+        description = "M3 hearing: the accessibility EVENT STREAM — compacted {type, role, name, + detail} entries from the engine's own accessible-event topic since the last read. The incremental DIFF of the a11y tree (focus moves, text inserted/removed, name/value/state changes, caret moves, live-region announcements) — read this instead of full a11y snapshots after actions. The observer installs on first read; clear=true empties the buffer."
+    )]
+    async fn page_a11y_events(
+        &self,
+        Parameters(AccEventsParams {
+            session_id,
+            page_id,
+            clear,
+        }): Parameters<AccEventsParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let page = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let events = page
+            .read_acc_events(clear.unwrap_or(false))
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        Ok(text_result(
+            serde_json::to_string_pretty(&events).unwrap_or_default(),
+        ))
+    }
+
+    #[tool(
+        description = "M3.5 smell: the JANK DETECTOR — frame-cadence stats measured from the privileged frame script (the content main thread). Frame deltas ARE the jank signal: clean page ≈16.7ms avg; a busy main thread shows as p95/max spikes + jankyFrames. Read it before clicking: if the page 'feels' heavy, wait. reset=true restarts the measurement window."
+    )]
+    async fn page_frame_stats(
+        &self,
+        Parameters(FrameStatsParams {
+            session_id,
+            page_id,
+            reset,
+        }): Parameters<FrameStatsParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let page = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let stats = page
+            .read_frame_stats(reset.unwrap_or(false))
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        Ok(text_result(
+            serde_json::to_string_pretty(&stats).unwrap_or_default(),
+        ))
+    }
+
+    #[tool(
+        description = "M3.5 smell: TIMING SENSE — Navigation Timing (dnsMs/tlsMs/connectMs/ttfbMs/domInteractive/loadEvent) + paint entries (first-paint, first-contentful-paint) for the current document, from the window's own performance buffer."
+    )]
+    async fn page_timing_report(
+        &self,
+        Parameters(PageRefParams {
+            session_id,
+            page_id,
+            ..
+        }): Parameters<PageRefParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let page = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let report = page
+            .read_timing_report()
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        Ok(text_result(
+            serde_json::to_string_pretty(&report).unwrap_or_default(),
+        ))
+    }
+
+    #[tool(
+        description = "M3.5 smell: VISUAL STABILITY — block until the refresh driver has delivered frames at normal cadence (<=32ms) for quiet_ms consecutive. 'Wait until VISUALLY ready' — the true successor to arbitrary sleep(3). Returns {stable, ms}."
+    )]
+    async fn page_wait_visual(
+        &self,
+        Parameters(WaitVisualParams {
+            session_id,
+            page_id,
+            quiet_ms,
+            timeout_ms,
+        }): Parameters<WaitVisualParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let page = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let stable = page
+            .wait_visual_stable(quiet_ms.unwrap_or(250), timeout_ms.unwrap_or(5000))
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        Ok(text_result(
+            serde_json::to_string_pretty(&serde_json::json!({ "stable": stable }))
+                .unwrap_or_default(),
         ))
     }
 

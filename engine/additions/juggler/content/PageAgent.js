@@ -160,6 +160,10 @@ export class PageAgent {
         getProprioState: this._getProprioState.bind(this),
         readCookieEvents: this._readCookieEvents.bind(this),
         readMutationWhispers: this._readMutationWhispers.bind(this),
+        readAccEvents: this._readAccEvents.bind(this),
+        readFrameStats: this._readFrameStats.bind(this),
+        readTimingReport: this._readTimingReport.bind(this),
+        waitVisualStable: this._waitVisualStable.bind(this),
         insertText: this._insertText.bind(this),
         scrollIntoViewIfNeeded: this._scrollIntoViewIfNeeded.bind(this),
         setFileInputFiles: this._setFileInputFiles.bind(this),
@@ -714,7 +718,7 @@ export class PageAgent {
       }
     }
     out.scrollers = scrollers;
-    return out;
+    return { state: out };
   }
 
   // M4 Proprioception: the cookie/session heartbeat. Changes to cookies
@@ -751,6 +755,192 @@ export class PageAgent {
     const out = this._cookieEvents || [];
     if (clear) this._cookieEvents = [];
     return { events: out };
+  }
+
+  // M3 Hearing: the accessibility EVENT STREAM — the incremental diff.
+  // One persistent observer on the engine's own "accessible-event" topic
+  // (the a11y tree as a stream, not full snapshots). Every event is
+  // compacted to {type, role, name, + detail} — read it instead of
+  // re-walking the full tree after every action.
+  _readAccEvents({ clear } = {}) {
+    if (!this._accEventObserver) {
+      this._accEvents = [];
+      const service = Cc["@mozilla.org/accessibilityService;1"]
+        .getService(Ci.nsIAccessibilityService);
+      this._accEventObserver = {
+        observe: (subject, topic) => {
+          try {
+            if (topic !== "accessible-event")
+              return;
+            const event = subject.QueryInterface(Ci.nsIAccessibleEvent);
+            const acc = event.accessible;
+            const rec = {
+              type: service.getStringEventType(event.eventType),
+              role: acc ? service.getStringRole(acc.role) : null,
+              name: acc ? (acc.name || '').slice(0, 80) : null,
+              ts: Date.now(),
+            };
+            if (event.eventType === Ci.nsIAccessibleEvent.EVENT_TEXT_INSERTED ||
+                event.eventType === Ci.nsIAccessibleEvent.EVENT_TEXT_REMOVED) {
+              try {
+                const te = subject.QueryInterface(Ci.nsIAccessibleTextChangeEvent);
+                rec.text = (te.modifiedText || '').slice(0, 120);
+                rec.start = te.start;
+              } catch (e) { /* not a text change */ }
+            }
+            if (event.eventType === Ci.nsIAccessibleEvent.EVENT_STATE_CHANGE) {
+              try {
+                const se = subject.QueryInterface(Ci.nsIAccessibleStateChangeEvent);
+                const names = service.getStringStates(se.state, 0);
+                const arr = [];
+                if (names) {
+                  for (const nm of names)
+                    arr.push(String(nm));
+                }
+                rec.state = arr.join(',');
+                rec.isEnabled = se.isEnabled;
+              } catch (e) { /* not a state change */ }
+            }
+            if (event.eventType === Ci.nsIAccessibleEvent.EVENT_VALUE_CHANGE && acc) {
+              rec.value = (acc.value || '').slice(0, 120);
+            }
+            if (event.eventType === Ci.nsIAccessibleEvent.EVENT_TEXT_CARET_MOVED) {
+              try {
+                const ce = subject.QueryInterface(Ci.nsIAccessibleCaretMoveEvent);
+                rec.caretOffset = ce.caretOffset;
+              } catch (e) { /* not a caret move */ }
+            }
+            if (event.eventType === Ci.nsIAccessibleEvent.EVENT_ANNOUNCEMENT) {
+              try {
+                const an = subject.QueryInterface(Ci.nsIAccessibleAnnouncementEvent);
+                rec.announcement = (an.announcement || '').slice(0, 160);
+              } catch (e) { /* not an announcement */ }
+            }
+            this._accEvents.push(rec);
+            if (this._accEvents.length > 300)
+              this._accEvents.shift();
+          } catch (e) { /* never let the observer throw */ }
+        },
+      };
+      Services.obs.addObserver(this._accEventObserver, "accessible-event");
+    }
+    const out = this._accEvents || [];
+    if (clear) this._accEvents = [];
+    return { events: out };
+  }
+
+  // M3.5 Smell — the frame sampler: rAF cadence measured from the
+  // privileged frame script (the content main thread the page JS runs
+  // on). Frame deltas ARE the jank signal: a busy main thread shows as
+  // a delta spike, a clean page sits at ~16.7ms. Re-armed per document
+  // so navigations start a fresh sampler.
+  _ensureFrameSampler() {
+    const win = this._frameTree.mainFrame().domWindow();
+    if (this._frameSampler && this._frameSampler.doc === win.document)
+      return;
+    this._frameSampler = {
+      doc: win.document,
+      startedAt: win.performance.now(),
+      frames: 0,
+      deltas: [],
+      lastTs: null,
+    };
+    const s = this._frameSampler;
+    const step = (t) => {
+      if (s.lastTs !== null) {
+        const d = t - s.lastTs;
+        if (d > 0) {
+          s.deltas.push(d);
+          if (s.deltas.length > 600)
+            s.deltas.shift();
+        }
+      }
+      s.lastTs = t;
+      s.frames++;
+      win.requestAnimationFrame(step);
+    };
+    win.requestAnimationFrame(step);
+  }
+
+  _readFrameStats({ reset } = {}) {
+    this._ensureFrameSampler();
+    const s = this._frameSampler;
+    const deltas = s.deltas.slice();
+    const now = this._frameTree.mainFrame().domWindow().performance.now();
+    if (reset) {
+      s.deltas = [];
+      s.startedAt = now;
+      s.frames = 0;
+      s.lastTs = null;
+    }
+    const sorted = deltas.slice().sort((a, b) => a - b);
+    const pct = p => sorted.length ?
+      sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))] : 0;
+    const r1 = x => Math.round(x * 10) / 10;
+    return {
+      frames: s.frames,
+      elapsedMs: Math.round(now - s.startedAt),
+      avgMs: deltas.length ? r1(deltas.reduce((a, b) => a + b, 0) / deltas.length) : 0,
+      p50Ms: r1(pct(0.50)),
+      p95Ms: r1(pct(0.95)),
+      p99Ms: r1(pct(0.99)),
+      maxMs: r1(pct(1.0)),
+      jankyFrames: deltas.filter(d => d > 50).length,
+      throttledFrames: deltas.filter(d => d > 250).length,
+    };
+  }
+
+  // M3.5 Smell — visual stability: wait until the refresh driver has been
+  // delivering frames at normal cadence (<=32ms) for quietMs consecutively.
+  // The true successor to arbitrary sleep(3): "wait until VISUALLY ready".
+  async _waitVisualStable({ quietMs = 250, timeoutMs = 5000 } = {}) {
+    this._ensureFrameSampler();
+    const win = this._frameTree.mainFrame().domWindow();
+    const started = win.performance.now();
+    let quietStart = null;
+    while (win.performance.now() - started < timeoutMs) {
+      await new Promise(x => win.requestAnimationFrame(x));
+      const s = this._frameSampler;
+      const last = s.deltas.length ? s.deltas[s.deltas.length - 1] : undefined;
+      if (last !== undefined && last <= 32) {
+        if (quietStart === null)
+          quietStart = win.performance.now();
+        if (win.performance.now() - quietStart >= quietMs)
+          return { stable: true, ms: Math.round(win.performance.now() - started) };
+      } else {
+        quietStart = null;
+      }
+    }
+    return { stable: false, ms: Math.round(win.performance.now() - started) };
+  }
+
+  // M3.5 Smell — timing sense: the modern Navigation Timing + Paint
+  // entries for the current document. DNS/TLS/connect/TTFB + first-paint
+  // & first-contentful-paint, from the window's own performance buffer.
+  _readTimingReport() {
+    const win = this._frameTree.mainFrame().domWindow();
+    const perf = win.performance;
+    const nav = {};
+    const paint = {};
+    try {
+      const nt = perf.getEntriesByType('navigation')[0];
+      if (nt) {
+        nav.dnsMs = Math.round(nt.domainLookupEnd - nt.domainLookupStart);
+        nav.tlsMs = Math.round(nt.connectEnd - nt.secureConnectionStart);
+        nav.connectMs = Math.round(nt.connectEnd - nt.connectStart);
+        nav.ttfbMs = Math.round(nt.responseStart - nt.requestStart);
+        nav.domInteractiveMs = Math.round(nt.domInteractive);
+        nav.domContentLoadedMs = Math.round(nt.domContentLoadedEventEnd);
+        nav.loadEventMs = Math.round(nt.loadEventEnd);
+        nav.transferSize = nt.transferSize;
+        nav.redirectCount = nt.redirectCount;
+      }
+    } catch (e) { /* timing may be unavailable */ }
+    try {
+      for (const p of perf.getEntriesByType('paint'))
+        paint[p.name] = Math.round(p.startTime);
+    } catch (e) { /* paint entries may be unavailable */ }
+    return { navigation: nav, paint };
   }
 
   // M5/Flutter: set a text field's content through the ACCESSIBILITY

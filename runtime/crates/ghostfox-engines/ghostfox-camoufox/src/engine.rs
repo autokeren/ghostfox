@@ -942,6 +942,38 @@ impl Engine for CamoufoxEngine {
                                             if let Some(e2) = n.get_mut(ix_val) {
                                                 e2["status"] = serde_json::json!(status);
                                                 e2["done"] = serde_json::json!(true);
+                                                // M3.5 timing sense: DNS/TLS/
+                                                // connect/TTFB per request
+                                                // (nsITimedChannel timing).
+                                                if let Some(t) = msg.pointer("/params/timing") {
+                                                    let ms = |a: Option<f64>, b: Option<f64>| -> Option<i64> {
+                                                        match (a, b) {
+                                                            (Some(x), Some(y)) if x > 0.0 && y > 0.0 && y >= x => {
+                                                                Some(((y - x) / 1000.0).round() as i64)
+                                                            }
+                                                            _ => None,
+                                                        }
+                                                    };
+                                                    e2["rawTiming"] = t.clone();
+                                                    e2["timing"] = serde_json::json!({
+                                                        "dnsMs": ms(
+                                                            t.get("domainLookupStart").and_then(|v| v.as_f64()),
+                                                            t.get("domainLookupEnd").and_then(|v| v.as_f64()),
+                                                        ),
+                                                        "tlsMs": ms(
+                                                            t.get("secureConnectionStart").and_then(|v| v.as_f64()),
+                                                            t.get("connectEnd").and_then(|v| v.as_f64()),
+                                                        ),
+                                                        "connectMs": ms(
+                                                            t.get("connectStart").and_then(|v| v.as_f64()),
+                                                            t.get("connectEnd").and_then(|v| v.as_f64()),
+                                                        ),
+                                                        "ttfbMs": ms(
+                                                            t.get("requestStart").and_then(|v| v.as_f64()),
+                                                            t.get("responseStart").and_then(|v| v.as_f64()),
+                                                        ),
+                                                    });
+                                                }
                                             }
                                         }
                                     }
@@ -1899,6 +1931,78 @@ impl PageHandle for CamoufoxPage {
             .unwrap_or_default())
     }
 
+    async fn read_acc_events(&self, clear: bool) -> Result<Vec<serde_json::Value>> {
+        let sid = self.session_id().await?;
+        let res = self
+            .conn
+            .request_session_t(
+                "Accessibility.readAccEvents",
+                serde_json::json!({ "clear": clear }),
+                Some(&sid),
+                std::time::Duration::from_secs(10),
+            )
+            .await?;
+        if let Some(err) = res.get("error").and_then(|e| e.as_str()) {
+            return Err(GhostError::PageOp(format!("readAccEvents: {err}")));
+        }
+        Ok(res
+            .get("events")
+            .and_then(|e| e.as_array())
+            .cloned()
+            .unwrap_or_default())
+    }
+
+    async fn read_frame_stats(&self, reset: bool) -> Result<serde_json::Value> {
+        let sid = self.session_id().await?;
+        let res = self
+            .conn
+            .request_session_t(
+                "Page.readFrameStats",
+                serde_json::json!({ "reset": reset }),
+                Some(&sid),
+                std::time::Duration::from_secs(10),
+            )
+            .await?;
+        if let Some(err) = res.get("error").and_then(|e| e.as_str()) {
+            return Err(GhostError::PageOp(format!("readFrameStats: {err}")));
+        }
+        Ok(res.clone())
+    }
+
+    async fn read_timing_report(&self) -> Result<serde_json::Value> {
+        let sid = self.session_id().await?;
+        let res = self
+            .conn
+            .request_session_t(
+                "Page.readTimingReport",
+                serde_json::json!({}),
+                Some(&sid),
+                std::time::Duration::from_secs(10),
+            )
+            .await?;
+        if let Some(err) = res.get("error").and_then(|e| e.as_str()) {
+            return Err(GhostError::PageOp(format!("readTimingReport: {err}")));
+        }
+        Ok(res.clone())
+    }
+
+    async fn wait_visual_stable(&self, quiet_ms: u64, timeout_ms: u64) -> Result<bool> {
+        let sid = self.session_id().await?;
+        let res = self
+            .conn
+            .request_session_t(
+                "Page.waitVisualStable",
+                serde_json::json!({ "quietMs": quiet_ms, "timeoutMs": timeout_ms }),
+                Some(&sid),
+                std::time::Duration::from_millis(timeout_ms + 15_000),
+            )
+            .await?;
+        if let Some(err) = res.get("error").and_then(|e| e.as_str()) {
+            return Err(GhostError::PageOp(format!("waitVisualStable: {err}")));
+        }
+        Ok(res.get("stable").and_then(|s| s.as_bool()).unwrap_or(false))
+    }
+
     async fn network_set_interception(&self, enabled: bool) -> Result<()> {
         let sid = self.session_id().await?;
         self.conn
@@ -2548,6 +2652,39 @@ impl PageHandle for CamoufoxPage {
                                     if let Some(e2) = n.get_mut(ix_val) {
                                         e2["status"] = serde_json::json!(status);
                                         e2["done"] = serde_json::json!(true);
+                                        // M3.5 timing sense: DNS/TLS/connect/
+                                        // TTFB per request, straight from
+                                        // nsITimedChannel (NetworkObserver).
+                                        if let Some(t) = msg.pointer("/params/timing") {
+                                            let ms = |a: Option<f64>, b: Option<f64>| -> Option<i64> {
+                                                match (a, b) {
+                                                    (Some(x), Some(y)) if x > 0.0 && y > 0.0 && y >= x => {
+                                                        Some(((y - x) / 1000.0).round() as i64)
+                                                    }
+                                                    _ => None,
+                                                }
+                                            };
+                                            e2["rawTiming"] = t.clone();
+                                            let timings = serde_json::json!({
+                                                "dnsMs": ms(
+                                                    t.get("domainLookupStart").and_then(|v| v.as_f64()),
+                                                    t.get("domainLookupEnd").and_then(|v| v.as_f64()),
+                                                ),
+                                                "tlsMs": ms(
+                                                    t.get("secureConnectionStart").and_then(|v| v.as_f64()),
+                                                    t.get("connectEnd").and_then(|v| v.as_f64()),
+                                                ),
+                                                "connectMs": ms(
+                                                    t.get("connectStart").and_then(|v| v.as_f64()),
+                                                    t.get("connectEnd").and_then(|v| v.as_f64()),
+                                                ),
+                                                "ttfbMs": ms(
+                                                    t.get("requestStart").and_then(|v| v.as_f64()),
+                                                    t.get("responseStart").and_then(|v| v.as_f64()),
+                                                ),
+                                            });
+                                            e2["timing"] = timings;
+                                        }
                                     }
                                 }
                             }

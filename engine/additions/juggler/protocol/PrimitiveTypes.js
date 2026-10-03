@@ -41,6 +41,16 @@ t.Undefined = function(x, details = {}, path = ['<root>']) {
 
 t.Any = x => true,
 
+// Free-form object: any non-null object (not array). Used by the
+// M4/M5 event-stream tools (proprio state, cookie/acc events, timing
+// reports) whose shapes are intentionally open.
+t.Object = function(x, details = {}, path = ['<root>']) {
+  if (typeof x === 'object' && x !== null && !Array.isArray(x))
+    return true;
+  details.error = `Expected "${path.join('.')}" to be an object; found \`${JSON.stringify(x)}\` (${typeof x}) instead.`;
+  return false;
+},
+
 t.Enum = function(values) {
   return function(x, details = {}, path = ['<root>']) {
     if (values.indexOf(x) !== -1)

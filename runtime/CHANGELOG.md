@@ -5,9 +5,33 @@ All notable changes to ghostfox will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.9.1] — 2026-10-04
+
+**The hearing + smell release**: M3 AccEvent stream and M3.5 (jank
+detector, timing sense, visual stability) complete the senses. 67 tools.
 
 ### Added
+- `page_a11y_events` (M3 hearing — the AccEvent stream): compacted
+  {type, role, name, + detail} records from the engine's own
+  "accessible-event" topic — focus moves, text inserted/removed
+  (with modifiedText + offset), name/value/state changes, caret
+  moves, live-region announcements. The a11y tree as a STREAM: the
+  incremental diff, no more full-tree re-walks after every action.
+- `page_frame_stats` (M3.5 smell — the jank detector): rAF frame-
+  cadence stats from the privileged frame script (avg/p50/p95/p99/
+  max frame delta, jankyFrames, throttledFrames). Clean page ≈16.7ms;
+  a busy main thread shows as a delta spike — read it before clicking.
+- `page_timing_report` (M3.5 smell — timing sense): Navigation Timing
+  (dnsMs/tlsMs/connectMs/ttfbMs/domInteractive/loadEvent) + paint
+  entries (first-paint, first-contentful-paint) for the current
+  document.
+- `page_wait_visual` (M3.5 smell — visual stability): block until the
+  refresh driver has delivered frames at normal cadence for quiet_ms
+  consecutive — "wait until VISUALLY ready", the true successor to
+  arbitrary sleep(3).
+- netcap entries now carry per-request `timing` {dnsMs, tlsMs,
+  connectMs, ttfbMs} (+ rawTiming) straight from nsITimedChannel —
+  DNS/TLS/TTFB for every request in `page_network_read`.
 - `page_a11y_set_text` (M5/Flutter): the AT-native text input route —
   the accessibly protocol action that syncs Flutter web semantics-mode
   text fields (focus + value + trusted input event). The DOM routes
@@ -46,6 +70,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   listeners corrected (the first-insert race masked the first fix).
 - a11ySetText: the schema rejects unknown return properties — the
   tool results stay minimal now.
+- **`t.Object` protocol schema did not exist** — the Juggler protocol
+  validator threw `ILLDEFINED SCHEME` for every tool returning free-
+  form objects (`page_proprio`, `page_cookie_events`, and the new
+  stream tools). `t.Object` is now defined in PrimitiveTypes.js.
+- `Page.getProprioState` returned the bare state object instead of
+  `{state: ...}` the protocol schema declares — surfaced once the
+  schema fix above made the validator actually run.
+- netcap timing: nsITimedChannel phases are epoch MICROSECONDS — the
+  derived ms values were 1000x too large (and 0-phase fallbacks
+  polluted connect/tls math). Now converted to real ms with
+  unavailable phases nulled.
+- netcap timing enrichment ran only in the secondary listener (the
+  net_capture_start one); the primary page-open listener now also
+  records timing per response.
 
 ## [0.9.0] — 2026-09-30
 

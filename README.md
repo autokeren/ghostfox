@@ -200,19 +200,21 @@ origin device** (platform, timezone, locale, screen) — a session that
 suddenly changes identity looks like an impossible login and anti-fraud
 systems revoke it. Proven flow, see `AGENTS.md` §8.
 
-**Full tool surface (63 tools):**
+**Full tool surface (67 tools):**
 
 | Category | Tools |
 |---|---|
 | **Session** | `session_create` · `session_pages` · `session_me` |
-| **See** | `page_a11y` (semantic + login_state + shadow DOM/iframe) · `page_extract` (typed, token-efficient a11y filters) · `page_snapshot` · `page_screenshot` · `page_read_ref` (full value) · `page_diff` (observeDiff: what changed since the last snapshot) · `page_mutations` (M3: unhookable DOM-change whispers) |
-| **Wait** | `page_wait_for` (poll until visible) · `page_dismiss_modal` |
-| **Act** | `page_click_ref` · `page_click_native` (trusted a11y-bounds click: scroll-first, DOM-proof coordinates) · `page_type_ref` · `page_click` · `page_type` · `page_fill` · `page_press` · `page_drag` · `page_move_to` · `page_upload_file` · `page_init_script` |
-| **Captcha** | `captcha_solve` · `page_geetest_slide` · `page_geetest_click` · `page_captcha_rotate` · `page_captcha_ocr` · `page_hcaptcha` |
-| **Debug** | `page_console` · `page_errors` · `page_network_start` · `page_network_read` · `page_network_body` · `page_ui_audit` (M5: visual QA of the rendered UI) |
+| **See** | `page_a11y` (semantic + login_state + shadow DOM/iframe) · `page_extract` (typed, token-efficient a11y filters) · `page_snapshot` · `page_screenshot` · `page_read_ref` (full value) · `page_diff` (observeDiff: what changed since the last snapshot) · `page_mutations` (M3: unhookable DOM-change whispers) · `page_a11y_events` (M3: the a11y tree as a stream — focus/text/state/live-region events, the incremental diff) |
+| **Wait** | `page_wait_for` (poll until visible) · `page_dismiss_modal` · `page_wait_stable` (render-settled) · `page_wait_visual` (M3.5: refresh-driver visual stability — the sleep killer) |
+| **Act** | `page_click_ref` · `page_click_native` (trusted a11y-bounds click: scroll-first, DOM-proof coordinates) · `page_click_at` (raw trusted coords — no a11y resolution) · `page_type_ref` · `page_click` · `page_type` · `page_fill` · `page_press` · `page_drag` · `page_move_to` · `page_upload_file` · `page_init_script` · `page_a11y_set_text` (AT-native text input — the Flutter route) |
+| **Captcha** | `captcha_solve` · `page_geetest_slide` · `page_geetest_click` · `page_captcha_rotate` · `page_captcha_ocr` · `page_hcaptcha` · `page_captcha_vision` (host-VLM reader for warped text captchas) |
+| **Network broker** | `page_network_intercept` (hold every request) · `page_network_resume` (modify url/method/headers/postData) · `page_network_abort` (block) · `page_network_fulfill` (mock the response) |
+| **Debug** | `page_console` · `page_errors` · `page_network_start` · `page_network_read` (per-request DNS/TLS/TTFB timing) · `page_network_body` · `page_frame_stats` (M3.5: jank detector — frame-cadence stats) · `page_timing_report` (M3.5: nav-timing + paint) · `page_ui_audit` (M5: visual QA of the rendered UI) |
 | **Vision** | `page_vision` · `page_ocr` · `page_match_image` · `page_pixels` (compositor pixels — region/semantic/ref, no toDataURL) · `page_contrast` |
 | **Inspect** | `page_eval` · `page_open` · `page_comment` |
-| **Identity** | `identity_generate` · `identity_audit` |
+| **Identity** | `identity_generate` · `identity_audit` · `identity_morph` (stop→relaunch→swap identity without losing the session) |
+| **Body sense** | `page_proprio` (M4: honest body state — focus, selection/caret, scrollers) · `page_cookie_events` (M4: cookie/session heartbeat — auth-cookie deletion = earliest session-death signal) · `session_vitals` (M4.5: per-process CPU/memory) |
 | **Recipes** | `recipe_record` · `recipe_save` · `recipe_list` · `recipe_replay` (deterministic replay, semantic anchors, strict/lenient escalation) |
 | **Evidence & safety** | `session_evidence` · `confirm_action` |
 

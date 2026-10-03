@@ -170,6 +170,12 @@ Lessons from THIS run:
   Layer X-Ray (ForceVisibleContent) shipped — closes the hidden-canvas hole
 - [x] M3 hearing v1: mutation whispers (page_mutations) — AccEvent diff +
   WebSocket frames remain
+- [x] **M3 hearing v2: page_a11y_events SHIPPED (v0.9.1)** — the AccEvent
+  stream: focus/text-inserted(+modifiedText)/name/value/state/caret/
+  announcement events from the engine's own accessible-event topic.
+  E2E: typing "ghostfox" into the Wikipedia searchbox streamed
+  per-character text-inserted + caret-moved events. WebSocket frames
+  remain.
 - [x] **M5 the Critic v1: page_ui_audit SHIPPED** — visual QA for
   AI-generated UIs (text-clipped, no-padding, viewport-overflow,
   overlap, crowded) from native a11y bounds. E2E on an ugly test page:
@@ -182,13 +188,18 @@ Lessons from THIS run:
 - [x] M3.5 smell v1: page_wait_stable (render-settled signal — whispers +
   rect-hash quiet across two polls; HN settles in 543ms). Timing sense
   + jank detector remain.
+- [x] **M3.5 smell SHIPPED (v0.9.1)**: page_frame_stats (jank detector —
+  907 frames @16.7ms avg on a clean page), page_timing_report (nav
+  timing + paint), page_wait_visual (refresh-driver stability), netcap
+  per-request DNS/TLS/TTFB. Long-task events remain (Gecko has no
+  longtask API — frame deltas carry the signal instead).
 - [x] M4/M4.5 proprioception + interoception — page_proprio (body state +
   caret receipt), page_cookie_events (session heartbeat), session_vitals
   (process-group health) shipped
 - [x] M5 taste: persona metamorphosis — identity_morph shipped + E2E
   verified (stop-old → relaunch → set-new; the launch-before-shutdown
   order deadlocked the new engine on the profile lock until fixed)
-- [ ] Streamable HTTP transport (rmcp has it; the fork proved demand)
+- [x] Streamable HTTP transport (rmcp has it; the fork proved demand)
 - [x] Network interception spike — the Juggler route is FULL: Network.setRequestInterception + resumeInterceptedRequest (url/method/headers/postData modifiable) + abortInterceptedRequest + fulfillInterceptedRequest (response mock), events FLAT-shaped (requestWillBeSent isIntercepted / responseReceived / requestFinished / requestFailed). The 3-5 day build = a page_network_intercept toolset (enable → queue → resume/abort/fulfill per requestId) on top of the existing netcap buffer.
 - [ ] WebGPU v1 persona spoofing (close the Win/Mac-ARM leak; 2h per build cycle)
 - [ ] PR #782: watch for upstream beta.31 assets
@@ -433,19 +444,23 @@ Progress (2026-09-30, continued):
   Two names were historical baggage; the repo is single-brand now.
 
 ### M3 — 👂 Hearing: incremental updates + whisper streams
-- AccEvent diff (`Agent.observeDiff`) — the a11y tree as a stream, not
-  full snapshots.
+- **AccEvent diff SHIPPED (v0.9.1)**: `page_a11y_events` — the a11y tree
+  as a stream (focus/text/state/caret/live-region events, modifiedText
+  + offsets), not full snapshots.
 - **DOM mutation whispers**: every DOM change as an event (no polling).
 - **WebSocket frames**: full-duplex network (HTTP done; WS carries
   challenge/config more and more).
 
 ### M3.5 — 👃 Smell: paint & timing sense
-- **Visual-stability events** (RefreshDriver/compositor observer):
-  "wait until VISUALLY ready" — kills every arbitrary `sleep(3)` in the
+- **Visual-stability events SHIPPED (v0.9.1)**: `page_wait_visual` —
+  blocks until the refresh driver delivers frames at normal cadence;
+  "wait until VISUALLY ready" kills every arbitrary `sleep(3)` in the
   playbook. The true successor to page_wait_for.
-- **Timing sense**: DNS/TLS/TTFB per request, long-task events.
-- **Jank detector**: main thread busy → don't click yet (the page
-  "feels" heavy).
+- **Timing sense SHIPPED (v0.9.1)**: per-request DNS/TLS/connect/TTFB
+  in every netcap entry + `page_timing_report` (nav timing + paint).
+- **Jank detector SHIPPED (v0.9.1)**: `page_frame_stats` — frame
+  deltas from the privileged frame script; main thread busy → don't
+  click yet (the page "feels" heavy).
 
 ### M4 — 🧍 Proprioception: browser body state
 - Load state, dialogs, downloads, **focus/selection**.

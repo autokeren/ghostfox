@@ -264,6 +264,42 @@ pub trait PageHandle: Send + Sync {
             "read_cookie_events not supported by this engine".into(),
         ))
     }
+    /// M3 Hearing: the accessibility EVENT STREAM — compacted
+    /// {type, role, name, + detail} entries from the engine's own
+    /// "accessible-event" topic since the last read. The incremental
+    /// diff of the a11y tree; read instead of full snapshots.
+    async fn read_acc_events(&self, clear: bool) -> Result<Vec<serde_json::Value>> {
+        let _ = clear;
+        Err(crate::error::GhostError::PageOp(
+            "read_acc_events not supported by this engine".into(),
+        ))
+    }
+    /// M3.5 Smell: the frame sampler — rAF cadence from the privileged
+    /// frame script. Frame deltas ARE the jank signal (a busy main
+    /// thread shows as a delta spike). reset=true restarts the window.
+    async fn read_frame_stats(&self, reset: bool) -> Result<serde_json::Value> {
+        let _ = reset;
+        Err(crate::error::GhostError::PageOp(
+            "read_frame_stats not supported by this engine".into(),
+        ))
+    }
+    /// M3.5 Smell: timing sense — Navigation Timing (DNS/TLS/connect/
+    /// TTFB/domInteractive/loadEvent) + paint entries for the current
+    /// document.
+    async fn read_timing_report(&self) -> Result<serde_json::Value> {
+        Err(crate::error::GhostError::PageOp(
+            "read_timing_report not supported by this engine".into(),
+        ))
+    }
+    /// M3.5 Smell: visual stability — block until the refresh driver
+    /// has delivered frames at normal cadence for quiet_ms consecutive.
+    /// Returns (stable, elapsed_ms). The successor to arbitrary sleeps.
+    async fn wait_visual_stable(&self, quiet_ms: u64, timeout_ms: u64) -> Result<bool> {
+        let _ = (quiet_ms, timeout_ms);
+        Err(crate::error::GhostError::PageOp(
+            "wait_visual_stable not supported by this engine".into(),
+        ))
+    }
     /// Network interception (the spike verified the Juggler route):
     /// enable/disable the interception on the page's session. While
     /// enabled, every request HOLDS and waits for resume/abort/fulfill —

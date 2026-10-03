@@ -951,6 +951,39 @@ const Page = {
         events: t.Array(t.Object),
       },
     },
+    'readFrameStats': {
+      params: {
+        reset: t.Optional(t.Boolean),
+      },
+      returns: {
+        frames: t.Number,
+        elapsedMs: t.Number,
+        avgMs: t.Number,
+        p50Ms: t.Number,
+        p95Ms: t.Number,
+        p99Ms: t.Number,
+        maxMs: t.Number,
+        jankyFrames: t.Number,
+        throttledFrames: t.Number,
+      },
+    },
+    'waitVisualStable': {
+      params: {
+        quietMs: t.Optional(t.Number),
+        timeoutMs: t.Optional(t.Number),
+      },
+      returns: {
+        stable: t.Boolean,
+        ms: t.Number,
+      },
+    },
+    'readTimingReport': {
+      params: {},
+      returns: {
+        navigation: t.Object,
+        paint: t.Object,
+      },
+    },
     'startMutationWhispers': {
       params: {},
       returns: {
@@ -1130,6 +1163,14 @@ const Accessibility = {
       },
       returns: {
         tree: axTypes.AXTree
+      },
+    },
+    'readAccEvents': {
+      params: {
+        clear: t.Optional(t.Boolean),
+      },
+      returns: {
+        events: t.Array(t.Object),
       },
     }
   }
