@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 detector, timing sense, visual stability) complete the senses. 67 tools.
 
 ### Added
+- **WebGPU v1 spoofing**: `GHOSTFOX_WEBGPU=1` re-enables
+  `navigator.gpu` for personas whose platform ships WebGPU (the
+  Win/Mac-ARM leak — a spoofed persona without WebGPU was a red flag).
+  The engine reports a hardware adapter even on GPU-less hosts
+  (`isFallbackAdapter` masked false when the persona mask is active;
+  vendor/description empty per stock Firefox, subgroups 4/128, limits
+  at Firefox defaults). E2E-verified on a GPU-less host.
 - `page_ws_frames` (M3 hearing — the WebSocket stream): every socket
   (url, opened/closed, error) + frames in BOTH directions (opcode,
   data, ts; binary base64, data capped 2000 chars/frame). The engine's

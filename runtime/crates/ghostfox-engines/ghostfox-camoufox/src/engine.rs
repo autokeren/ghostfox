@@ -89,6 +89,30 @@ impl CamoufoxEngine {
             }
         }
 
+        // M3 WebGPU v1: the hardening prefs kill navigator.gpu — a
+        // spoofed Win/Mac persona MUST have WebGPU (the ARM-leak). With
+        // RFP active the adapter info is already masked (vendor/desc
+        // empty, subgroups 128, fallback->false, limits defaulted), so
+        // simply enabling it gives a coherent surface where the host
+        // can provide any adapter (hardware or software).
+        if std::env::var("GHOSTFOX_WEBGPU").as_deref() == Ok("1") {
+            let user_js = profile.join("user.js");
+            let mut prefs = if user_js.exists() {
+                std::fs::read_to_string(&user_js).unwrap_or_default()
+            } else {
+                String::new()
+            };
+            for p in [
+                "dom.webgpu.enabled",
+                "dom.webgpu.allow-in-parent",
+                "gfx.webgpu.force-enabled",
+                "gfx.webgpu.ignore-blocklist",
+            ] {
+                prefs.push_str(&format!("user_pref(\"{p}\", true);\n"));
+            }
+            std::fs::write(&user_js, prefs)?;
+        }
+
         // NOTE: the launcher (`ghostfox`/`camoufox`) re-execs `-bin` WITHOUT
         // preserving the juggler pipes. Always spawn the -bin binary.
         let mut cmd = std::process::Command::new(home.join(bin_name));

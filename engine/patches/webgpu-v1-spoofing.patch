@@ -1,0 +1,43 @@
+diff --git a/dom/webgpu/Adapter.cpp b/dom/webgpu/Adapter.cpp
+index 568509ad2b..e9d8dd2976 100644
+--- a/dom/webgpu/Adapter.cpp
++++ b/dom/webgpu/Adapter.cpp
+@@ -4,6 +4,9 @@
+ 
+ #include "Adapter.h"
+ 
++// Camoufox: persona mask (webGl:renderer set = spoofing active).
++#include "MaskConfig.hpp"
++
+ #include <algorithm>
+ #include <bit>
+ 
+@@ -76,6 +79,14 @@ bool AdapterInfo::IsFallbackAdapter() const {
+     return false;
+   }
+ 
++  // Camoufox WebGPU v1 spoofing: a spoofed persona must report a
++  // hardware adapter even on GPU-less hosts — the software-fallback
++  // flag would betray the VM (the Win/Mac-ARM leak). The persona
++  // config always sets webGl:renderer when the mask is active.
++  if (MaskConfig::GetString("webGl:renderer")) {
++    return false;
++  }
++
+   return mAboutSupportInfo->device_type ==
+          ffi::WGPUDeviceType::WGPUDeviceType_Cpu;
+ }
+diff --git a/dom/webgpu/moz.build b/dom/webgpu/moz.build
+index 9c05835bc8..933bfb5e79 100644
+--- a/dom/webgpu/moz.build
++++ b/dom/webgpu/moz.build
+@@ -15,6 +15,9 @@ MOCHITEST_MANIFESTS += [
+ 
+ REFTEST_MANIFESTS += ["tests/reftest/reftest.list"]
+ 
++# Camoufox: MaskConfig.hpp (WebGPU v1 spoofing).
++LOCAL_INCLUDES += ["/camoucfg"]
++
+ DIRS += []
+ 
+ h_and_cpp = [
