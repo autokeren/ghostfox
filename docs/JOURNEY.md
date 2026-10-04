@@ -204,7 +204,15 @@ Lessons from THIS run:
   order deadlocked the new engine on the profile lock until fixed)
 - [x] Streamable HTTP transport (rmcp has it; the fork proved demand)
 - [x] Network interception spike — the Juggler route is FULL: Network.setRequestInterception + resumeInterceptedRequest (url/method/headers/postData modifiable) + abortInterceptedRequest + fulfillInterceptedRequest (response mock), events FLAT-shaped (requestWillBeSent isIntercepted / responseReceived / requestFinished / requestFailed). The 3-5 day build = a page_network_intercept toolset (enable → queue → resume/abort/fulfill per requestId) on top of the existing netcap buffer.
-- [ ] WebGPU v1 persona spoofing (close the Win/Mac-ARM leak; 2h per build cycle)
+- [x] **WebGPU v1 persona spoofing SHIPPED** — GHOSTFOX_WEBGPU=1 + engine
+  patch masking isFallbackAdapter on GPU-less hosts (E2E: fallback false,
+  subgroups 4/128, limits at Firefox defaults).
+- [x] **Worker-2D readback E2E-VERIFIED** — the M2.9 GfxXray
+  XrayWorkerSnapshotRunnable path confirmed live: a worker-transferred
+  OffscreenCanvas (red 64x64 + green 32x32 center) read back through
+  page_pixels source=canvas-buffer with the exact pattern. (The
+  earlier 'failure' was a GC'd test worker clearing the ThreadSafeWorkerRef —
+  persistent site workers are fine.)
 - [ ] PR #782: watch for upstream beta.31 assets
 - [ ] MCP Registry: publish 0.8.2+ (needs user device authorization)
 
