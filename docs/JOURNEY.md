@@ -214,9 +214,9 @@ Lessons from THIS run:
   earlier 'failure' was a GC'd test worker clearing the ThreadSafeWorkerRef —
   persistent site workers are fine.)
 - [ ] PR #782: watch for upstream beta.31 assets
-- [ ] MCP Registry: publish 0.9.1 — server.json is the ready payload;
-  needs the USER to log in (device auth) and submit at
-  registry.modelcontextprotocol.io
+- [x] **MCP Registry PUBLISHED 0.9.1** — io.github.autokeren/ghostfox
+  live via mcp-publisher (GitHub device auth; npm mcpName + PyPI
+  mcp-name ownership tokens both verified). All 5 channels live.
 
 ### The typing-gap saga → CLOSED (2026-09-30)
 

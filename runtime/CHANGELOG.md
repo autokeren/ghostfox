@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.9.1] — 2026-10-04
 
+MCP Registry listing published: io.github.autokeren/ghostfox v0.9.1
+(mcp-publisher GitHub device auth; npm `mcpName` + PyPI `mcp-name`
+ownership verification tokens confirmed live). All five distribution
+channels are current: PyPI, npm, GHCR, GitHub Releases, MCP Registry.
+
 **The hearing + smell release**: M3 AccEvent stream and M3.5 (jank
 detector, timing sense, visual stability) complete the senses. 67 tools.
 
