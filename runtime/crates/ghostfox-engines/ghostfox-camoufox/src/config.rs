@@ -35,6 +35,13 @@ pub fn identity_to_config(identity: &Identity) -> BTreeMap<String, serde_json::V
     );
     if !chrome_mode {
         set(&mut cfg, "navigator.oscpu", oscpu(identity.platform, &ua));
+    } else {
+        // Chrome-mode: Chrome exposes navigator.deviceMemory (capped 8).
+        set(
+            &mut cfg,
+            "navigator.deviceMemory",
+            identity.hardware.device_memory_gb.to_string(),
+        );
     }
     set(
         &mut cfg,
