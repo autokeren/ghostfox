@@ -229,18 +229,7 @@ index 38891d8d9f..890fbce2c2 100644
    bool wouldFlushRetainedLayers = false;
    PaintFrameFlags flags = PaintFrameFlags::IgnoreSuppression;
    if (aThebesContext->CurrentMatrix().HasNonIntegerTranslation()) {
-@@ -11791,7 +11800,9 @@ bool PresShell::ComputeActiveness() const {
-     if (!browserChild->IsVisible()) {
-       MOZ_LOG(gLog, LogLevel::Debug,
-               (" > BrowserChild %p is not visible", browserChild));
--      return false;
-+      bool isActive;
-+      root->GetDocShell()->GetForceActiveState(&isActive);
-+      return isActive;
-     }
- 
-     // If the browser is visible but just due to be preserving layers
-diff --git a/layout/base/PresShellForwards.h b/layout/base/PresShellForwards.h
+ diff --git a/layout/base/PresShellForwards.h b/layout/base/PresShellForwards.h
 index 9c8b124b00..cd3ce5f5f7 100644
 --- a/layout/base/PresShellForwards.h
 +++ b/layout/base/PresShellForwards.h
