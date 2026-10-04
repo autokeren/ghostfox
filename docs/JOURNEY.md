@@ -214,6 +214,13 @@ Lessons from THIS run:
   earlier 'failure' was a GC'd test worker clearing the ThreadSafeWorkerRef —
   persistent site workers are fine.)
 - [ ] PR #782: watch for upstream beta.31 assets
+- [x] **chrome-mode v1+v2 SHIPPED** — session_create chrome_mode=true:
+  Chrome UA (no Firefox translation) + Chrome141 TLS (cipher+group
+  order = Chrome exact, JA3-capture verified) + window.chrome +
+  deviceMemory + oscpu removed. Field: Turnstile non-interactive
+  issued a token; sannysoft passes WebDriver + Chrome + deviceMemory.
+  KNOWN LIMITS: PHANTOM_ETSL (SpiderMonkey recursion/stack profile)
+  and CHR_BATTERY (headless-Chrome quirk) — engine-stack-level.
 - [x] **MCP Registry PUBLISHED 0.9.1** — io.github.autokeren/ghostfox
   live via mcp-publisher (GitHub device auth; npm mcpName + PyPI
   mcp-name ownership tokens both verified). All 5 channels live.
