@@ -2656,14 +2656,17 @@ impl PageHandle for CamoufoxPage {
                                         // TTFB per request, straight from
                                         // nsITimedChannel (NetworkObserver).
                                         if let Some(t) = msg.pointer("/params/timing") {
-                                            let ms = |a: Option<f64>, b: Option<f64>| -> Option<i64> {
-                                                match (a, b) {
-                                                    (Some(x), Some(y)) if x > 0.0 && y > 0.0 && y >= x => {
-                                                        Some(((y - x) / 1000.0).round() as i64)
+                                            let ms =
+                                                |a: Option<f64>, b: Option<f64>| -> Option<i64> {
+                                                    match (a, b) {
+                                                        (Some(x), Some(y))
+                                                            if x > 0.0 && y > 0.0 && y >= x =>
+                                                        {
+                                                            Some(((y - x) / 1000.0).round() as i64)
+                                                        }
+                                                        _ => None,
                                                     }
-                                                    _ => None,
-                                                }
-                                            };
+                                                };
                                             e2["rawTiming"] = t.clone();
                                             let timings = serde_json::json!({
                                                 "dnsMs": ms(
