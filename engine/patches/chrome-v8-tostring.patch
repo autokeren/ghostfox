@@ -1,0 +1,57 @@
+diff --git a/js/src/vm/JSFunction.cpp b/js/src/vm/JSFunction.cpp
+index 7d264f098c..1aaecd8ded 100644
+--- a/js/src/vm/JSFunction.cpp
++++ b/js/src/vm/JSFunction.cpp
+@@ -17,6 +17,7 @@
+ #include "builtin/BigInt.h"
+ #include "builtin/Object.h"
+ #include "builtin/Symbol.h"
++#include <cstdlib>
+ #include "frontend/BytecodeCompiler.h"  // frontend::{CompileStandaloneFunction, CompileStandaloneGenerator, CompileStandaloneAsyncFunction, CompileStandaloneAsyncGenerator, DelazifyCanonicalScriptedFunction}
+ #include "frontend/FrontendContext.h"  // AutoReportFrontendContext, ManualReportFrontendContext
+ #include "frontend/Stencil.h"  // js::DumpFunctionFlagsItems
+@@ -849,6 +850,18 @@ void js::FunctionToStringCache::put(BaseScript* script, JSString* string) {
+   entries_[0].set(script, string);
+ }
+ 
++// Camoufox chrome-mode: V8 prints native functions single-line
++// ("function eval() { [native code] }", 33 chars). SpiderMonkey's
++// multiline form (37 chars) is sannysoft's PhantomJS etsl signal.
++// Gated on the GHOSTFOX_CHROME_MODE env, set by the runtime.
++static bool NativeSourceSingleLine() {
++  static const bool singleLine = []() {
++    const char* v = getenv("GHOSTFOX_CHROME_MODE");
++    return v && v[0] == '1';
++  }();
++  return singleLine;
++}
++
+ JSString* js::FunctionToString(JSContext* cx, HandleFunction fun,
+                                bool isToSource) {
+   if (IsAsmJSModule(fun)) {
+@@ -959,7 +972,11 @@ JSString* js::FunctionToString(JSContext* cx, HandleFunction fun,
+       }
+     }
+ 
+-    if (!out.append("() {\n    [native code]\n}")) {
++    if (NativeSourceSingleLine()) {
++      if (!out.append("() { [native code] }")) {
++        return nullptr;
++      }
++    } else if (!out.append("() {\n    [native code]\n}")) {
+       return nullptr;
+     }
+   } else {
+@@ -995,7 +1012,11 @@ JSString* js::FunctionToString(JSContext* cx, HandleFunction fun,
+       }
+     }
+ 
+-    if (!out.append("() {\n    [native code]\n}")) {
++    if (NativeSourceSingleLine()) {
++      if (!out.append("() { [native code] }")) {
++        return nullptr;
++      }
++    } else if (!out.append("() {\n    [native code]\n}")) {
+       return nullptr;
+     }
+   }

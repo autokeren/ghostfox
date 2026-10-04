@@ -1014,10 +1014,23 @@ index 5292a4d543..5d1cab897e 100644
    void Alert(nsIPrincipal& aSubjectPrincipal, mozilla::ErrorResult& aError);
    void Alert(const nsAString& aMessage, nsIPrincipal& aSubjectPrincipal,
 diff --git a/dom/webidl/Navigator.webidl b/dom/webidl/Navigator.webidl
-index a4db5f65d9..724598f662 100644
+index a4db5f65d9..b2da71caf0 100644
 --- a/dom/webidl/Navigator.webidl
 +++ b/dom/webidl/Navigator.webidl
-@@ -175,7 +175,8 @@ partial interface Navigator {
+@@ -133,8 +133,10 @@ Navigator includes NavigatorGeolocation;
+ 
+ // http://www.w3.org/TR/battery-status/#navigatorbattery-interface
+ partial interface Navigator {
+-  // ChromeOnly to prevent web content from fingerprinting users' batteries.
+-  [Throws, ChromeOnly, Pref="dom.battery.enabled"]
++  // Camoufox: expose ONLY in chrome-mode (dom.battery.enabled defaults
++  // true, so the Func is the real gate; chrome-mode sets the pref too).
++  [Throws, Pref="dom.battery.enabled",
++   Func="mozilla::dom::NavigatorManager::IsChromeModeEnabledForWebIDL"]
+   Promise<BatteryManager> getBattery();
+ };
+ 
+@@ -175,7 +177,8 @@ partial interface Navigator {
  };
  
  partial interface Navigator {
@@ -1027,7 +1040,7 @@ index a4db5f65d9..724598f662 100644
    readonly attribute DOMString oscpu;
    // WebKit/Blink support this; Trident/Presto do not.
    readonly attribute DOMString vendor;
-@@ -416,3 +417,8 @@ partial interface Navigator {
+@@ -416,3 +419,8 @@ partial interface Navigator {
    [SameObject, Pref="dom.modelcontext.enabled"]
    readonly attribute ModelContext modelContext;
  };

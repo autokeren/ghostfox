@@ -117,6 +117,23 @@ impl CamoufoxEngine {
             std::fs::write(&user_js, prefs)?;
         }
 
+        // Chrome-mode: the persona presents the Chrome surface. Tell the
+        // engine (single-line native-function source = V8's eval.toString
+        // shape) and enable the Battery API (Chrome exposes navigator.
+        // getBattery where Firefox hides it).
+        let chrome_mode =
+            identity.hardware.tls == ghostfox_fingerprint::identity::TlsProfile::Chrome141;
+        if chrome_mode {
+            let user_js = profile.join("user.js");
+            let mut prefs = if user_js.exists() {
+                std::fs::read_to_string(&user_js).unwrap_or_default()
+            } else {
+                String::new()
+            };
+            prefs.push_str("user_pref(\"dom.battery.enabled\", true);\n");
+            std::fs::write(&user_js, prefs)?;
+        }
+
         // NOTE: the launcher (`ghostfox`/`camoufox`) re-execs `-bin` WITHOUT
         // preserving the juggler pipes. Always spawn the -bin binary.
         let mut cmd = std::process::Command::new(home.join(bin_name));
@@ -128,6 +145,9 @@ impl CamoufoxEngine {
             // Run from the install dir: the engine resolves helper binaries
             // (glxtest etc.) relative to its working directory.
             .current_dir(&home);
+        if chrome_mode {
+            cmd.env("GHOSTFOX_CHROME_MODE", "1");
+        }
 
         // Juggler pipe convention (from Playwright's FirefoxConnection):
         // stdio = [ignore, pipe, pipe, pipe, pipe] — the juggler channel is
