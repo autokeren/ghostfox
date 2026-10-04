@@ -52,6 +52,13 @@ lto = "fat"
 codegen-units = 1
 strip = true
 
+# vendored rmcp: adds the 2025-06-18 protocol version (clients like
+# opencode require it; upstream 0.3.2 tops out at 2025-03-26 and the
+# negotiation round-trips a version those clients reject).
+[patch.crates-io]
+rmcp = { path = "vendor/rmcp" }
+rmcp-macros = { path = "vendor/rmcp-macros" }
+
 # Dev builds skip the incremental cache: it grows unbounded on this box and
 # disk is the scarce resource here.
 [profile.dev]

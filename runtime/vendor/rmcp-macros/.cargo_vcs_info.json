@@ -1,0 +1,6 @@
+{
+  "git": {
+    "sha1": "ec6bd056d7bf539d6124c2250a63d31ffc43ef2d"
+  },
+  "path_in_vcs": "crates/rmcp-macros"
+}

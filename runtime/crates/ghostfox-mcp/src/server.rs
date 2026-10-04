@@ -153,6 +153,12 @@ struct InterceptParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+struct HttpHeader {
+    name: String,
+    value: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct ResumeParams {
     session_id: String,
     page_id: String,
@@ -160,7 +166,8 @@ struct ResumeParams {
     request_id: String,
     url: Option<String>,
     method: Option<String>,
-    headers: Option<serde_json::Value>,
+    /// Array of {name, value} header overrides.
+    headers: Option<Vec<HttpHeader>>,
     post_data: Option<String>,
 }
 
@@ -179,7 +186,8 @@ struct FulfillParams {
     request_id: String,
     status: u32,
     status_text: String,
-    headers: Option<serde_json::Value>,
+    /// Array of {name, value} response headers.
+    headers: Option<Vec<HttpHeader>>,
     body: Option<String>,
 }
 
@@ -2085,7 +2093,12 @@ impl GhostfoxServer {
             &request_id,
             url.as_deref(),
             method.as_deref(),
-            headers,
+            headers.map(|h| {
+                serde_json::json!(h
+                    .into_iter()
+                    .map(|x| serde_json::json!({ "name": x.name, "value": x.value }))
+                    .collect::<Vec<_>>())
+            }),
             post_data.as_deref(),
         )
         .await
@@ -2140,9 +2153,20 @@ impl GhostfoxServer {
             .page(&page_id)
             .await
             .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
-        page.network_fulfill(&request_id, status, &status_text, headers, body.as_deref())
-            .await
-            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        page.network_fulfill(
+            &request_id,
+            status,
+            &status_text,
+            headers.map(|h| {
+                serde_json::json!(h
+                    .into_iter()
+                    .map(|x| serde_json::json!({ "name": x.name, "value": x.value }))
+                    .collect::<Vec<_>>())
+            }),
+            body.as_deref(),
+        )
+        .await
+        .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
         Ok(text_result(format!("fulfilled {request_id} {status}")))
     }
 
