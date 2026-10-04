@@ -300,6 +300,16 @@ pub trait PageHandle: Send + Sync {
             "wait_visual_stable not supported by this engine".into(),
         ))
     }
+    /// M3 hearing: the WebSocket stream — socket lifecycle records
+    /// {kind: socket, wsid, url, opened, closed, error} and frame records
+    /// {kind: frame, wsid, direction, opcode, data, ts} since the page
+    /// opened (or the last clear). Binary frames arrive base64-encoded.
+    async fn read_ws_frames(&self, clear: bool) -> Result<Vec<serde_json::Value>> {
+        let _ = clear;
+        Err(crate::error::GhostError::PageOp(
+            "read_ws_frames not supported by this engine".into(),
+        ))
+    }
     /// Network interception (the spike verified the Juggler route):
     /// enable/disable the interception on the page's session. While
     /// enabled, every request HOLDS and waits for resume/abort/fulfill —

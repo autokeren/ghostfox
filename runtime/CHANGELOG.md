@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 detector, timing sense, visual stability) complete the senses. 67 tools.
 
 ### Added
+- `page_ws_frames` (M3 hearing — the WebSocket stream): every socket
+  (url, opened/closed, error) + frames in BOTH directions (opcode,
+  data, ts; binary base64, data capped 2000 chars/frame). The engine's
+  FrameTree already observed nsIWebSocketEventService; the runtime now
+  buffers Page.webSocket* protocol events per page. **M3 hearing is
+  complete — all five senses are live.**
 - `page_a11y_events` (M3 hearing — the AccEvent stream): compacted
   {type, role, name, + detail} records from the engine's own
   "accessible-event" topic — focus moves, text inserted/removed

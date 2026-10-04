@@ -174,8 +174,11 @@ Lessons from THIS run:
   stream: focus/text-inserted(+modifiedText)/name/value/state/caret/
   announcement events from the engine's own accessible-event topic.
   E2E: typing "ghostfox" into the Wikipedia searchbox streamed
-  per-character text-inserted + caret-moved events. WebSocket frames
-  remain.
+  per-character text-inserted + caret-moved events.
+- [x] **M3 hearing COMPLETE (v0.9.1): page_ws_frames** — the WebSocket
+  stream: socket lifecycle + frames both directions (E2E on
+  wss://echo.websocket.org: sent 2 frames, received echo + server
+  greeting). ALL FIVE SENSES DONE.
 - [x] **M5 the Critic v1: page_ui_audit SHIPPED** — visual QA for
   AI-generated UIs (text-clipped, no-padding, viewport-overflow,
   overlap, crowded) from native a11y bounds. E2E on an ugly test page:
@@ -448,8 +451,11 @@ Progress (2026-09-30, continued):
   as a stream (focus/text/state/caret/live-region events, modifiedText
   + offsets), not full snapshots.
 - **DOM mutation whispers**: every DOM change as an event (no polling).
-- **WebSocket frames**: full-duplex network (HTTP done; WS carries
-  challenge/config more and more).
+- **WebSocket frames SHIPPED (v0.9.1)**: `page_ws_frames` — every
+  socket (url, opened/closed, error) + frames in BOTH directions
+  (opcode, data, ts; binary base64). The engine's FrameTree already
+  observed nsIWebSocketEventService; the runtime now buffers it.
+  **ALL FIVE SENSES COMPLETE — M3 done.**
 
 ### M3.5 — 👃 Smell: paint & timing sense
 - **Visual-stability events SHIPPED (v0.9.1)**: `page_wait_visual` —
@@ -481,7 +487,7 @@ Progress (2026-09-30, continued):
 Origin allowlists, enforced confirmations, redacted evidence.
 
 **Execution order**: M1 E2E → v0.8.2 → M2 → M2.5 → M2.9 (sixth sense) →
-M3 (whispers + AccEvent stream shipped; WS pending) → **M5 jump-started: the Critic**
+M3 (whispers + AccEvent + WS stream shipped) → **M5 jump-started: the Critic**
 (page_ui_audit — the eyes applied to AI-generated UIs) → M3.5 → M4/M4.5.
 **The most "ghostfox" ones first**: cookie heartbeat + visual stability —
 both connect directly to field experience (the silently-revoked session,

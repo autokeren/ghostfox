@@ -223,6 +223,13 @@ struct WaitVisualParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+struct WsFramesParams {
+    session_id: String,
+    page_id: String,
+    clear: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct NetParams {
     session_id: String,
     page_id: String,
@@ -1525,6 +1532,33 @@ impl GhostfoxServer {
         Ok(text_result(
             serde_json::to_string_pretty(&serde_json::json!({ "stable": stable }))
                 .unwrap_or_default(),
+        ))
+    }
+
+    #[tool(
+        description = "M3 hearing: the WEBSOCKET STREAM — every WebSocket on the page (socket records: url, opened/closed, error) plus the frames in both directions ({kind, wsid, direction: sent|received, opcode, data, ts}). Text frames arrive decoded; binary frames base64 (data capped at 2000 chars per frame). The full-duplex channel that carries challenge/config data more and more — now audible. clear=true empties the buffer."
+    )]
+    async fn page_ws_frames(
+        &self,
+        Parameters(WsFramesParams {
+            session_id,
+            page_id,
+            clear,
+        }): Parameters<WsFramesParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let page = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let frames = page
+            .read_ws_frames(clear.unwrap_or(false))
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        Ok(text_result(
+            serde_json::to_string_pretty(&frames).unwrap_or_default(),
         ))
     }
 

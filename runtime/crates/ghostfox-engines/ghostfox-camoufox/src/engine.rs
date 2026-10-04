@@ -1008,6 +1008,138 @@ impl Engine for CamoufoxEngine {
                                             }
                                         }
                                     }
+                                    // M3 hearing: the WebSocket stream. The
+                                    // engine's FrameTree already observes the
+                                    // nsIWebSocketEventService and emits
+                                    // Page.webSocket* protocol events; here we
+                                    // just buffer them per page.
+                                    "Page.webSocketCreated" => {
+                                        let wsid = msg
+                                            .pointer("/params/wsid")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("")
+                                            .to_string();
+                                        let url = msg
+                                            .pointer("/params/requestURL")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("")
+                                            .to_string();
+                                        let entry = serde_json::json!({
+                                            "kind": "socket",
+                                            "wsid": wsid,
+                                            "url": url,
+                                            "opened": false,
+                                            "closed": false,
+                                            "ts": now_ms(),
+                                        });
+                                        let mut w = buf.ws.lock().unwrap();
+                                        let mut ix = buf.ws_index.lock().unwrap();
+                                        if !ix.contains_key(&wsid) {
+                                            ix.insert(wsid.clone(), w.len());
+                                            w.push(entry);
+                                        }
+                                    }
+                                    "Page.webSocketOpened" => {
+                                        let wsid = msg
+                                            .pointer("/params/wsid")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("")
+                                            .to_string();
+                                        let eff = msg
+                                            .pointer("/params/effectiveURL")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("")
+                                            .to_string();
+                                        if let (Some(ix_val), Ok(mut w)) = (
+                                            buf.ws_index.lock().unwrap().get(&wsid).copied(),
+                                            buf.ws.try_lock(),
+                                        ) {
+                                            if let Some(e) = w.get_mut(ix_val) {
+                                                e["opened"] = serde_json::json!(true);
+                                                if !eff.is_empty() {
+                                                    e["url"] = serde_json::json!(eff);
+                                                }
+                                            }
+                                        }
+                                    }
+                                    "Page.webSocketClosed" => {
+                                        let wsid = msg
+                                            .pointer("/params/wsid")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("")
+                                            .to_string();
+                                        let err = msg
+                                            .pointer("/params/error")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("")
+                                            .to_string();
+                                        if let (Some(ix_val), Ok(mut w)) = (
+                                            buf.ws_index.lock().unwrap().get(&wsid).copied(),
+                                            buf.ws.try_lock(),
+                                        ) {
+                                            if let Some(e) = w.get_mut(ix_val) {
+                                                e["closed"] = serde_json::json!(true);
+                                                if !err.is_empty() {
+                                                    e["error"] = serde_json::json!(err);
+                                                }
+                                            }
+                                        }
+                                    }
+                                    "Page.webSocketFrameSent" | "Page.webSocketFrameReceived" => {
+                                        let dir = if method == Some("Page.webSocketFrameSent") {
+                                            "sent"
+                                        } else {
+                                            "received"
+                                        };
+                                        let wsid = msg
+                                            .pointer("/params/wsid")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("")
+                                            .to_string();
+                                        let mut data = msg
+                                            .pointer("/params/data")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("")
+                                            .to_string();
+                                        if data.len() > 2000 {
+                                            data = format!(
+                                                "{}…[truncated {} chars]",
+                                                &data[..2000],
+                                                data.len() - 2000
+                                            );
+                                        }
+                                        let frame = serde_json::json!({
+                                            "kind": "frame",
+                                            "wsid": wsid,
+                                            "direction": dir,
+                                            "opcode": msg.pointer("/params/opcode")
+                                                .and_then(|v| v.as_u64())
+                                                .unwrap_or(0),
+                                            "data": data,
+                                            "ts": now_ms(),
+                                        });
+                                        let mut w = buf.ws.lock().unwrap();
+                                        w.push(frame);
+                                        if w.len() > 1000 {
+                                            let drop = w.len() - 1000;
+                                            w.drain(0..drop);
+                                            buf.ws_index.lock().unwrap().clear();
+                                            for (i, e2) in w.iter().enumerate() {
+                                                if e2.get("kind").and_then(|v| v.as_str())
+                                                    == Some("socket")
+                                                {
+                                                    if let Some(r) =
+                                                        e2.get("wsid").and_then(|v| v.as_str())
+                                                    {
+                                                        buf.ws_index
+                                                            .lock()
+                                                            .unwrap()
+                                                            .insert(r.to_string(), i);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                     _ => {}
                                 }
                             }
@@ -1421,6 +1553,9 @@ struct DebugBuffers {
     errors: std::sync::Mutex<Vec<serde_json::Value>>,
     net: std::sync::Mutex<Vec<serde_json::Value>>,
     net_index: std::sync::Mutex<std::collections::HashMap<String, usize>>,
+    /// M3 hearing: WebSocket sockets + frames (Page.webSocket* events).
+    ws: std::sync::Mutex<Vec<serde_json::Value>>,
+    ws_index: std::sync::Mutex<std::collections::HashMap<String, usize>>,
     listening: std::sync::atomic::AtomicBool,
 }
 
@@ -2001,6 +2136,21 @@ impl PageHandle for CamoufoxPage {
             return Err(GhostError::PageOp(format!("waitVisualStable: {err}")));
         }
         Ok(res.get("stable").and_then(|s| s.as_bool()).unwrap_or(false))
+    }
+
+    async fn read_ws_frames(&self, clear: bool) -> Result<Vec<serde_json::Value>> {
+        let tid = self.target_id.clone();
+        let buf = debug_buffers_for(&tid);
+        let out = {
+            let mut w = buf.ws.lock().unwrap();
+            let out = w.clone();
+            if clear {
+                w.clear();
+                buf.ws_index.lock().unwrap().clear();
+            }
+            out
+        };
+        Ok(out)
     }
 
     async fn network_set_interception(&self, enabled: bool) -> Result<()> {

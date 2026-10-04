@@ -200,7 +200,7 @@ origin device** (platform, timezone, locale, screen) — a session that
 suddenly changes identity looks like an impossible login and anti-fraud
 systems revoke it. Proven flow, see `AGENTS.md` §8.
 
-**Full tool surface (67 tools):**
+**Full tool surface (68 tools):**
 
 | Category | Tools |
 |---|---|
@@ -210,7 +210,7 @@ systems revoke it. Proven flow, see `AGENTS.md` §8.
 | **Act** | `page_click_ref` · `page_click_native` (trusted a11y-bounds click: scroll-first, DOM-proof coordinates) · `page_click_at` (raw trusted coords — no a11y resolution) · `page_type_ref` · `page_click` · `page_type` · `page_fill` · `page_press` · `page_drag` · `page_move_to` · `page_upload_file` · `page_init_script` · `page_a11y_set_text` (AT-native text input — the Flutter route) |
 | **Captcha** | `captcha_solve` · `page_geetest_slide` · `page_geetest_click` · `page_captcha_rotate` · `page_captcha_ocr` · `page_hcaptcha` · `page_captcha_vision` (host-VLM reader for warped text captchas) |
 | **Network broker** | `page_network_intercept` (hold every request) · `page_network_resume` (modify url/method/headers/postData) · `page_network_abort` (block) · `page_network_fulfill` (mock the response) |
-| **Debug** | `page_console` · `page_errors` · `page_network_start` · `page_network_read` (per-request DNS/TLS/TTFB timing) · `page_network_body` · `page_frame_stats` (M3.5: jank detector — frame-cadence stats) · `page_timing_report` (M3.5: nav-timing + paint) · `page_ui_audit` (M5: visual QA of the rendered UI) |
+| **Debug** | `page_console` · `page_errors` · `page_network_start` · `page_network_read` (per-request DNS/TLS/TTFB timing) · `page_network_body` · `page_frame_stats` (M3.5: jank detector — frame-cadence stats) · `page_timing_report` (M3.5: nav-timing + paint) · `page_ws_frames` (M3: the WebSocket stream — sockets + frames both directions) · `page_ui_audit` (M5: visual QA of the rendered UI) |
 | **Vision** | `page_vision` · `page_ocr` · `page_match_image` · `page_pixels` (compositor pixels — region/semantic/ref, no toDataURL) · `page_contrast` |
 | **Inspect** | `page_eval` · `page_open` · `page_comment` |
 | **Identity** | `identity_generate` · `identity_audit` · `identity_morph` (stop→relaunch→swap identity without losing the session) |
