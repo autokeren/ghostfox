@@ -15,8 +15,17 @@ use ghostfox_fingerprint::identity::{Identity, Platform, WebRtcPolicy};
 pub fn identity_to_config(identity: &Identity) -> BTreeMap<String, serde_json::Value> {
     let mut cfg: BTreeMap<String, serde_json::Value> = BTreeMap::new();
 
-    // Navigator / UA — Firefox-style values derived from our identity.
-    let ua = firefox_ua(identity);
+    // Navigator / UA. Default: Firefox-style values (the engine presents
+    // itself as Firefox). Chrome-mode (hardware.tls == Chrome141): present
+    // the persona's own Chrome UA — navigator.oscpu is Firefox-only and
+    // stays unset.
+    let chrome_mode =
+        identity.hardware.tls == ghostfox_fingerprint::identity::TlsProfile::Chrome141;
+    let ua = if chrome_mode {
+        identity.user_agent.clone()
+    } else {
+        firefox_ua(identity)
+    };
     set(&mut cfg, "navigator.userAgent", ua.clone());
     set(&mut cfg, "navigator.appVersion", app_version(&ua));
     set(
@@ -24,7 +33,9 @@ pub fn identity_to_config(identity: &Identity) -> BTreeMap<String, serde_json::V
         "navigator.platform",
         platform_str(identity.platform),
     );
-    set(&mut cfg, "navigator.oscpu", oscpu(identity.platform, &ua));
+    if !chrome_mode {
+        set(&mut cfg, "navigator.oscpu", oscpu(identity.platform, &ua));
+    }
     set(
         &mut cfg,
         "navigator.hardwareConcurrency",

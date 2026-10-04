@@ -21,6 +21,10 @@ struct SessionCreateParams {
     /// Restrict identity platform: "windows" | "macos" | "linux" | "android" (optional).
     #[serde(default)]
     platform: Option<String>,
+    /// Present the CHROME surface (Chrome UA + Chrome141 TLS profile)
+    /// instead of the default Firefox presentation (optional).
+    #[serde(default)]
+    chrome_mode: Option<bool>,
     /// Reuse a persistent profile directory (optional).
     #[serde(default)]
     profile_dir: Option<String>,
@@ -753,6 +757,7 @@ impl GhostfoxServer {
         &self,
         Parameters(SessionCreateParams {
             platform,
+            chrome_mode,
             profile_dir,
             proxy,
             headful,
@@ -767,11 +772,13 @@ impl GhostfoxServer {
                 _ => None,
             },
             webrtc: None,
+            chrome_mode,
         };
         let identity = ghostfox_fingerprint::generate(&gen_opts);
 
         let launch = ghostfox_core::engine::LaunchOptions {
             profile_dir,
+            identity_toml: identity.to_toml().ok(),
             proxy,
             headless: !headful.unwrap_or(false),
             ..Default::default()
@@ -3917,6 +3924,7 @@ impl GhostfoxServer {
         };
         // Fresh coherent identity — the whole persona regenerates together.
         let id = ghostfox_fingerprint::generate(&ghostfox_fingerprint::GenerateOptions {
+            chrome_mode: None,
             platform: match platform.as_deref() {
                 Some("windows") => Some(ghostfox_fingerprint::Platform::Windows),
                 Some("macos") => Some(ghostfox_fingerprint::Platform::MacOS),

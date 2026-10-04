@@ -30,6 +30,9 @@ impl EngineKind {
 pub struct LaunchOptions {
     /// Persistent profile directory (empty = ephemeral).
     pub profile_dir: Option<String>,
+    /// Identity TOML to launch with (overrides profile identity.toml
+    /// and the fallback regeneration — the caller's generated persona).
+    pub identity_toml: Option<String>,
     /// Proxy URL, e.g. `socks5://user:pass@host:port`.
     pub proxy: Option<String>,
     /// Extra command-line switches passed to the engine binary.

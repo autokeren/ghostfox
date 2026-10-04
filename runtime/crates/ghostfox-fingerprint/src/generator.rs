@@ -9,7 +9,7 @@
 use rand::seq::IndexedRandom;
 use rand::Rng;
 
-use crate::identity::{Geo, Hardware, Identity, Platform, Screen, WebRtcPolicy};
+use crate::identity::{Geo, Hardware, Identity, Platform, Screen, TlsProfile, WebRtcPolicy};
 use crate::presets::PRESETS;
 
 /// Locale/timezone pairs that actually co-occur.
@@ -32,6 +32,9 @@ pub struct GenerateOptions {
     pub platform: Option<Platform>,
     /// Force a WebRTC policy (default: mostly PublicOnly, sometimes Proxied).
     pub webrtc: Option<WebRtcPolicy>,
+    /// Present the CHROME surface: the persona's Chrome UA (no Firefox
+    /// translation) + the Chrome141 TLS profile (Chrome ClientHello).
+    pub chrome_mode: Option<bool>,
 }
 
 /// Generate a fresh, coherent identity.
@@ -59,7 +62,10 @@ pub fn generate(opts: &GenerateOptions) -> Identity {
         screen.height = screen.height.saturating_sub(height_delta);
     }
 
-    let hardware: Hardware = preset.hardware();
+    let mut hardware: Hardware = preset.hardware();
+    if opts.chrome_mode == Some(true) {
+        hardware.tls = TlsProfile::Chrome141;
+    }
 
     let webrtc = opts.webrtc.unwrap_or(match rng.random_range(0..10) {
         0..=7 => WebRtcPolicy::PublicOnly,

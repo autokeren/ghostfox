@@ -43,7 +43,11 @@ pub struct CamoufoxEngine {
 
 impl CamoufoxEngine {
     pub async fn launch(opts: &LaunchOptions) -> Result<Arc<Self>> {
-        let identity = Identity::load_or_generate(opts.profile_dir.as_deref())?;
+        let identity = match &opts.identity_toml {
+            Some(toml_text) => toml::from_str::<Identity>(toml_text)
+                .map_err(|e| GhostError::EngineUnavailable(format!("identity toml parse: {e}")))?,
+            None => Identity::load_or_generate(opts.profile_dir.as_deref())?,
+        };
         let (home, bin_name) = autodetect_engine().ok_or_else(|| {
             GhostError::EngineUnavailable("ghostfox/camoufox binary not found".into())
         })?;

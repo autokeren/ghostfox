@@ -12,6 +12,7 @@ async fn main() -> anyhow::Result<()> {
     let identity = ghostfox_fingerprint::generate(&GenerateOptions {
         platform: Some(Platform::Android),
         webrtc: None,
+        chrome_mode: None,
     });
 
     // Persist the identity so the engine reads it back via profile dir.

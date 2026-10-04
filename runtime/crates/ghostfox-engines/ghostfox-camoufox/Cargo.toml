@@ -9,6 +9,7 @@ description = "Camoufox (patched Firefox) engine adapter for ghostfox"
 [dependencies]
 ghostfox-core = { path = "../../ghostfox-core" }
 ghostfox-fingerprint = { path = "../../ghostfox-fingerprint" }
+toml = "0.8"
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true

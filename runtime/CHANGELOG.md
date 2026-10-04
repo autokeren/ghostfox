@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.9.1] — 2026-10-04
 
+### chrome-mode v1 (session_create chrome_mode=true)
+- Presents the persona's CHROME UA (no Firefox translation), Chrome
+  navigator fields (platform/appVersion, no oscpu), and the Chrome141
+  TLS profile — the ClientHello cipher + group order = Chrome exact.
+- LaunchOptions.identity_toml: session_create's generated identity now
+  actually reaches the engine launch (previously the launch regenerated
+  a fresh random identity for ephemeral profiles, so the recorded
+  persona and the live fingerprint disagreed).
+- Field-tested vs bot checks: Turnstile NON-interactive issued a token
+  (risk engine accepted); sannysoft passes WebDriver checks but flags
+  the missing window.chrome, deviceMemory and the Firefox recursion
+  profile — the JS-surface Chrome-isms are the next layer.
+
 ### TLS fingerprint capability (dormant, E2E-verified)
 - Engine patch `tls-v1-spoofing.patch`: per-session ClientHello reorder
   via MaskConfig (`tls:groups` / `tls:cipherSuites`) using NSS
