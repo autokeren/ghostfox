@@ -1,7 +1,7 @@
 # Ghostfox — the browser that can SEE
 
 Drive a Gecko-native stealth browser (engine-owned, unhookable) through
-51 MCP tools. Everything below is engine-level: page scripts cannot
+67 MCP tools. Everything below is engine-level: page scripts cannot
 poison the coordinates, the pixels or the observations.
 
 ## The Golden Loop
@@ -27,6 +27,10 @@ After EVERY action, read again. Never act blind.
 | Type with verification | `page_type_ref` — fire-then-verify, receipt included |
 | Evidence of what happened | receipts on every action; `page_diff` for deltas |
 | What the page changed (DOM whispers) | `page_mutations` — unhookable observer stream |
+| What the a11y tree did (event stream) | `page_a11y_events` — focus/text/state/caret/live-region diffs |
+| Is the main thread busy? | `page_frame_stats` — frame-cadence jank detector |
+| Wait until VISUALLY ready | `page_wait_visual` — refresh-driver stability (no sleep guessing) |
+| How fast was the load? | `page_timing_report` — nav timing + paint; netcap carries per-request TTFB too |
 | Pixels as digits (0-9 grids) | `page_pixels` — compositor-captured, 3 modes (region/semantic/ref) |
 | Hidden content (sixth sense) | `page_pixels` canvas refs read drawing buffers; `include_hidden: true` = Layer X-Ray (visibility:hidden content) |
 | Visual QA of a rendered UI | `page_ui_audit` — clipped captions, padding, overlap, overflow |

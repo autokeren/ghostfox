@@ -711,6 +711,24 @@ visual/sensor parity still needs a device pass.
   300. The page cannot hide its own mutations from this observer. After an
   action, this is the fastest "what appeared?" answer (feedback toasts,
   injected forms, anti-bot churn) — no full snapshot needed.
+- **`page_a11y_events` (M3 hearing v2)** — the A11Y tree as a stream:
+  focus moves, text inserted/removed (with modifiedText + offset),
+  name/value/state changes, caret moves, live-region announcements.
+  Read it after actions instead of re-walking the a11y tree; `clear:
+  true` drains the buffer. The observer installs on FIRST read — read
+  once early, then act.
+- **`page_frame_stats` (M3.5 jank)** — frame-cadence stats from the
+  privileged frame script. avg ≈16.7ms = healthy; p95/max spikes +
+  jankyFrames = main thread busy → wait before clicking. `reset: true`
+  restarts the measurement window.
+- **`page_timing_report` (M3.5)** — Navigation Timing + paint entries
+  for the current document (dns/tls/connect/ttfb/domInteractive/load).
+  Every netcap entry in `page_network_read` also carries its own
+  {dnsMs, tlsMs, connectMs, ttfbMs} now.
+- **`page_wait_visual` (M3.5)** — blocks until the refresh driver
+  delivers frames at normal cadence for quiet_ms (default 250) —
+  "wait until VISUALLY ready". Use it INSTEAD of guessing sleeps
+  after navigations and heavy renders.
 - **`page_ui_audit` (M5 the Critic)** — judge the RENDERED UI like a human
   eye: text-clipped captions, missing padding, viewport overflow,
   overlapping elements, crowded controls — computed from the engine's

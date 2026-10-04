@@ -154,8 +154,8 @@ Lessons from THIS run:
 
 ## Status today
 
-- **56 MCP tools** (CI green, clippy 0-0, test suite green, consistency audit in CI)
-- Channels: PyPI 0.9.0 · npm 0.9.0 · GHCR 0.8.0 · MCP Registry — publish pending user device
+- **67 MCP tools** (CI green, clippy 0-0, test suite green, consistency audit in CI)
+- Channels: PyPI 0.9.1 · npm 0.9.1 · GHCR 0.8.0 · MCP Registry — publish pending user device
 - Production proofs: bilibili 6/6 · hCaptcha on 2 real signups · TikTok
   OAuth+OTP · the LinkedIn self-post · Docker E2E
 - Early traction: ~215 installs/day (PyPI+npm) before any real campaign;
@@ -168,8 +168,8 @@ Lessons from THIS run:
 - [x] M2.5 compositor pixel capture → shipped (captureSurface + buffer reads)
 - [x] **M2.9 the sixth sense** → GfxXray C++ (native canvas buffer reads) +
   Layer X-Ray (ForceVisibleContent) shipped — closes the hidden-canvas hole
-- [x] M3 hearing v1: mutation whispers (page_mutations) — AccEvent diff +
-  WebSocket frames remain
+- [x] M3 hearing v1: mutation whispers (page_mutations) — WebSocket
+  frames remain
 - [x] **M3 hearing v2: page_a11y_events SHIPPED (v0.9.1)** — the AccEvent
   stream: focus/text-inserted(+modifiedText)/name/value/state/caret/
   announcement events from the engine's own accessible-event topic.
@@ -481,7 +481,7 @@ Progress (2026-09-30, continued):
 Origin allowlists, enforced confirmations, redacted evidence.
 
 **Execution order**: M1 E2E → v0.8.2 → M2 → M2.5 → M2.9 (sixth sense) →
-M3 (whispers shipped; AccEvent/WS pending) → **M5 jump-started: the Critic**
+M3 (whispers + AccEvent stream shipped; WS pending) → **M5 jump-started: the Critic**
 (page_ui_audit — the eyes applied to AI-generated UIs) → M3.5 → M4/M4.5.
 **The most "ghostfox" ones first**: cookie heartbeat + visual stability —
 both connect directly to field experience (the silently-revoked session,
