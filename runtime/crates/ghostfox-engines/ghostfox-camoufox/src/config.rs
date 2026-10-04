@@ -70,6 +70,28 @@ pub fn identity_to_config(identity: &Identity) -> BTreeMap<String, serde_json::V
         identity.hardware.gpu_renderer.as_str(),
     );
 
+    // TLS fingerprint (JA3/JA4 coherence with the persona UA). The engine
+    // patch reads tls:groups + tls:cipherSuites and reorders the NSS
+    // ClientHello per socket. Chrome-UA personas get Chrome's orders;
+    // Firefox personas keep the stock handshake (no keys emitted).
+    if identity.hardware.tls == ghostfox_fingerprint::identity::TlsProfile::Chrome141 {
+        // Chrome 141 supported-groups order: x25519, secp256r1, secp384r1.
+        set(&mut cfg, "tls:groups", vec!["29", "23", "24"]);
+        // Chrome 141 cipher-suite order (TLS 1.3 first, then 1.2).
+        set(
+            &mut cfg,
+            "tls:cipherSuites",
+            vec![
+                "0x1301", "0x1302", "0x1303", // TLS 1.3 AES128/AES256/ChaCha20
+                "0xc02b", "0xc02f", "0xc030", "0xc02c", // ECDHE GCM
+                "0xcca9", "0xcca8", // ECDHE ChaCha20
+                "0x009c", "0x009d", // RSA GCM
+                "0x002f", "0x0035", // RSA CBC
+                "0x000a", // RSA 3DES
+            ],
+        );
+    }
+
     // Locale/timezone/geo — one coherent unit.
     if let Some((lang, region)) = identity.locale.split_once('-') {
         set(&mut cfg, "locale:language", lang);

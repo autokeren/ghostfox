@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.9.1] — 2026-10-04
 
+### TLS fingerprint capability (dormant, E2E-verified)
+- Engine patch `tls-v1-spoofing.patch`: per-session ClientHello reorder
+  via MaskConfig (`tls:groups` / `tls:cipherSuites`) using NSS
+  SSL_NamedGroupConfig + SSL_CipherSuiteOrderSet in nsSSLIOLayer.
+- Identity carries a `TlsProfile` (Stock / Chrome141). The camoufox
+  engine presents a FIREFOX UA, so the default is Stock — Firefox UA +
+  Firefox JA3 stays coherent. Chrome141 reorders cipher suites and
+  groups to Chrome's exact order (verified against a local JA3 capture
+  server: 1301,1302,1303,c02b... / x25519,p256,p384) for a future
+  chrome-mode surface. Extension reordering (JA4) = v1.5.
+
+
 MCP Registry listing published: io.github.autokeren/ghostfox v0.9.1
 (mcp-publisher GitHub device auth; npm `mcpName` + PyPI `mcp-name`
 ownership verification tokens confirmed live). All five distribution

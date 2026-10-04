@@ -66,6 +66,19 @@ pub struct Hardware {
     pub gpu_renderer: String,
     /// Platform-appropriate font list.
     pub fonts: Vec<String>,
+    /// TLS handshake profile (JA3/JA4 coherence with the persona's UA).
+    pub tls: TlsProfile,
+}
+
+/// Which TLS ClientHello shape the engine presents.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TlsProfile {
+    /// Stock Firefox NSS handshake (correct for Firefox-UA personas).
+    #[default]
+    Stock,
+    /// Chrome's cipher-suite + group order (matches Chrome-UA personas).
+    Chrome141,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]

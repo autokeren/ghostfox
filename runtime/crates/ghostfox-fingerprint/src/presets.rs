@@ -205,6 +205,13 @@ impl DevicePreset {
             device_memory_gb: self.memory_gb,
             gpu_renderer: self.gpu.to_string(),
             fonts: self.fonts().iter().map(|s| s.to_string()).collect(),
+            // TLS fingerprint: Stock. The engine presents a FIREFOX UA
+            // (firefox_ua() translation), so the handshake must stay the
+            // stock NSS shape to stay coherent — Firefox UA + Firefox JA3.
+            // TlsProfile::Chrome141 is a verified-but-dormant capability
+            // (E2E: cipher + group order reordered to Chrome's) for a
+            // future chrome-mode where the UA surface is Chrome too.
+            tls: crate::identity::TlsProfile::Stock,
         }
     }
 

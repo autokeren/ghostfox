@@ -1,0 +1,84 @@
+diff --git a/security/manager/ssl/moz.build b/security/manager/ssl/moz.build
+index c3161a6bc7..6c4c9a6e9b 100644
+--- a/security/manager/ssl/moz.build
++++ b/security/manager/ssl/moz.build
+@@ -237,6 +237,7 @@ FINAL_LIBRARY = "xul"
+ 
+ LOCAL_INCLUDES += [
+     "!/dist/public/nss",
++    "/camoucfg",
+     "/dom/base",
+     "/dom/crypto",
+     "/netwerk/base",
+diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSIOLayer.cpp
+index b6056e58b7..59a3831aa9 100644
+--- a/security/manager/ssl/nsNSSIOLayer.cpp
++++ b/security/manager/ssl/nsNSSIOLayer.cpp
+@@ -6,6 +6,7 @@
+ #include "nsNSSIOLayer.h"
+ 
+ #include <algorithm>
++#include <cstdlib>
+ #include <utility>
+ #include <vector>
+ 
+@@ -16,6 +17,9 @@
+ #include "ScopedNSSTypes.h"
+ #include "TLSClientAuthCertSelection.h"
+ #include "keyhi.h"
++
++// Camoufox: persona mask (TLS fingerprint v1).
++#include "MaskConfig.hpp"
+ #include "mozilla/Base64.h"
+ #include "mozilla/Logging.h"
+ #include "mozilla/Preferences.h"
+@@ -1626,6 +1630,49 @@ static nsresult nsSSLIOLayerSetOptions(PRFileDesc* fd, bool forSTARTTLS,
+     return NS_ERROR_FAILURE;
+   }
+ 
++  // Camoufox TLS fingerprint v1: per-persona JA3/JA4 coherence. The
++  // persona config can override the ClientHello cipher-suite order
++  // ("tls:cipherSuites", hex ids like "0x1301,0x1302,...") and the
++  // supported-groups order ("tls:groups", numeric ids like
++  // "29,23,24" = x25519,p256,p384). A Chrome-UA persona ships the
++  // Chrome order; Firefox personas keep the stock NSS order.
++  {
++    const auto groups = MaskConfig::GetStringList("tls:groups");
++    if (!groups.empty()) {
++      std::vector<SSLNamedGroup> gs;
++      for (const auto& g : groups) {
++        char* end = nullptr;
++        unsigned long v = strtoul(g.c_str(), &end, 0);
++        if (end && *end == '\0' && v > 0 && v < 65536) {
++          gs.push_back(static_cast<SSLNamedGroup>(v));
++        }
++      }
++      if (!gs.empty() &&
++          SECSuccess !=
++              SSL_NamedGroupConfig(fd, gs.data(),
++                                   static_cast<unsigned int>(gs.size()))) {
++        return NS_ERROR_FAILURE;
++      }
++    }
++    const auto suites = MaskConfig::GetStringList("tls:cipherSuites");
++    if (!suites.empty()) {
++      std::vector<PRUint16> cs;
++      for (const auto& c : suites) {
++        char* end = nullptr;
++        unsigned long v = strtoul(c.c_str(), &end, 0);
++        if (end && *end == '\0' && v > 0 && v <= 0xFFFF) {
++          cs.push_back(static_cast<PRUint16>(v));
++        }
++      }
++      if (!cs.empty() &&
++          SECSuccess != SSL_CipherSuiteOrderSet(
++                            fd, cs.data(),
++                            static_cast<PRUint16>(cs.size()))) {
++        return NS_ERROR_FAILURE;
++      }
++    }
++  }
++
+   // Enabling Certificate Compression Decoding mechanisms.
+   if (range.max >= SSL_LIBRARY_VERSION_TLS_1_3 &&
+       !(infoObject->GetProviderFlags() &
