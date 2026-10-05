@@ -249,6 +249,16 @@ struct WsSendParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+struct WsBlockParams {
+    session_id: String,
+    page_id: String,
+    /// wsid of the socket to filter (from page_ws_frames).
+    wsid: String,
+    /// true = drop frames in BOTH directions; false = restore the flow.
+    blocked: bool,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct NetParams {
     session_id: String,
     page_id: String,
@@ -1583,6 +1593,34 @@ impl GhostfoxServer {
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
         Ok(text_result(
             serde_json::to_string_pretty(&frames).unwrap_or_default(),
+        ))
+    }
+
+    #[tool(
+        description = "M3 hearing: WS BLOCKING — drop frames (BOTH directions) for a socket while blocked; unblock restores the flow. The page sees no incoming frames and its own sends are silently dropped — the full-duplex mute. wsid from page_ws_frames."
+    )]
+    async fn page_ws_block(
+        &self,
+        Parameters(WsBlockParams {
+            session_id,
+            page_id,
+            wsid,
+            blocked,
+        }): Parameters<WsBlockParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let page = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        page.ws_set_blocked(&wsid, blocked)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        Ok(text_result(
+            serde_json::to_string_pretty(&serde_json::json!({ "blocked": blocked, "wsid": wsid }))
+                .unwrap_or_default(),
         ))
     }
 

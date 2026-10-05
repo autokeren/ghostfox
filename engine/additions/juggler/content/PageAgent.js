@@ -163,6 +163,7 @@ export class PageAgent {
         readAccEvents: this._readAccEvents.bind(this),
         readFrameStats: this._readFrameStats.bind(this),
         sendWebSocketMessage: this._sendWebSocketMessage.bind(this),
+        setWebSocketBlocked: this._setWebSocketBlocked.bind(this),
         readTimingReport: this._readTimingReport.bind(this),
         waitVisualStable: this._waitVisualStable.bind(this),
         insertText: this._insertText.bind(this),
@@ -861,6 +862,16 @@ export class PageAgent {
       win.requestAnimationFrame(step);
     };
     win.requestAnimationFrame(step);
+  }
+
+  _setWebSocketBlocked({ wsid, blocked }) {
+    const serialID = parseInt(wsid, 10);
+    if (!Number.isFinite(serialID)) {
+      return { ok: false, error: 'bad wsid' };
+    }
+    const filter = Cc["@mozilla.org/juggler/ws-filter;1"].getService(Ci.nsIJugglerWsFilter);
+    filter.setBlocked(serialID, !!blocked);
+    return { ok: true };
   }
 
   _sendWebSocketMessage({ wsid, message }) {

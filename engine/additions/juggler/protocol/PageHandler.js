@@ -356,6 +356,10 @@ export class PageHandler {
     return await this._contentPage.send('sendWebSocketMessage', params || {});
   }
 
+  async ['Page.setWebSocketBlocked'](params) {
+    return await this._contentPage.send('setWebSocketBlocked', params || {});
+  }
+
   async ['Page.setFileInputFiles'](options) {
     return await this._contentPage.send('setFileInputFiles', options);
   }

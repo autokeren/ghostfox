@@ -2256,6 +2256,23 @@ impl PageHandle for CamoufoxPage {
         Ok(out)
     }
 
+    async fn ws_set_blocked(&self, wsid: &str, blocked: bool) -> Result<()> {
+        let sid = self.session_id().await?;
+        let res = self
+            .conn
+            .request_session_t(
+                "Page.setWebSocketBlocked",
+                serde_json::json!({ "wsid": wsid, "blocked": blocked }),
+                Some(&sid),
+                std::time::Duration::from_secs(10),
+            )
+            .await?;
+        if let Some(err) = res.get("error").and_then(|e| e.as_str()) {
+            return Err(GhostError::PageOp(format!("ws_set_blocked: {err}")));
+        }
+        Ok(())
+    }
+
     async fn ws_send(&self, wsid: &str, message: &str) -> Result<()> {
         let sid = self.session_id().await?;
         let res = self

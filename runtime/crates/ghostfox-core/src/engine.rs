@@ -316,6 +316,14 @@ pub trait PageHandle: Send + Sync {
             "read_ws_frames not supported by this engine".into(),
         ))
     }
+    /// M3 hearing: WS BLOCKING — drop frames (both directions) for a
+    /// socket while blocked; unblock restores the flow.
+    async fn ws_set_blocked(&self, wsid: &str, blocked: bool) -> Result<()> {
+        let _ = (wsid, blocked);
+        Err(crate::error::GhostError::PageOp(
+            "ws_set_blocked not supported by this engine".into(),
+        ))
+    }
     /// M3 hearing: WS injection — send a TEXT message through an open
     /// WebSocket (client -> server), DevTools' inspector route.
     async fn ws_send(&self, wsid: &str, message: &str) -> Result<()> {

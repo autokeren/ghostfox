@@ -996,6 +996,15 @@ const Page = {
         error: t.Optional(t.String),
       },
     },
+    'setWebSocketBlocked': {
+      params: {
+        wsid: t.String,
+        blocked: t.Boolean,
+      },
+      returns: {
+        ok: t.Boolean,
+      },
+    },
     'readTimingReport': {
       params: {},
       returns: {
