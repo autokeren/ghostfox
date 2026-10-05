@@ -27,6 +27,16 @@ export class BrowserHandler {
     this._startCompletePromise = startCompletePromise;
   }
 
+  async ['Browser.setPersonaConfig']({config}) {
+    // Ghostfox Android persona channel: store the identity's CAMOU_CONFIG
+    // JSON in a pref (env vars cannot reach the GeckoView app). The gen
+    // counter invalidates MaskConfig's cached copy.
+    const prefs = Services.prefs;
+    prefs.setStringPref('ghostfox.persona.config', config || '');
+    prefs.setUintPref('ghostfox.persona.gen', (prefs.getUintPref('ghostfox.persona.gen', 0) || 0) + 1);
+    return {};
+  }
+
   async ['Browser.enable']({attachToDefaultContext, userPrefs = []}) {
     if (this._enabled)
       return;

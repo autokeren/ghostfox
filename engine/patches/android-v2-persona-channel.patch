@@ -1,0 +1,106 @@
+diff --git a/camoucfg/MaskConfig.hpp b/camoucfg/MaskConfig.hpp
+index ebd6a14ea6..d3a4b2f309 100644
+--- a/camoucfg/MaskConfig.hpp
++++ b/camoucfg/MaskConfig.hpp
+@@ -11,6 +11,18 @@ Written by daijro.
+ #include <optional>
+ #include <codecvt>
+ #include "mozilla/glue/Debug.h"
++// Ghostfox Android persona channel: the config arrives over the juggler
++// protocol and lands in a string pref (env vars cannot reach the app).
++// Guarded: MaskConfig is also compiled into non-libxul libraries (the
++// intl components) where the pref headers are unavailable. The reads go
++// through the XPCOM pref service with full null/exception guards — early
++// startup callers see an uninitialized service and must skip safely.
++#ifdef MOZILLA_INTERNAL_API
++#  include "mozilla/Preferences.h"
++#  include "nsIPrefBranch.h"
++#  include "nsString.h"
++#  include "nsThreadUtils.h"
++#endif
+ #include <cstdlib>
+ #include <cstdio>
+ #include <mutex>
+@@ -46,9 +58,37 @@ inline std::optional<std::string> get_env_utf8(const std::string& name) {
+ #endif
+ }
+ 
++// Ghostfox Android persona channel (file scope so GetJson's once_flag
++// lambda can reach it). No exceptions: this build has them disabled, so
++// every failure mode is an nsresult/pointer check.
++inline bool ReadAndroidPersonaPref(uint32_t& outGen) {
++  outGen = 0;
++#ifdef MOZILLA_INTERNAL_API
++  if (!NS_IsMainThread()) return false;
++  if (!mozilla::Preferences::IsServiceAvailable()) return false;
++  nsCOMPtr<nsIPrefBranch> branch = mozilla::Preferences::GetRootBranch();
++  if (!branch) return false;
++  nsCString cfg;
++  if (NS_FAILED(branch->GetCharPref("ghostfox.persona.config", cfg)) ||
++      cfg.IsEmpty()) {
++    return false;
++  }
++  int32_t gen = 0;
++  if (NS_SUCCEEDED(branch->GetIntPref("ghostfox.persona.gen", &gen))) {
++    outGen = static_cast<uint32_t>(gen);
++  }
++  const std::string jsonString(cfg.get());
++  if (!nlohmann::json::accept(jsonString)) return false;
++  return true;
++#else
++  return false;
++#endif
++}
++
+ inline const nlohmann::json& GetJson() {
+   static std::once_flag initFlag;
+   static nlohmann::json jsonConfig;
++  static uint32_t cachedGen = 0;
+ 
+   std::call_once(initFlag, []() {
+     std::string jsonString;
+@@ -69,6 +109,22 @@ inline const nlohmann::json& GetJson() {
+       if (originalConfig) jsonString = *originalConfig;
+     }
+ 
++    if (jsonString.empty()) {
++      // Ghostfox Android: no env — try the pref channel (guarded).
++      uint32_t gen = 0;
++      if (ReadAndroidPersonaPref(gen)) {
++#ifdef MOZILLA_INTERNAL_API
++        nsCOMPtr<nsIPrefBranch> branch = mozilla::Preferences::GetRootBranch();
++        nsCString cfg;
++        if (branch &&
++            NS_SUCCEEDED(branch->GetCharPref("ghostfox.persona.config", cfg))) {
++          jsonString = std::string(cfg.get());
++          cachedGen = gen;
++        }
++#endif
++      }
++    }
++
+     if (jsonString.empty()) {
+       jsonConfig = nlohmann::json{};
+       return;
+@@ -84,6 +140,21 @@ inline const nlohmann::json& GetJson() {
+     jsonConfig = nlohmann::json::parse(jsonString);
+   });
+ 
++  // Android persona updates invalidate the cache via the gen counter.
++  uint32_t gen = 0;
++  if (ReadAndroidPersonaPref(gen) && gen != cachedGen) {
++#ifdef MOZILLA_INTERNAL_API
++    nsCOMPtr<nsIPrefBranch> branch = mozilla::Preferences::GetRootBranch();
++    nsCString cfg;
++    if (branch &&
++        NS_SUCCEEDED(branch->GetCharPref("ghostfox.persona.config", cfg)) &&
++        nlohmann::json::accept(std::string(cfg.get()))) {
++      jsonConfig = nlohmann::json::parse(std::string(cfg.get()));
++      cachedGen = gen;
++    }
++#endif
++  }
++
+   return jsonConfig;
+ }
+ 

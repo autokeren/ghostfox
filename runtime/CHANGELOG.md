@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.9.1] — 2026-10-04
 
+### Android persona channel v2 + juggler TCP transport
+- The GeckoView build serves the juggler protocol over a loopback TCP
+  socket (pref ghostfox.juggler.port, default 9222) with the desktop
+  pipe's \0 framing — the runtime reaches it through adb forward.
+- Browser.setPersonaConfig: the identity's CAMOU_CONFIG JSON travels
+  over the wire and lands in the ghostfox.persona.config pref;
+  MaskConfig reads it (gen-counter invalidation, fully guarded for
+  early startup and non-libxul TUs) when env vars are absent.
+- Runtime: JugglerConnection::spawn_tcp + LaunchOptions.android_endpoint
+  + session_create android_endpoint — a process-less engine that
+  connects to the device. APK omni.ja carries the full juggler stack.
+
+
 ### chrome-mode v1 (session_create chrome_mode=true)
 - Presents the persona's CHROME UA (no Firefox translation), Chrome
   navigator fields (platform/appVersion, no oscpu), and the Chrome141

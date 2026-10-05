@@ -265,6 +265,15 @@ const Browser = {
         userPrefs: t.Optional(t.Array(browserTypes.UserPreference)),
       },
     },
+    // Ghostfox Android persona channel: the runtime pushes the identity's
+    // CAMOU_CONFIG JSON over the wire; the handler stores it in the
+    // ghostfox.persona.config pref (env vars cannot reach the app).
+    'setPersonaConfig': {
+      params: {
+        config: t.String,
+      },
+      returns: {},
+    },
     'createBrowserContext': {
       params: {
         removeOnDetach: t.Optional(t.Boolean),
