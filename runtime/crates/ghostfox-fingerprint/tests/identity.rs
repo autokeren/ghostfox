@@ -21,6 +21,7 @@ fn generates_coherent_identities_for_every_platform() {
         let identity = generate(&GenerateOptions {
             platform: Some(platform),
             webrtc: Some(WebRtcPolicy::PublicOnly),
+            chrome_mode: None,
         });
         assert_eq!(identity.platform, platform);
         assert!(!identity.id.is_empty());
@@ -71,6 +72,7 @@ fn auditor_rejects_contradictory_identities() {
     let mut identity = generate(&GenerateOptions {
         platform: Some(Platform::Windows),
         webrtc: Some(WebRtcPolicy::PublicOnly),
+        chrome_mode: None,
     });
     identity.user_agent = identity
         .user_agent
