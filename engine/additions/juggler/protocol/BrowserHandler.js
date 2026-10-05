@@ -34,6 +34,31 @@ export class BrowserHandler {
     const prefs = Services.prefs;
     prefs.setStringPref('ghostfox.persona.config', config || '');
     prefs.setUintPref('ghostfox.persona.gen', (prefs.getUintPref('ghostfox.persona.gen', 0) || 0) + 1);
+
+    // Full-coverage push: some MaskConfig readers compile WITHOUT
+    // MOZILLA_INTERNAL_API (the intl components — locale spoofing) and
+    // can only see env vars. Inject the config into the process
+    // environment via libc setenv so EVERY reader sees it, chunked like
+    // the desktop runtime does.
+    try {
+      const { ctypes } = ChromeUtils.importESModule("resource://gre/modules/ctypes.sys.mjs");
+      const libc = ctypes.open(ctypes.libraryName("c"));
+      const setenv = libc.declare("setenv", ctypes.default_abi, ctypes.int,
+                                  ctypes.char.ptr, ctypes.char.ptr, ctypes.int);
+      const unsetenv = libc.declare("unsetenv", ctypes.default_abi, ctypes.int,
+                                    ctypes.char.ptr);
+      for (let i = 1; i <= 64; i++) {
+        unsetenv("CAMOU_CONFIG_" + i);
+      }
+      const chunk = 30000;
+      for (let i = 0; i * chunk < config.length; i++) {
+        const part = config.slice(i * chunk, (i + 1) * chunk);
+        setenv("CAMOU_CONFIG_" + (i + 1), part, 1);
+      }
+      libc.close();
+    } catch (e) {
+      dump(`Juggler: setenv persona config failed: ${e}\n`);
+    }
     return {};
   }
 
