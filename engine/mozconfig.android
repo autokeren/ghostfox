@@ -1,0 +1,36 @@
+# Ghostfox Android (Jalur A v0) — GeckoView aarch64 build with the full
+# Camoufox + juggler patch stack. First milestone: does the stack compile
+# for Android? APK/gradle packaging comes after.
+ac_add_options --enable-application=mobile/android
+
+ac_add_options --target=aarch64-linux-android
+
+ac_add_options --disable-crashreporter
+ac_add_options --disable-backgroundtasks
+ac_add_options --disable-debug
+ac_add_options --disable-debug-symbols
+ac_add_options --disable-tests
+ac_add_options --disable-updater
+ac_add_options --enable-release
+ac_add_options --enable-bootstrap
+
+# Android SDK + NDK (preinstalled on this box).
+ac_add_options --with-android-sdk="/home/ubuntu/Android/Sdk"
+ac_add_options --with-android-ndk="/home/ubuntu/Android/Sdk/ndk/29.0.13113456"
+ac_add_options --with-android-min-sdk=23
+
+ac_add_options --with-app-name=ghostfox
+
+# ccache for the incremental iterations ahead.
+if command -v ccache >/dev/null 2>&1; then
+  ac_add_options --with-ccache=ccache
+fi
+
+mk_add_options MOZ_CRASHREPORTER=0
+mk_add_options MOZ_DATA_REPORTING=0
+mk_add_options MOZ_SERVICES_HEALTHREPORT=0
+mk_add_options MOZ_TELEMETRY_REPORTING=0
+mk_add_options MOZ_INSTALLER=0
+# Gradle can't parse the "-beta" suffixed upstream version; pin a clean one.
+export MOZ_APP_VERSION=152.0.4
+export MOZILLA_VERSION=152.0.4

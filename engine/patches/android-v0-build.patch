@@ -1,0 +1,51 @@
+diff --git a/build.gradle b/build.gradle
+index 0b269cd4b3..67ea2aeb42 100644
+--- a/build.gradle
++++ b/build.gradle
+@@ -169,7 +169,11 @@ allprojects {
+ // are the milestone.
+ // This simply strips that off, leaving "61.0" in this example.
+ def getAppVersionWithoutMilestone() {
+-    return project.ext.mozconfig.substs.MOZ_APP_VERSION.replaceFirst(/[ab][0-9]/, "")
++    // Ghostfox: upstream Camoufox versions carry "-beta.N" suffixes which
++    // gradle's versionCode math cannot parse — strip them too.
++    return project.ext.mozconfig.substs.MOZ_APP_VERSION
++        .replaceFirst(/-beta\.[0-9]+/, "")
++        .replaceFirst(/[ab][0-9]/, "")
+ }
+ 
+ // This converts MOZ_APP_VERSION into an integer
+diff --git a/juggler/moz.build b/juggler/moz.build
+index 905c20cc31..63e892d6e4 100644
+--- a/juggler/moz.build
++++ b/juggler/moz.build
+@@ -2,7 +2,12 @@
+ # License, v. 2.0. If a copy of the MPL was not distributed with this
+ # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ 
+-DIRS += ["components", "screencast", "pipe"]
++DIRS += ["components", "pipe"]
++
++# The screencast service captures DESKTOP windows (DesktopCaptureImpl);
++# Android has none — skip it on the mobile build.
++if CONFIG["OS_TARGET"] != "Android":
++    DIRS += ["screencast"]
+ 
+ JAR_MANIFESTS += ["jar.mn"]
+ with Files("**"):
+diff --git a/mobile/android/components/geckoview/GeckoViewExternalAppService.cpp b/mobile/android/components/geckoview/GeckoViewExternalAppService.cpp
+index cd614ddb25..513f791165 100644
+--- a/mobile/android/components/geckoview/GeckoViewExternalAppService.cpp
++++ b/mobile/android/components/geckoview/GeckoViewExternalAppService.cpp
+@@ -105,3 +105,11 @@ NS_IMETHODIMP GeckoViewExternalAppService::GetPreferredDownloadsDirectory(
+   MOZ_ASSERT(false);
+   return nsresult::NS_ERROR_NOT_IMPLEMENTED;
+ }
++
++// Ghostfox Android: the Playwright download-interceptor patch added
++// SetDownloadInterceptor to nsIExternalHelperAppService; the Android
++// service implements the interface directly, so provide the slot.
++NS_IMETHODIMP GeckoViewExternalAppService::SetDownloadInterceptor(
++    nsIDownloadInterceptor* interceptor) {
++  return NS_ERROR_NOT_IMPLEMENTED;
++}

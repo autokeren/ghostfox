@@ -221,6 +221,15 @@ Lessons from THIS run:
   issued a token; sannysoft passes WebDriver + Chrome + deviceMemory.
   KNOWN LIMITS: PHANTOM_ETSL (SpiderMonkey recursion/stack profile)
   and CHR_BATTERY (headless-Chrome quirk) — engine-stack-level.
+- [x] **ANDROID JALUR A — MILESTONE 1: THE PATCH STACK BUILDS FOR
+  GECKOVIEW** — mobile/android aarch64 + full ghostfox patch stack:
+  libxul linked, geckoview_example APK + geckoview AAR produced.
+  Fixes captured in android-v0-build.patch (gradle versionCode
+  "152.0.4-beta.30" strip, juggler screencast gated to desktop
+  [DesktopCaptureImpl is window-only], GeckoViewExternalAppService
+  download-interceptor slot) + engine/mozconfig.android. NEXT:
+  juggler control-plane port to the GeckoView runtime (the research
+  piece) + MCP-over-HTTP on-device.
 - [x] **MCP Registry PUBLISHED 0.9.1** — io.github.autokeren/ghostfox
   live via mcp-publisher (GitHub device auth; npm mcpName + PyPI
   mcp-name ownership tokens both verified). All 5 channels live.
