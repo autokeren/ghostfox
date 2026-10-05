@@ -33,6 +33,9 @@ pub struct LaunchOptions {
     /// Identity TOML to launch with (overrides profile identity.toml
     /// and the fallback regeneration — the caller's generated persona).
     pub identity_toml: Option<String>,
+    /// Ghostfox Android: a `host:port` of a GeckoView app already running
+    /// the juggler TCP listener — connects instead of spawning an engine.
+    pub android_endpoint: Option<String>,
     /// Proxy URL, e.g. `socks5://user:pass@host:port`.
     pub proxy: Option<String>,
     /// Extra command-line switches passed to the engine binary.

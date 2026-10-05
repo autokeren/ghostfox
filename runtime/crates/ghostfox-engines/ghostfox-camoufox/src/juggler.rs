@@ -18,9 +18,12 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::{oneshot, Mutex};
 
 pub struct JugglerConnection {
-    child: Mutex<std::process::Child>,
-    /// fd 3: commands we write to the browser.
-    stdin: Mutex<tokio::io::BufWriter<tokio::fs::File>>,
+    /// The spawned engine process — `None` when connected over TCP
+    /// (Ghostfox Android: the engine runs inside the GeckoView app).
+    child: Mutex<Option<std::process::Child>>,
+    /// fd 3 on desktop (commands to the browser); the TCP write half on
+    /// Android. `None` once the transport closed.
+    stdin: Mutex<Option<tokio::io::BufWriter<Box<dyn tokio::io::AsyncWrite + Send + Unpin>>>>,
     next_id: AtomicU64,
     pending: Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>>,
     /// Broadcast of every event message (no id) for listeners that need
@@ -82,6 +85,10 @@ impl JugglerConnection {
         }
 
         let (stdin, stdout) = async_pipe_pair(cmd_tx, resp_rx);
+        let stdin = tokio::io::BufWriter::new(
+            Box::new(stdin) as Box<dyn tokio::io::AsyncWrite + Send + Unpin>
+        );
+        let stdout = Box::new(stdout) as Box<dyn tokio::io::AsyncRead + Send + Unpin>;
 
         let pending: Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>> =
             Arc::new(Mutex::new(HashMap::new()));
@@ -90,8 +97,8 @@ impl JugglerConnection {
 
         let closed = Arc::new(tokio::sync::Notify::new());
         let conn = Arc::new(Self {
-            child: Mutex::new(child),
-            stdin: Mutex::new(stdin),
+            child: Mutex::new(Some(child)),
+            stdin: Mutex::new(Some(stdin)),
             next_id: AtomicU64::new(1),
             pending: pending.clone(),
             events,
@@ -122,6 +129,58 @@ impl JugglerConnection {
             }
         });
 
+        Ok(conn)
+    }
+
+    /// Ghostfox Android: connect to a GeckoView app that already runs the
+    /// juggler TCP listener (see additions/juggler/components/Juggler.js).
+    /// Same \0 framing; no child process to manage.
+    pub async fn spawn_tcp(addr: &str) -> Result<Arc<Self>> {
+        let stream = tokio::net::TcpStream::connect(addr)
+            .await
+            .map_err(|e| GhostError::Protocol(format!("juggler tcp connect {addr}: {e}")))?;
+        stream.set_nodelay(true).ok();
+        let (read_half, write_half) = stream.into_split();
+        let stdin = tokio::io::BufWriter::new(
+            Box::new(write_half) as Box<dyn tokio::io::AsyncWrite + Send + Unpin>
+        );
+        let stdout = Box::new(read_half) as Box<dyn tokio::io::AsyncRead + Send + Unpin>;
+
+        let pending: Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+        let (events, _) = tokio::sync::broadcast::channel::<serde_json::Value>(256);
+        let events_tx = events.clone();
+        let closed = Arc::new(tokio::sync::Notify::new());
+        let conn = Arc::new(Self {
+            child: Mutex::new(None),
+            stdin: Mutex::new(Some(stdin)),
+            next_id: AtomicU64::new(1),
+            pending: pending.clone(),
+            events,
+            closed: closed.clone(),
+            dead: std::sync::atomic::AtomicBool::new(false),
+            _pid: 0,
+        });
+        let dead = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let dead_reader = dead.clone();
+        tokio::spawn(reader_task(
+            stdout,
+            pending,
+            events_tx,
+            closed.clone(),
+            dead_reader,
+        ));
+        // Mirror the reader's latch into the connection.
+        let conn2 = conn.clone();
+        tokio::spawn(async move {
+            loop {
+                if dead.load(std::sync::atomic::Ordering::SeqCst) {
+                    conn2.dead.store(true, std::sync::atomic::Ordering::SeqCst);
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+        });
         Ok(conn)
     }
 
@@ -196,6 +255,10 @@ impl JugglerConnection {
 
         {
             let mut stdin = self.stdin.lock().await;
+            let Some(stdin) = stdin.as_mut() else {
+                self.pending.lock().await.remove(&id);
+                return Err(GhostError::Protocol("juggler transport closed".into()));
+            };
             stdin
                 .write_all(line.as_bytes())
                 .await
@@ -245,10 +308,12 @@ impl JugglerConnection {
     #[cfg(unix)]
     pub fn kill_now(&self) {
         if let Ok(child) = self.child.try_lock() {
-            let pid = child.id() as i32;
-            unsafe {
-                // Negative pid = process group; child was setsid'd.
-                libc::kill(pid, libc::SIGKILL);
+            if let Some(child) = child.as_ref() {
+                let pid = child.id() as i32;
+                unsafe {
+                    // Negative pid = process group; child was setsid'd.
+                    libc::kill(pid, libc::SIGKILL);
+                }
             }
         }
         self.dead.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -258,13 +323,16 @@ impl JugglerConnection {
     #[cfg(windows)]
     pub fn kill_now(&self) {
         if let Ok(mut child) = self.child.try_lock() {
-            let _ = child.kill();
+            if let Some(child) = child.as_mut() {
+                let _ = child.kill();
+            }
         }
         self.dead.store(true, Ordering::SeqCst);
     }
 
     pub async fn kill(&self) {
         if let Ok(mut child) = self.child.try_lock() {
+            let Some(child) = child.as_mut() else { return };
             #[cfg(unix)]
             {
                 let pid = child.id() as i32;
@@ -292,7 +360,7 @@ impl JugglerConnection {
 }
 
 async fn reader_task(
-    stdout: tokio::fs::File,
+    stdout: Box<dyn tokio::io::AsyncRead + Send + Unpin>,
     pending: Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>>,
     events: tokio::sync::broadcast::Sender<serde_json::Value>,
     closed: Arc<tokio::sync::Notify>,

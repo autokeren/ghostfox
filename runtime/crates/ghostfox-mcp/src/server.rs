@@ -25,6 +25,11 @@ struct SessionCreateParams {
     /// instead of the default Firefox presentation (optional).
     #[serde(default)]
     chrome_mode: Option<bool>,
+    /// Ghostfox Android: "host:port" of a GeckoView app running the
+    /// juggler TCP listener (reach it with adb forward). Connects over
+    /// TCP instead of spawning a desktop engine (optional).
+    #[serde(default)]
+    android_endpoint: Option<String>,
     /// Reuse a persistent profile directory (optional).
     #[serde(default)]
     profile_dir: Option<String>,
@@ -758,6 +763,7 @@ impl GhostfoxServer {
         Parameters(SessionCreateParams {
             platform,
             chrome_mode,
+            android_endpoint,
             profile_dir,
             proxy,
             headful,
@@ -779,6 +785,7 @@ impl GhostfoxServer {
         let launch = ghostfox_core::engine::LaunchOptions {
             profile_dir,
             identity_toml: identity.to_toml().ok(),
+            android_endpoint,
             proxy,
             headless: !headful.unwrap_or(false),
             ..Default::default()

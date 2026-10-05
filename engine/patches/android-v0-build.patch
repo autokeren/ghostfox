@@ -49,3 +49,16 @@ index cd614ddb25..513f791165 100644
 +    nsIDownloadInterceptor* interceptor) {
 +  return NS_ERROR_NOT_IMPLEMENTED;
 +}
+diff --git a/mobile/android/installer/package-manifest.in b/mobile/android/installer/package-manifest.in
+index b16d2c3df2..5dd09c8c1a 100644
+--- a/mobile/android/installer/package-manifest.in
++++ b/mobile/android/installer/package-manifest.in
+@@ -121,6 +121,8 @@
+ ; DevTools
+ @BINPATH@/chrome/devtools@JAREXT@
+ @BINPATH@/chrome/devtools.manifest
++@BINPATH@/chrome/juggler@JAREXT@
++@BINPATH@/chrome/juggler.manifest
+ 
+ ; [Default Preferences]
+ ; All the pref files must be part of base to prevent migration bugs

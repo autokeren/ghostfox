@@ -48,6 +48,48 @@ impl CamoufoxEngine {
                 .map_err(|e| GhostError::EngineUnavailable(format!("identity toml parse: {e}")))?,
             None => Identity::load_or_generate(opts.profile_dir.as_deref())?,
         };
+
+        // Ghostfox Android: the engine lives inside the GeckoView app on
+        // the device — reach it through adb forward and speak juggler over
+        // TCP. No process, profile or CAMOU_CONFIG env to manage here
+        // (the persona-config channel for the app is the v2 step).
+        if let Some(endpoint) = &opts.android_endpoint {
+            let conn = JugglerConnection::spawn_tcp(endpoint).await?;
+            let engine = Arc::new(Self {
+                pid: 0,
+                conn,
+                identity,
+                home: std::path::PathBuf::from("/android"),
+                ephemeral_profile: None,
+                targets: tokio::sync::Mutex::new(std::collections::HashMap::new()),
+                contexts: tokio::sync::Mutex::new(std::collections::HashMap::new()),
+            });
+            {
+                let engine_for_listener = engine.clone();
+                let mut events = engine_for_listener.conn.subscribe();
+                tokio::spawn(async move {
+                    while let Ok(msg) = events.recv().await {
+                        let method = msg.get("method").and_then(|m| m.as_str());
+                        if method == Some("Browser.attachedToTarget") {
+                            let tid = msg
+                                .pointer("/params/targetInfo/targetId")
+                                .or_else(|| msg.pointer("/params/targetId"))
+                                .and_then(|v| v.as_str())
+                                .map(str::to_string);
+                            let sid = msg
+                                .pointer("/params/sessionId")
+                                .and_then(|v| v.as_str())
+                                .map(str::to_string);
+                            if let Some(tid) = tid {
+                                let mut reg = engine_for_listener.targets.lock().await;
+                                reg.insert(tid.clone(), sid.unwrap_or_default());
+                            }
+                        }
+                    }
+                });
+            }
+            return Ok(engine);
+        }
         let (home, bin_name) = autodetect_engine().ok_or_else(|| {
             GhostError::EngineUnavailable("ghostfox/camoufox binary not found".into())
         })?;

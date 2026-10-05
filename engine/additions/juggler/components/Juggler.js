@@ -70,6 +70,13 @@ export class Juggler {
       case "profile-after-change":
         Services.obs.addObserver(this, "command-line-startup");
         Services.obs.addObserver(this, "browser-idle-startup-tasks-finished");
+        // Ghostfox Android: GeckoView has no command line and no pipe —
+        // serve the juggler protocol over a loopback TCP socket instead.
+        // The runtime reaches it through `adb forward tcp:<port> tcp:<port>`.
+        if (Services.appinfo.OS === "Android") {
+          this._androidPort = Services.prefs.getIntPref("ghostfox.juggler.port", 9222);
+          Services.tm.dispatchToMainThread(() => this._androidInit());
+        }
         break;
       case "command-line-startup":
         Services.obs.removeObserver(this, topic);
@@ -91,6 +98,74 @@ export class Juggler {
       // Used to wait until the initial application window has been opened.
       case "final-ui-startup":
         Services.obs.removeObserver(this, topic);
+        this._startJuggler(false /* useTcp */);
+        break;
+    }
+  }
+
+  // Ghostfox Android: no pipe — serve the juggler protocol over a loopback
+  // TCP socket with the SAME \0 framing as Playwright's PipeTransport.
+  _androidInit() {
+    if (this._androidStarted)
+      return;
+    this._androidStarted = true;
+
+    const server = Cc["@mozilla.org/network/server-socket;1"].createInstance(Ci.nsIServerSocket);
+    server.init(this._androidPort, true /* loopbackOnly */, -1);
+    dump(`Juggler: Android TCP listener on 127.0.0.1:${this._androidPort}\n`);
+
+    const connection = this._startJuggler(true /* useTcp */);
+    const self = this;
+    server.asyncListen({
+      onSocketAccepted(sock, transport) {
+        self._androidTransport = transport;
+        connection.setSocket(transport);
+        const inStream = transport.openInputStream(0, 0, 0);
+        const scriptable = Cc["@mozilla.org/scriptableinputstream;1"].createInstance(Ci.nsIScriptableInputStream);
+        scriptable.init(inStream);
+        let buf = "";
+        const pump = {
+          onInputStreamReady(stream) {
+            let available;
+            while ((available = stream.available()) > 0) {
+              buf += scriptable.readBytes(available);
+            }
+            let idx;
+            while ((idx = buf.indexOf("\0")) !== -1) {
+              const message = buf.slice(0, idx);
+              buf = buf.slice(idx + 1);
+              if (message)
+                connection.receiveMessage(message);
+            }
+            try {
+              stream.asyncWait(this, 0, 0, Services.tm.currentThread);
+            } catch (e) {
+              // stream closed — client disconnected
+            }
+          },
+        };
+        inStream.asyncWait(pump, 0, 0, Services.tm.currentThread);
+      },
+      onStopListening() {},
+    });
+  }
+
+  // Common juggler startup: target registry, network observer, dispatcher,
+  // and the transport — pipe on desktop, loopback TCP on Android. Returns
+  // the connection object so the TCP listener can hand over its socket.
+  _startJuggler(useTcp) {
+        // Pre-initialize the accessibility service at startup. Lazy init
+        // triggered from a synchronous pipe handler deadlocks: the handler
+        // blocks the main thread while a11y init needs the main-thread
+        // event loop, and the ATK bridge (when enabled) blocks on the
+        // desktop AT-SPI socket. With NO_AT_BRIDGE=1 set by the runtime
+        // (engine patch atk-bridge-env.patch honors it), this init builds
+        // the internal tree only — Page.getFullAXTree then just walks it.
+        try {
+          Cc['@mozilla.org/accessibilityService;1'].getService(Ci.nsIAccessibilityService);
+        } catch (e) {
+          dump(`Juggler: a11y pre-init failed: ${e}\n`);
+        }
 
         const targetRegistry = new TargetRegistry();
         new NetworkObserver(targetRegistry);
@@ -112,9 +187,13 @@ export class Juggler {
 
         let pipeStopped = false;
         let browserHandler;
+        let androidSocket = null;
         const pipe = Cc['@mozilla.org/juggler/remotedebuggingpipe;1'].getService(Ci.nsIRemoteDebuggingPipe);
         const connection = {
           QueryInterface: ChromeUtils.generateQI([Ci.nsIRemoteDebuggingPipeClient]),
+          setSocket(transport) {
+            androidSocket = transport;
+          },
           receiveMessage(message) {
             if (this.onmessage)
               this.onmessage({ data: message });
@@ -130,23 +209,36 @@ export class Juggler {
               // we have to stop the pipe after the response is sent.
               return;
             }
+            if (androidSocket) {
+              const out = androidSocket.openOutputStream(0, 0, 0);
+              const framed = message + "\0";
+              out.write(framed, framed.length);
+              out.flush();
+              out.close();
+              return;
+            }
             pipe.sendMessage(message);
           },
         };
-        pipe.init(connection);
+        if (!useTcp)
+          pipe.init(connection);
         const dispatcher = new Dispatcher(connection);
         browserHandler = new BrowserHandler(dispatcher.rootSession(), dispatcher, targetRegistry, browserStartupFinishedPromise, () => {
           if (this._silent)
             Services.startup.exitLastWindowClosingSurvivalArea();
           connection.onclose();
-          pipe.stop();
-          pipeStopped = true;
+          if (!useTcp) {
+            pipe.stop();
+            pipeStopped = true;
+          }
         });
         dispatcher.rootSession().setHandler(browserHandler);
         loadStyleSheet();
-        dump(`\nJuggler listening to the pipe\n`);
-        break;
-    }
+        if (useTcp)
+          dump(`\nJuggler listening on TCP\n`);
+        else
+          dump(`\nJuggler listening to the pipe\n`);
+        return connection;
   }
 
 }
