@@ -162,6 +162,7 @@ export class PageAgent {
         readMutationWhispers: this._readMutationWhispers.bind(this),
         readAccEvents: this._readAccEvents.bind(this),
         readFrameStats: this._readFrameStats.bind(this),
+        sendWebSocketMessage: this._sendWebSocketMessage.bind(this),
         readTimingReport: this._readTimingReport.bind(this),
         waitVisualStable: this._waitVisualStable.bind(this),
         insertText: this._insertText.bind(this),
@@ -860,6 +861,27 @@ export class PageAgent {
       win.requestAnimationFrame(step);
     };
     win.requestAnimationFrame(step);
+  }
+
+  _sendWebSocketMessage({ wsid, message }) {
+    // WS injection: the service instance in THIS process holds the
+    // serialID -> impl map for page-created sockets (DevTools inspector
+    // route). wsid is the serialID as a string (see _readAccEvents/
+    // FrameTree wsid).
+    const serialID = parseInt(wsid, 10);
+    if (!Number.isFinite(serialID)) {
+      return { ok: false, error: 'bad wsid' };
+    }
+    const service = this._frameTree._webSocketEventService;
+    if (!service) {
+      return { ok: false, error: 'no websocket event service' };
+    }
+    try {
+      service.sendMessage(serialID, message);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: String(e) };
+    }
   }
 
   _readFrameStats({ reset } = {}) {

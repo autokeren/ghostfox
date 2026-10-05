@@ -55,6 +55,19 @@ impl CamoufoxEngine {
         // (the persona-config channel for the app is the v2 step).
         if let Some(endpoint) = &opts.android_endpoint {
             let conn = JugglerConnection::spawn_tcp(endpoint).await?;
+            // Android persona channel v2: push the identity's CAMOU_CONFIG
+            // JSON over the wire (env vars cannot reach the GeckoView app).
+            let cfg = crate::config::identity_to_config(&identity);
+            let cfg_json = serde_json::to_string(&cfg).unwrap_or_else(|_| "{}".into());
+            if let Err(e) = conn
+                .request(
+                    "Browser.setPersonaConfig",
+                    serde_json::json!({ "config": cfg_json }),
+                )
+                .await
+            {
+                tracing::warn!(target: "ghostfox::android", "setPersonaConfig failed: {e}");
+            }
             let engine = Arc::new(Self {
                 pid: 0,
                 conn,
@@ -2241,6 +2254,31 @@ impl PageHandle for CamoufoxPage {
             out
         };
         Ok(out)
+    }
+
+    async fn ws_send(&self, wsid: &str, message: &str) -> Result<()> {
+        let sid = self.session_id().await?;
+        let res = self
+            .conn
+            .request_session_t(
+                "Page.sendWebSocketMessage",
+                serde_json::json!({ "wsid": wsid, "message": message }),
+                Some(&sid),
+                std::time::Duration::from_secs(10),
+            )
+            .await?;
+        if let Some(err) = res.get("error").and_then(|e| e.as_str()) {
+            return Err(GhostError::PageOp(format!("ws_send: {err}")));
+        }
+        if res.get("ok").and_then(|o| o.as_bool()) != Some(true) {
+            return Err(GhostError::PageOp(
+                res.get("error")
+                    .and_then(|e| e.as_str())
+                    .unwrap_or("sendWebSocketMessage failed")
+                    .to_string(),
+            ));
+        }
+        Ok(())
     }
 
     async fn network_set_interception(&self, enabled: bool) -> Result<()> {

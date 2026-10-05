@@ -239,6 +239,16 @@ struct WsFramesParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+struct WsSendParams {
+    session_id: String,
+    page_id: String,
+    /// wsid of the open socket (from page_ws_frames).
+    wsid: String,
+    /// TEXT message to send client -> server.
+    message: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct NetParams {
     session_id: String,
     page_id: String,
@@ -1573,6 +1583,34 @@ impl GhostfoxServer {
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
         Ok(text_result(
             serde_json::to_string_pretty(&frames).unwrap_or_default(),
+        ))
+    }
+
+    #[tool(
+        description = "M3 hearing: WS INJECTION — send a TEXT message through an open WebSocket (client -> server), the same route DevTools' inspector uses. Pair with page_ws_frames: open the socket, inject a message, then read the reply frames. wsid comes from the page_ws_frames socket records."
+    )]
+    async fn page_ws_send(
+        &self,
+        Parameters(WsSendParams {
+            session_id,
+            page_id,
+            wsid,
+            message,
+        }): Parameters<WsSendParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let page = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        page.ws_send(&wsid, &message)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        Ok(text_result(
+            serde_json::to_string_pretty(&serde_json::json!({ "sent": true, "wsid": wsid }))
+                .unwrap_or_default(),
         ))
     }
 

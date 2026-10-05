@@ -986,6 +986,16 @@ const Page = {
         ms: t.Number,
       },
     },
+    'sendWebSocketMessage': {
+      params: {
+        wsid: t.String,
+        message: t.String,
+      },
+      returns: {
+        ok: t.Boolean,
+        error: t.Optional(t.String),
+      },
+    },
     'readTimingReport': {
       params: {},
       returns: {

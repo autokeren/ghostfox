@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.9.1] — 2026-10-04
 
+### WS injection (page_ws_send)
+- Send a TEXT message through an open WebSocket (client -> server) via
+  the DevTools inspector route. Root cause of the first failure: the
+  content-side WebSocketImplProxy lacked nsISupportsWeakReference, so
+  the WebSocketEventService's weak map stored null and sendMessage
+  always missed — fixed (ws-injection.patch: weak-ref support +
+  parent serial hand-back for a matching wsid + the frame-script
+  handler). E2E: injected 'injected-from-ghostfox' → echo came back
+  in page_ws_frames.
+
+
 ### Android persona channel v2 + juggler TCP transport
 - The GeckoView build serves the juggler protocol over a loopback TCP
   socket (pref ghostfox.juggler.port, default 9222) with the desktop

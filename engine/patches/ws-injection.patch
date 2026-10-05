@@ -1,0 +1,89 @@
+diff --git a/dom/websocket/WebSocket.cpp b/dom/websocket/WebSocket.cpp
+index 0d0a16d0fb..be4d6499b3 100644
+--- a/dom/websocket/WebSocket.cpp
++++ b/dom/websocket/WebSocket.cpp
+@@ -83,6 +83,7 @@ class WebSocketImpl;
+ // interfaces to WebSocketImpl. WebSocketImplProxy should be only accessed on
+ // main thread, so we can let it support weak reference.
+ class WebSocketImplProxy final : public nsIWebSocketImpl,
++                                 public nsSupportsWeakReference,
+                                  public GlobalTeardownObserver,
+                                  public GlobalFreezeObserver {
+  public:
+@@ -286,7 +287,11 @@ class WebSocketImpl final : public nsIInterfaceRequestor,
+   }
+ };
+ 
+-NS_IMPL_ISUPPORTS(WebSocketImplProxy, nsIWebSocketImpl)
++// Ghostfox WS injection: the WebSocketEventService stores impl proxies as
++// WEAK references — the proxy must support them or sendMessage() always
++// misses (NS_ERROR_NOT_AVAILABLE).
++NS_IMPL_ISUPPORTS(WebSocketImplProxy, nsIWebSocketImpl,
++                  nsISupportsWeakReference)
+ 
+ void WebSocketImplProxy::DisconnectFromOwner() {
+   if (!mOwner) {
+diff --git a/netwerk/protocol/websocket/PWebSocket.ipdl b/netwerk/protocol/websocket/PWebSocket.ipdl
+index dbe764be87..44565bf314 100644
+--- a/netwerk/protocol/websocket/PWebSocket.ipdl
++++ b/netwerk/protocol/websocket/PWebSocket.ipdl
+@@ -44,6 +44,12 @@ parent:
+   async DeleteSelf();
+ 
+ child:
++  // Ghostfox WS injection: the parent's channel serial (the id the event
++  // service reports to listeners) is sent back to the child so the
++  // content-side WebSocketImpl association uses the SAME id — the frame
++  // script's sendMessage then finds the impl by the listener's wsid.
++  async SetSerial(uint32_t aSerial);
++
+   // Forwarded notifications corresponding to the nsIWebSocketListener interface
+   async OnStart(nsCString aProtocol, nsCString aExtensions,
+                 nsString aEffectiveURL, bool aEncrypted,
+diff --git a/netwerk/protocol/websocket/WebSocketChannelChild.cpp b/netwerk/protocol/websocket/WebSocketChannelChild.cpp
+index ccd6b62633..af538c8582 100644
+--- a/netwerk/protocol/websocket/WebSocketChannelChild.cpp
++++ b/netwerk/protocol/websocket/WebSocketChannelChild.cpp
+@@ -203,6 +203,12 @@ class StartEvent : public WebSocketEvent {
+   uint64_t mHttpChannelId;
+ };
+ 
++mozilla::ipc::IPCResult WebSocketChannelChild::RecvSetSerial(
++    const uint32_t& aSerial) {
++  mSerial = aSerial;
++  return IPC_OK();
++}
++
+ mozilla::ipc::IPCResult WebSocketChannelChild::RecvOnStart(
+     const nsACString& aProtocol, const nsACString& aExtensions,
+     const nsAString& aEffectiveURL, const bool& aEncrypted,
+diff --git a/netwerk/protocol/websocket/WebSocketChannelChild.h b/netwerk/protocol/websocket/WebSocketChannelChild.h
+index 7780221a80..6a8a3c6ee0 100644
+--- a/netwerk/protocol/websocket/WebSocketChannelChild.h
++++ b/netwerk/protocol/websocket/WebSocketChannelChild.h
+@@ -56,6 +56,10 @@ class WebSocketChannelChild final : public BaseWebSocketChannel,
+  private:
+   ~WebSocketChannelChild();
+ 
++  // Ghostfox WS injection: adopt the parent channel's serial so the
++  // content-side WebSocketImpl association key matches the listener wsid.
++  mozilla::ipc::IPCResult RecvSetSerial(const uint32_t& aSerial);
++
+   mozilla::ipc::IPCResult RecvOnStart(const nsACString& aProtocol,
+                                       const nsACString& aExtensions,
+                                       const nsAString& aEffectiveURL,
+diff --git a/netwerk/protocol/websocket/WebSocketChannelParent.cpp b/netwerk/protocol/websocket/WebSocketChannelParent.cpp
+index 50c11c8cfb..b4320ab230 100644
+--- a/netwerk/protocol/websocket/WebSocketChannelParent.cpp
++++ b/netwerk/protocol/websocket/WebSocketChannelParent.cpp
+@@ -106,6 +106,10 @@ mozilla::ipc::IPCResult WebSocketChannelParent::RecvAsyncOpen(
+     goto fail;
+   }
+ 
++  // Ghostfox WS injection: hand the child our channel serial (== the
++  // listener-facing wsid) so the content-side impl association matches.
++  (void)SendSetSerial(mChannel->Serial());
++
+   rv = mChannel->SetLoadInfo(loadInfo);
+   if (NS_FAILED(rv)) {
+     goto fail;

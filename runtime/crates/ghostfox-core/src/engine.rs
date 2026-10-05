@@ -316,6 +316,14 @@ pub trait PageHandle: Send + Sync {
             "read_ws_frames not supported by this engine".into(),
         ))
     }
+    /// M3 hearing: WS injection — send a TEXT message through an open
+    /// WebSocket (client -> server), DevTools' inspector route.
+    async fn ws_send(&self, wsid: &str, message: &str) -> Result<()> {
+        let _ = (wsid, message);
+        Err(crate::error::GhostError::PageOp(
+            "ws_send not supported by this engine".into(),
+        ))
+    }
     /// Network interception (the spike verified the Juggler route):
     /// enable/disable the interception on the page's session. While
     /// enabled, every request HOLDS and waits for resume/abort/fulfill —
