@@ -392,7 +392,7 @@ index 979dc62..8e94c6b 100644
  SOURCES += ["FontListManager.cpp"]
  
 diff --git a/dom/base/nsGlobalWindowInner.cpp b/dom/base/nsGlobalWindowInner.cpp
-index 7407068..5c3d639 100644
+index 7407068..be2d834 100644
 --- a/dom/base/nsGlobalWindowInner.cpp
 +++ b/dom/base/nsGlobalWindowInner.cpp
 @@ -4,6 +4,7 @@
@@ -403,11 +403,37 @@ index 7407068..5c3d639 100644
  
  #include <inttypes.h>
  #include <stdio.h>
-@@ -7834,6 +7835,92 @@ void nsGlobalWindowInner::SetFontList(const nsAString& aFontList,
+@@ -7834,6 +7835,118 @@ void nsGlobalWindowInner::SetFontList(const nsAString& aFontList,
    }
  }
  
 +
++
++static bool ChromeCsiShim(JSContext* aCx, unsigned aArgc, JS::Value* aVp) {
++  JS::CallArgs args = JS::CallArgsFromVp(aArgc, aVp);
++  JS::RootedObject obj(aCx, JS_NewPlainObject(aCx));
++  args.rval().setObjectOrNull(obj);
++  return true;
++}
++
++void nsGlobalWindowInner::GetChrome(JSContext* aCx,
++                                    JS::MutableHandle<JS::Value> aRetval,
++                                    mozilla::ErrorResult& aError) {
++  JS::RootedObject chromeObj(aCx, JS_NewPlainObject(aCx));
++  if (!chromeObj) {
++    aError.Throw(NS_ERROR_OUT_OF_MEMORY);
++    return;
++  }
++  JS::RootedObject app(aCx, JS_NewPlainObject(aCx));
++  JS::RootedObject runtime(aCx, JS_NewPlainObject(aCx));
++  JS::RootedObject webstore(aCx, JS_NewPlainObject(aCx));
++  JS_DefineProperty(aCx, chromeObj, "app", app, JSPROP_ENUMERATE);
++  JS_DefineProperty(aCx, chromeObj, "runtime", runtime, JSPROP_ENUMERATE);
++  JS_DefineProperty(aCx, chromeObj, "webstore", webstore, JSPROP_ENUMERATE);
++  JS_DefineFunction(aCx, chromeObj, "csi", ChromeCsiShim, 0, 0);
++  JS_DefineFunction(aCx, chromeObj, "loadTimes", ChromeCsiShim, 0, 0);
++  aRetval.setObject(*chromeObj);
++}
 +
 +void nsGlobalWindowInner::SetNavigatorPlatform(const nsAString& platform,
 +                                               ErrorResult& aRv) {
@@ -497,10 +523,10 @@ index 7407068..5c3d639 100644
      bool aGranted) {
    // Invalidate cached StorageAllowed field so that calls to GetLocalStorage
 diff --git a/dom/base/nsGlobalWindowInner.h b/dom/base/nsGlobalWindowInner.h
-index 6db3b36..54b50f7 100644
+index 6db3b36..60d1176 100644
 --- a/dom/base/nsGlobalWindowInner.h
 +++ b/dom/base/nsGlobalWindowInner.h
-@@ -693,6 +693,14 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
+@@ -693,6 +693,18 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
    // Per-context font list spoofing
    void SetFontList(const nsAString& aFontList, mozilla::ErrorResult& aRv);
  
@@ -511,6 +537,10 @@ index 6db3b36..54b50f7 100644
 +  void SetNavigatorHardwareConcurrency(uint32_t cores,
 +                                       mozilla::ErrorResult& aRv);
 +  void SetNavigatorUserAgent(const nsAString& ua, mozilla::ErrorResult& aRv);
++
++  // Chrome-mode: window.chrome — Chrome's proprietary global object.
++  void GetChrome(JSContext* aCx, JS::MutableHandle<JS::Value> aRetval,
++                 mozilla::ErrorResult& aError);
 +
   public:
    void Alert(nsIPrincipal& aSubjectPrincipal, mozilla::ErrorResult& aError);
