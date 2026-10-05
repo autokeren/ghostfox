@@ -6,16 +6,19 @@ XPCOM_MANIFESTS += ["components.conf"]
 
 XPIDL_SOURCES += [
     'nsIGfxXray.idl',
+    'nsIJugglerWsFilter.idl',
 ]
 
 XPIDL_MODULE = 'jugglercomponents'
 
 SOURCES += [
     'GfxXray.cpp',
+    'WsFilter.cpp',
 ]
 
 EXPORTS += [
     'GfxXray.h',
+    'WsFilter.h',
 ]
 
 FINAL_LIBRARY = 'xul'

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.9.1] — 2026-10-04
 
+### WS blocking (page_ws_block)
+- Drop frames in BOTH directions for a socket while blocked — the
+  full-duplex mute. New nsIJugglerWsFilter component (juggler
+  components, per-process singleton, blocked-serial set); the
+  content-side WebSocketChannelChild::SendMsg (outgoing) and
+  WebSocketImpl::DoOnMessageAvailable (incoming) consult it.
+  E2E: before-block sent+echoed, while-blocked dropped entirely,
+  after-unblock sent+echoed.
+
+
 ### WS injection (page_ws_send)
 - Send a TEXT message through an open WebSocket (client -> server) via
   the DevTools inspector route. Root cause of the first failure: the
