@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.9.1] — 2026-10-04
 
+### JA4 extension order (chrome-mode)
+- The ClientHello extension ORDER follows the persona (Chrome's order
+  for chrome-mode) instead of NSS's fixed table: GHOSTFOX_XTN_ORDER
+  env (set by the runtime on desktop and by the juggler handler on
+  Android) feeds the NSS CH-extension-permutation machinery
+  (ja4-extension-order.patch). Verified against the local JA3 capture
+  server: chrome-mode order 10,11,13,16,18,5,45,23,35,51,43 (NSS
+  subset), stock mode unchanged.
+
+
 ### WS blocking (page_ws_block)
 - Drop frames in BOTH directions for a socket while blocked — the
   full-duplex mute. New nsIJugglerWsFilter component (juggler

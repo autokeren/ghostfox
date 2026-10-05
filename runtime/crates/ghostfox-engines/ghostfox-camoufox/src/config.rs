@@ -108,6 +108,14 @@ pub fn identity_to_config(identity: &Identity) -> BTreeMap<String, serde_json::V
                 "0x000a", // RSA 3DES
             ],
         );
+        // JA4: Chrome's ClientHello extension order (NSS-supported
+        // subset; the engine reorders its sender table and keeps
+        // PSK + NULL last).
+        set(
+            &mut cfg,
+            "tls:extensionOrder",
+            "0,10,11,13,16,18,27,5,45,21,23,35,65281,51,43",
+        );
     }
 
     // Locale/timezone/geo — one coherent unit.

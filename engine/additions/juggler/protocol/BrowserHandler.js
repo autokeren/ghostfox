@@ -55,6 +55,14 @@ export class BrowserHandler {
         const part = config.slice(i * chunk, (i + 1) * chunk);
         setenv("CAMOU_CONFIG_" + (i + 1), part, 1);
       }
+      try {
+        const parsed = JSON.parse(config);
+        if (parsed && parsed["tls:extensionOrder"]) {
+          setenv("GHOSTFOX_XTN_ORDER", String(parsed["tls:extensionOrder"]), 1);
+        }
+      } catch (e) {
+        // config may be empty on desktop
+      }
       libc.close();
     } catch (e) {
       dump(`Juggler: setenv persona config failed: ${e}\n`);

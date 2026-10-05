@@ -11,7 +11,7 @@ index c3161a6bc7..6c4c9a6e9b 100644
      "/dom/crypto",
      "/netwerk/base",
 diff --git a/security/manager/ssl/nsNSSIOLayer.cpp b/security/manager/ssl/nsNSSIOLayer.cpp
-index b6056e58b7..59a3831aa9 100644
+index b6056e58b7..83cc32f301 100644
 --- a/security/manager/ssl/nsNSSIOLayer.cpp
 +++ b/security/manager/ssl/nsNSSIOLayer.cpp
 @@ -6,6 +6,7 @@
@@ -32,7 +32,7 @@ index b6056e58b7..59a3831aa9 100644
  #include "mozilla/Base64.h"
  #include "mozilla/Logging.h"
  #include "mozilla/Preferences.h"
-@@ -1626,6 +1630,49 @@ static nsresult nsSSLIOLayerSetOptions(PRFileDesc* fd, bool forSTARTTLS,
+@@ -1626,6 +1630,59 @@ static nsresult nsSSLIOLayerSetOptions(PRFileDesc* fd, bool forSTARTTLS,
      return NS_ERROR_FAILURE;
    }
  
@@ -43,6 +43,16 @@ index b6056e58b7..59a3831aa9 100644
 +  // "29,23,24" = x25519,p256,p384). A Chrome-UA persona ships the
 +  // Chrome order; Firefox personas keep the stock NSS order.
 +  {
++    // JA4: persona-consistent ClientHello extension order. The runtime
++    // (or the juggler setPersonaConfig handler on Android) sets
++    // GHOSTFOX_XTN_ORDER; enabling the permutation makes NSS apply it.
++    {
++      const char* order = getenv("GHOSTFOX_XTN_ORDER");
++      if (order && order[0]) {
++        SSL_OptionSet(fd, SSL_ENABLE_CH_EXTENSION_PERMUTATION, PR_TRUE);
++      }
++    }
++
 +    const auto groups = MaskConfig::GetStringList("tls:groups");
 +    if (!groups.empty()) {
 +      std::vector<SSLNamedGroup> gs;

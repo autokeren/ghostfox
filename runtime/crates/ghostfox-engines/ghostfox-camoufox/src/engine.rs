@@ -202,6 +202,12 @@ impl CamoufoxEngine {
             .current_dir(&home);
         if chrome_mode {
             cmd.env("GHOSTFOX_CHROME_MODE", "1");
+            if let Some(order) = crate::config::identity_to_config(&identity)
+                .get("tls:extensionOrder")
+                .and_then(|v| v.as_str())
+            {
+                cmd.env("GHOSTFOX_XTN_ORDER", order);
+            }
         }
 
         // Juggler pipe convention (from Playwright's FirefoxConnection):

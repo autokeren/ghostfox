@@ -1,0 +1,65 @@
+diff --git a/security/nss/lib/ssl/ssl3ext.c b/security/nss/lib/ssl/ssl3ext.c
+index ee35196996..d5e60e8948 100644
+--- a/security/nss/lib/ssl/ssl3ext.c
++++ b/security/nss/lib/ssl/ssl3ext.c
+@@ -1178,18 +1178,49 @@ tls_ClientHelloExtensionPermutationSetup(sslSocket *ss)
+     /* Get a working copy of default builders. */
+     PORT_Memcpy(builders, clientHelloSendersTLS, buildersSize);
+ 
+-    /* Get permutation randoms. */
+-    if (PK11_GenerateRandom(permutation, permutationLen) != SECSuccess) {
+-        PORT_Free(builders);
+-        return SECFailure;
+-    }
++    /* Ghostfox JA4: a persona-consistent order (GHOSTFOX_XTN_ORDER env,
++       comma-separated hex type codes, set by the runtime / the juggler
++       setPersonaConfig handler) replaces the random shuffle. PSK + NULL
++       stay last; unlisted extensions keep their default relative order. */
++    const char* orderEnv = getenv("GHOSTFOX_XTN_ORDER");
++    if (orderEnv && orderEnv[0]) {
++        size_t n = 0;
++        const char* p = orderEnv;
++        while (*p) {
++            char* end = NULL;
++            unsigned long t = strtoul(p, &end, 0);
++            p = end;
++            while (*p == ',' || *p == ' ' || *p == '\t') {
++                p++;
++            }
++            if (t == 0 || t > 0xFFFF) {
++                continue;
++            }
++            for (size_t i = 0; i < permutationLen; i++) {
++                if (builders[i].ex_type == (PRUint16)t) {
++                    sslExtensionBuilder tmp = builders[i];
++                    for (size_t j = i; j > n; j--) {
++                        builders[j] = builders[j - 1];
++                    }
++                    builders[n++] = tmp;
++                    break;
++                }
++            }
++        }
++    } else {
++        /* Get permutation randoms. */
++        if (PK11_GenerateRandom(permutation, permutationLen) != SECSuccess) {
++            PORT_Free(builders);
++            return SECFailure;
++        }
+ 
+-    /* Fisher-Yates Shuffle */
+-    for (size_t i = permutationLen - 1; i > 0; i--) {
+-        size_t idx = permutation[i - 1] % (i + 1);
+-        sslExtensionBuilder tmp = builders[i];
+-        builders[i] = builders[idx];
+-        builders[idx] = tmp;
++        /* Fisher-Yates Shuffle */
++        for (size_t i = permutationLen - 1; i > 0; i--) {
++            size_t idx = permutation[i - 1] % (i + 1);
++            sslExtensionBuilder tmp = builders[i];
++            builders[i] = builders[idx];
++            builders[idx] = tmp;
++        }
+     }
+ 
+     /* Make sure that Psk extension is penultimate (before NULL entry). */
