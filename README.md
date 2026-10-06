@@ -200,7 +200,12 @@ origin device** (platform, timezone, locale, screen) — a session that
 suddenly changes identity looks like an impossible login and anti-fraud
 systems revoke it. Proven flow, see `AGENTS.md` §8.
 
-**Full tool surface (70 tools):**
+**Full tool surface (70 tools)** — two tiers, one binary:
+
+- **`core` (default)**: 26 curated tools — the golden loop (read → act → verify) plus debugging essentials, zero overlapping variants. This is what agents and registry inspectors see out of the box: an efficient, disambiguated surface (each tool's description says when to prefer it).
+- **`full`**: all 70 tools — captcha families, pixel/vision tiers, network interception, WebSocket capture/inject/block, identity morph, chrome-mode, Android. Run the server with `GHOSTFOX_TOOLSET=full`.
+
+The server also publishes **instructions** (a decision tree agents read before choosing tools) — the disambiguation layer for both tiers.
 
 | Category | Tools |
 |---|---|

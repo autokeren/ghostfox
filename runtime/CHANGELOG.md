@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.9.1] — 2026-10-04
 
+### Toolset tiers + instructions (Glama TDQS pass)
+- GHOSTFOX_TOOLSET=core (default) exposes a curated 26-tool surface;
+  GHOSTFOX_TOOLSET=full keeps all 70. The MCP instructions field now
+  carries a decision tree (which read/act/verify tool to prefer) —
+  directly addressing the disambiguation critique. Verified: core
+  list = 26 tools, full = 70, contract test runs against full.
+
+
 ### JA4 extension order (chrome-mode)
 - The ClientHello extension ORDER follows the persona (Chrome's order
   for chrome-mode) instead of NSS's fixed table: GHOSTFOX_XTN_ORDER

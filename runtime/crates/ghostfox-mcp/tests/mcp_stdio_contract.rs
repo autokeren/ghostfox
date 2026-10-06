@@ -7,6 +7,9 @@ fn start_server() -> Child {
     let binary = env!("CARGO_BIN_EXE_ghostfox-mcp");
     Command::new(binary)
         .env("RUST_LOG", "off")
+        // the contract covers the FULL surface (the core tier is the
+        // registry-facing default)
+        .env("GHOSTFOX_TOOLSET", "full")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())

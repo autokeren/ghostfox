@@ -633,11 +633,68 @@ struct IdentityAuditParams {
     identity_toml: String,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct GhostfoxServer {
     state: Arc<tokio::sync::RwLock<ServerState>>,
     recorder: crate::recording::Recorder,
+    /// M5.5 toolset tier: `core` (default — a curated, non-overlapping
+    /// surface for agents and registry inspectors) or `full` (every
+    /// tool; GHOSTFOX_TOOLSET=full).
+    toolset: Toolset,
 }
+
+#[derive(Clone, Copy, PartialEq)]
+enum Toolset {
+    Core,
+    Full,
+}
+
+impl Default for GhostfoxServer {
+    fn default() -> Self {
+        Self {
+            state: Default::default(),
+            recorder: Default::default(),
+            toolset: if std::env::var("GHOSTFOX_TOOLSET").as_deref() == Ok("full") {
+                Toolset::Full
+            } else {
+                Toolset::Core
+            },
+        }
+    }
+}
+
+/// The curated core surface: the golden loop + debugging essentials,
+/// zero overlapping variants (page_click_native for trusted clicks,
+/// page_type_ref for typing, page_a11y for reading, etc.). The full
+/// 70-tool set stays available under GHOSTFOX_TOOLSET=full.
+const CORE_TOOLS: &[&str] = &[
+    "session_create",
+    "session_pages",
+    "session_evidence",
+    "page_open",
+    "page_a11y",
+    "page_extract",
+    "page_snapshot",
+    "page_screenshot",
+    "page_click_ref",
+    "page_click_native",
+    "page_type_ref",
+    "page_fill",
+    "page_press",
+    "page_wait_for",
+    "page_wait_stable",
+    "page_diff",
+    "page_mutations",
+    "page_read_ref",
+    "page_console",
+    "page_errors",
+    "page_network_start",
+    "page_network_read",
+    "page_network_body",
+    "captcha_solve",
+    "page_eval",
+    "page_dismiss_modal",
+];
 
 #[derive(Default)]
 pub(crate) struct ServerState {
@@ -4818,19 +4875,76 @@ fn native_a11y_flatten(raw: serde_json::Value) -> ghostfox_core::engine::A11ySna
     }
 }
 
-#[rmcp::tool_handler(router = Self::tool_router())]
 impl rmcp::ServerHandler for GhostfoxServer {
     fn get_info(&self) -> rmcp::model::ServerInfo {
         use rmcp::model::*;
         ServerInfo {
             protocol_version: ProtocolVersion::default(),
             server_info: Implementation::from_build_env(),
-            capabilities: ServerCapabilities::builder()
-                .enable_tools()
-                .build(),
-            instructions: Some(
-                "Stealth browser for AI agents. Create a session, open pages, take snapshots, click and type. Identities are coherent by construction; use identity_audit to check any identity TOML.".into(),
-            ),
+            capabilities: ServerCapabilities::builder().enable_tools().build(),
+            instructions: Some(GHOSTFOX_INSTRUCTIONS.into()),
         }
     }
+
+    async fn call_tool(
+        &self,
+        request: rmcp::model::CallToolRequestParam,
+        context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
+        if self.toolset == Toolset::Core && !CORE_TOOLS.contains(&request.name.as_ref()) {
+            return Err(rmcp::ErrorData::invalid_params(
+                format!(
+                    "tool `{}` is not part of the core toolset; run with GHOSTFOX_TOOLSET=full to enable the complete 70-tool surface",
+                    request.name
+                ),
+                None,
+            ));
+        }
+        let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
+        Self::tool_router().call(tcc).await
+    }
+
+    async fn list_tools(
+        &self,
+        _request: Option<rmcp::model::PaginatedRequestParam>,
+        _context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> Result<rmcp::model::ListToolsResult, rmcp::ErrorData> {
+        let mut tools = Self::tool_router().list_all();
+        if self.toolset == Toolset::Core {
+            tools.retain(|t| CORE_TOOLS.contains(&t.name.as_ref()));
+        }
+        Ok(rmcp::model::ListToolsResult::with_all_items(tools))
+    }
 }
+
+/// The decision tree agents read BEFORE choosing tools — the
+/// disambiguation layer Glama's TDQS asks for.
+const GHOSTFOX_INSTRUCTIONS: &str = r#"Ghostfox: the agent-native stealth browser. One golden loop, then a decision tree — read this before choosing tools.
+
+GOLDEN LOOP: page_a11y (READ) -> reason -> ONE action -> verify with page_diff/page_mutations + the action receipt.
+
+READING (pick ONE):
+- page_a11y — semantic elements with refs (interactive page structure). DEFAULT.
+- page_extract — only specific fields you name; token-cheap. Use when you know what you want.
+- page_snapshot — plain visible text. Use when you need prose, not elements.
+- page_screenshot — pixels, for humans/vision.
+
+ACTING:
+- page_click_ref / page_type_ref — element refs from page_a11y; they return verification receipts. DEFAULT.
+- page_click_native — role+name trusted coordinates when the page may poison JS rects.
+- page_fill — direct value set; page_press — a single key.
+
+WAITING:
+- page_wait_for — a selector must appear.
+- page_wait_stable — the render settled (the successor to arbitrary sleeps).
+
+VERIFYING:
+- page_diff — what changed since the last snapshot.
+- page_mutations — what the PAGE changed (unhookable observer).
+- page_read_ref — the full value of one element.
+
+DEBUGGING: page_console/page_errors (what the page logged/threw), page_network_start/read/body (HTTP traffic by protocol), page_eval (raw JS probe), captcha_solve (when challenged).
+
+SESSIONS: session_create -> page_open -> ... ; session_pages lists popups; session_evidence replays the run.
+
+This is the core surface. The complete 70-tool set (8 captcha families, pixels/vision tiers, network interception, WebSocket capture/inject/block, identity morph, chrome-mode, Android) is available when the server runs with GHOSTFOX_TOOLSET=full."#;

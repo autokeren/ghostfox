@@ -154,7 +154,9 @@ Lessons from THIS run:
 
 ## Status today
 
-- **67 MCP tools** (CI green, clippy 0-0, test suite green, consistency audit in CI)
+- **70 MCP tools, two tiers**: core (26 curated, the default surface for
+  agents + registry inspectors) and full (GHOSTFOX_TOOLSET=full). The
+  MCP instructions carry the decision tree. CI green, clippy 0-0.
 - Channels: PyPI 0.9.1 · npm 0.9.1 · GHCR 0.8.0 · MCP Registry — publish pending user device
 - Production proofs: bilibili 6/6 · hCaptcha on 2 real signups · TikTok
   OAuth+OTP · the LinkedIn self-post · Docker E2E
