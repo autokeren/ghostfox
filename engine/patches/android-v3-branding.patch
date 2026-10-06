@@ -1,0 +1,46 @@
+diff --git a/mobile/android/geckoview_example/build.gradle b/mobile/android/geckoview_example/build.gradle
+index 7945ffeb74..129ca3ac20 100644
+--- a/mobile/android/geckoview_example/build.gradle
++++ b/mobile/android/geckoview_example/build.gradle
+@@ -11,6 +11,8 @@ android {
+     }
+ 
+     defaultConfig {
++        // Ghostfox: explicit version for on-device identification.
++        versionName "0.9.2"
+         targetSdk project.ext.targetSdkVersion
+         minSdk project.ext.minSdkVersion
+         manifestPlaceholders = project.ext.manifestPlaceholders
+diff --git a/mobile/android/geckoview_example/src/main/AndroidManifest.xml b/mobile/android/geckoview_example/src/main/AndroidManifest.xml
+index 2d3d1ffce1..e9a295fc5f 100644
+--- a/mobile/android/geckoview_example/src/main/AndroidManifest.xml
++++ b/mobile/android/geckoview_example/src/main/AndroidManifest.xml
+@@ -30,7 +30,7 @@
+         <activity
+             android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize"
+                 android:name=".GeckoViewActivity"
+-                android:label="GeckoView Example"
++                android:label="Ghostfox"
+                 android:launchMode="singleTop"
+                 android:theme="@style/GeckoViewTheme"
+                 android:supportsPictureInPicture="true"
+@@ -58,7 +58,7 @@
+         </activity>
+         <activity
+                 android:name=".SessionActivity"
+-                android:label="GeckoView Example"
++                android:label="Ghostfox"
+                 android:theme="@style/GeckoViewTheme"
+                 android:exported="false">
+         </activity>
+diff --git a/mobile/android/geckoview_example/src/main/res/values/strings.xml b/mobile/android/geckoview_example/src/main/res/values/strings.xml
+index 0a6b1e4335..9ce7f3d190 100644
+--- a/mobile/android/geckoview_example/src/main/res/values/strings.xml
++++ b/mobile/android/geckoview_example/src/main/res/values/strings.xml
+@@ -1,5 +1,5 @@
+ <resources>
+-    <string name="app_name">GeckoView Example</string>
++    <string name="app_name">Ghostfox</string>
+     <string name="activity_label">GeckoView Example</string>
+     <string name="location_hint">Enter URL or search keywords...</string>
+     <string name="username">Username</string>
