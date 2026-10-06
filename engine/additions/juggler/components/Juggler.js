@@ -263,6 +263,16 @@ export class Juggler {
         });
         dispatcher.rootSession().setHandler(browserHandler);
         loadStyleSheet();
+
+        // GeckoView never fires browser-idle-startup-tasks-finished, so
+        // BrowserHandler.enable would await _startCompletePromise forever
+        // (the observed "no response to Browser.enable" on Android). The
+        // profile is already ready at this point on Android — resolve it.
+        if (useTcp) {
+          browserStartupFinishedCallback();
+          dump(`\nJuggler: core started, TCP ready\n`);
+        }
+
         if (useTcp)
           dump(`\nJuggler listening on TCP\n`);
         else
