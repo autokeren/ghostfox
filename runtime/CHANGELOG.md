@@ -5,7 +5,35 @@ All notable changes to ghostfox will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.2] — 2026-10-05
+
+**The senses-complete + registry-polish release.** 70 tools in two tiers.
+
+### Added
+- Toolset tiers + instructions (Glama TDQS pass): core default (26
+  curated tools) / full (GHOSTFOX_TOOLSET=full); the MCP instructions
+  carry the decision tree.
+- JA4 extension order (chrome-mode): the ClientHello extension ORDER
+  follows the persona via the NSS CH-extension-permutation machinery.
+- page_ws_send (WS injection) + page_ws_block (WS blocking, both
+  directions) — the WebSocket suite is now capture/inject/block.
+- chrome-mode surface (window.chrome, deviceMemory, oscpu removed,
+  V8-style eval.toString, Battery API) — sannysoft zero-fail.
+- Android Jalur A milestone 1: the full patch stack builds for
+  GeckoView (APK + AAR); juggler TCP transport + persona channel v2
+  (Browser.setPersonaConfig + setenv coverage).
+- Per-identity TLS: tls-v1 spoofing (cipher + group order), dormant
+  Chrome141 profile, identity passthrough through the launch.
+- page_ws_frames (the WebSocket stream) — M3 hearing complete.
+
+### Fixed
+- navigator-spoofing.patch rebuilt against the real CI pre-state
+  (contaminated hunks + missing GetChrome); ws-injection weak-ref
+  root cause; engine-build patch-order issues (m2.9, playwright).
+- CI kept green throughout (contract-test counts 68→69→70).
+
 ## [0.9.1] — 2026-10-04
+
 
 ### Toolset tiers + instructions (Glama TDQS pass)
 - GHOSTFOX_TOOLSET=core (default) exposes a curated 26-tool surface;
