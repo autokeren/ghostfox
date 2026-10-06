@@ -110,14 +110,35 @@ export class Juggler {
       return;
     this._androidStarted = true;
 
-    const server = Cc["@mozilla.org/network/server-socket;1"].createInstance(Ci.nsIServerSocket);
-    server.init(this._androidPort, true /* loopbackOnly */, -1);
-    dump(`Juggler: Android TCP listener on 127.0.0.1:${this._androidPort}\n`);
-
-    const connection = this._startJuggler(true /* useTcp */);
+    dump(`Juggler: android init, port ${this._androidPort}\n`);
+    let connection;
+    try {
+      connection = this._startJuggler(true /* useTcp */);
+    } catch (e) {
+      dump(`Juggler: _startJuggler failed: ${e}\n`);
+      // The LISTENER comes up regardless — the port must exist so the
+      // tunnel has something to connect to, and we can debug from afar.
+    }
     const self = this;
+    let server;
+    try {
+      server = Cc["@mozilla.org/network/server-socket;1"].createInstance(Ci.nsIServerSocket);
+      server.init(this._androidPort, true /* loopbackOnly */, -1);
+    } catch (e) {
+      dump(`Juggler: server init failed: ${e}\n`);
+      return;
+    }
+    dump(`Juggler: Android TCP listener on 127.0.0.1:${this._androidPort}\n`);
     server.asyncListen({
       onSocketAccepted(sock, transport) {
+        if (!connection) {
+          // juggler never started — nothing to serve; log and drop.
+          dump(`Juggler: accept but juggler not started\n`);
+          try {
+            sock.close();
+          } catch (e) {}
+          return;
+        }
         self._androidTransport = transport;
         connection.setSocket(transport);
         const inStream = transport.openInputStream(0, 0, 0);
@@ -125,26 +146,31 @@ export class Juggler {
         scriptable.init(inStream);
         let buf = "";
         const pump = {
+          QueryInterface: ChromeUtils.generateQI([Ci.nsIInputStreamCallback]),
           onInputStreamReady(stream) {
-            let available;
-            while ((available = stream.available()) > 0) {
-              buf += scriptable.readBytes(available);
-            }
-            let idx;
-            while ((idx = buf.indexOf("\0")) !== -1) {
-              const message = buf.slice(0, idx);
-              buf = buf.slice(idx + 1);
-              if (message)
-                connection.receiveMessage(message);
-            }
             try {
+              let available;
+              while ((available = stream.available()) > 0) {
+                buf += scriptable.readBytes(available);
+              }
+              let idx;
+              while ((idx = buf.indexOf("\0")) !== -1) {
+                const message = buf.slice(0, idx);
+                buf = buf.slice(idx + 1);
+                if (message)
+                  connection.receiveMessage(message);
+              }
               stream.asyncWait(this, 0, 0, Services.tm.currentThread);
             } catch (e) {
-              // stream closed — client disconnected
+              dump(`Juggler TCP read error: ${e}\n`);
             }
           },
         };
-        inStream.asyncWait(pump, 0, 0, Services.tm.currentThread);
+        try {
+          inStream.asyncWait(pump, 0, 0, Services.tm.currentThread);
+        } catch (e) {
+          dump(`Juggler TCP asyncWait failed: ${e}\n`);
+        }
       },
       onStopListening() {},
     });
@@ -188,7 +214,10 @@ export class Juggler {
         let pipeStopped = false;
         let browserHandler;
         let androidSocket = null;
-        const pipe = Cc['@mozilla.org/juggler/remotedebuggingpipe;1'].getService(Ci.nsIRemoteDebuggingPipe);
+        // The desktop pipe component may not exist on Android builds —
+        // only resolve it when the pipe transport is actually used.
+        const pipe = useTcp ? null
+                            : Cc['@mozilla.org/juggler/remotedebuggingpipe;1'].getService(Ci.nsIRemoteDebuggingPipe);
         const connection = {
           QueryInterface: ChromeUtils.generateQI([Ci.nsIRemoteDebuggingPipeClient]),
           setSocket(transport) {
