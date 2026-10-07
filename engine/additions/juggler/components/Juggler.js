@@ -132,8 +132,18 @@ export class Juggler {
     server.asyncListen({
       onSocketAccepted(sock, transport) {
         if (!connection) {
-          // juggler never started — nothing to serve; log and drop.
+          // juggler never started — report the error over the socket so
+          // the VPS can read it without adb/logcat access.
           dump(`Juggler: accept but juggler not started\n`);
+          try {
+            const out = transport.openOutputStream(0, 0, 0);
+            const msg = JSON.stringify({
+              error: 'juggler core failed: ' + (self._jugglerError || 'unknown'),
+            }) + '\0';
+            out.write(msg, msg.length);
+            out.flush();
+            out.close();
+          } catch (e) {}
           try {
             sock.close();
           } catch (e) {}
@@ -180,6 +190,17 @@ export class Juggler {
   // and the transport — pipe on desktop, loopback TCP on Android. Returns
   // the connection object so the TCP listener can hand over its socket.
   _startJuggler(useTcp) {
+        this._jugglerError = null;
+        const step = (name, fn) => {
+          try {
+            dump(`Juggler: step ${name}\n`);
+            return fn();
+          } catch (e) {
+            this._jugglerError = `step ${name}: ${e}\n${e.stack || ''}`;
+            dump(`Juggler: step ${name} FAILED: ${e}\n`);
+            throw e;
+          }
+        };
         // Pre-initialize the accessibility service at startup. Lazy init
         // triggered from a synchronous pipe handler deadlocks: the handler
         // blocks the main thread while a11y init needs the main-thread
@@ -193,8 +214,8 @@ export class Juggler {
           dump(`Juggler: a11y pre-init failed: ${e}\n`);
         }
 
-        const targetRegistry = new TargetRegistry();
-        new NetworkObserver(targetRegistry);
+        const targetRegistry = step('target-registry', () => new TargetRegistry());
+        step('network-observer', () => new NetworkObserver(targetRegistry));
 
         const loadStyleSheet = () => {
           if (Cc["@mozilla.org/gfx/info;1"].getService(Ci.nsIGfxInfo).isHeadless) {
@@ -251,8 +272,8 @@ export class Juggler {
         };
         if (!useTcp)
           pipe.init(connection);
-        const dispatcher = new Dispatcher(connection);
-        browserHandler = new BrowserHandler(dispatcher.rootSession(), dispatcher, targetRegistry, browserStartupFinishedPromise, () => {
+        const dispatcher = step('dispatcher', () => new Dispatcher(connection));
+        browserHandler = step('browser-handler', () => new BrowserHandler(dispatcher.rootSession(), dispatcher, targetRegistry, browserStartupFinishedPromise, () => {
           if (this._silent)
             Services.startup.exitLastWindowClosingSurvivalArea();
           connection.onclose();
@@ -260,9 +281,9 @@ export class Juggler {
             pipe.stop();
             pipeStopped = true;
           }
-        });
+        }));
         dispatcher.rootSession().setHandler(browserHandler);
-        loadStyleSheet();
+        step('style-sheet', () => loadStyleSheet());
 
         // GeckoView never fires browser-idle-startup-tasks-finished, so
         // BrowserHandler.enable would await _startCompletePromise forever
