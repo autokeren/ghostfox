@@ -651,7 +651,7 @@ enum Toolset {
 
 impl Default for GhostfoxServer {
     fn default() -> Self {
-        Self {
+        let server = Self {
             state: Default::default(),
             recorder: Default::default(),
             toolset: if std::env::var("GHOSTFOX_TOOLSET").as_deref() == Ok("full") {
@@ -659,7 +659,17 @@ impl Default for GhostfoxServer {
             } else {
                 Toolset::Core
             },
-        }
+        };
+        // Idle reaper: sweeps sessions past GHOSTFOX_IDLE_TIMEOUT. The
+        // engine shutdown preserves user-provided profile dirs.
+        let reap = server.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                reap.reap_idle_sessions().await;
+            }
+        });
+        server
     }
 }
 
@@ -699,6 +709,8 @@ const CORE_TOOLS: &[&str] = &[
 #[derive(Default)]
 pub(crate) struct ServerState {
     pub(crate) sessions: HashMap<String, Arc<Session>>,
+    /// Idle-reaper bookkeeping: last tool activity per session.
+    pub(crate) last_active: HashMap<String, std::time::Instant>,
     /// M5 taste: the launch recipe per session — the morph relaunches
     /// the engine with the same profile (cookies survive) but a fresh
     /// identity (fingerprint changes coherently).
@@ -816,13 +828,56 @@ impl GhostfoxServer {
     }
 
     async fn session(&self, id: &str) -> Result<Arc<Session>, String> {
+        let session = {
+            self.state
+                .read()
+                .await
+                .sessions
+                .get(id)
+                .cloned()
+                .ok_or_else(|| format!("session `{id}` not found"))?
+        };
+        // Idle-reaper bookkeeping: every tool call renews the lease.
         self.state
-            .read()
+            .write()
             .await
-            .sessions
-            .get(id)
-            .cloned()
-            .ok_or_else(|| format!("session `{id}` not found"))
+            .last_active
+            .insert(id.to_string(), std::time::Instant::now());
+        Ok(session)
+    }
+
+    /// Sessions idle longer than GHOSTFOX_IDLE_TIMEOUT (seconds, default
+    /// 600) are shut down by the reaper. The engine's shutdown only
+    /// removes EPHEMERAL profiles — persistent profile dirs (logged-in
+    /// cookies, identity.toml) stay untouched on disk, so the next
+    /// session_create with the same profile_dir is still logged in.
+    async fn reap_idle_sessions(&self) {
+        let timeout_secs: u64 = std::env::var("GHOSTFOX_IDLE_TIMEOUT")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(600);
+        let timeout = std::time::Duration::from_secs(timeout_secs);
+        let now = std::time::Instant::now();
+        let mut stale = Vec::new();
+        {
+            let state = self.state.read().await;
+            for (id, session) in &state.sessions {
+                let idle = state
+                    .last_active
+                    .get(id)
+                    .map(|t| now.duration_since(*t))
+                    .unwrap_or_else(|| now.duration_since(std::time::Instant::now()));
+                if idle > timeout {
+                    stale.push((id.clone(), session.clone()));
+                }
+            }
+        }
+        for (id, session) in stale {
+            tracing::info!(target: "ghostfox::reaper", "idle session {id} — shutting down");
+            let _ = session.engine().lock().await.shutdown().await;
+            self.state.write().await.sessions.remove(&id);
+            self.state.write().await.last_active.remove(&id);
+        }
     }
 }
 
@@ -898,6 +953,11 @@ impl GhostfoxServer {
             engine,
         );
         let id = session.id.clone();
+        self.state
+            .write()
+            .await
+            .last_active
+            .insert(id.clone(), std::time::Instant::now());
         // Evidence: record the persona this run uses, plus the launch facts.
         {
             let ev = serde_json::json!({

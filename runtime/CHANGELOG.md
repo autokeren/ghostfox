@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.9.2] — 2026-10-05
 
+### Idle reaper
+- Sessions idle past GHOSTFOX_IDLE_TIMEOUT (seconds, default 600)
+  are shut down automatically; every tool call renews the lease.
+  Engine shutdown removes only EPHEMERAL profiles — persistent
+  profile dirs (logged-in cookies, identity.toml) stay on disk, so
+  reconnecting with the same profile_dir is still logged in.
+
+
 **The senses-complete + registry-polish release.** 70 tools in two tiers.
 
 ### Added
