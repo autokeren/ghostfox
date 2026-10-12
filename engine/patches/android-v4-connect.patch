@@ -1,0 +1,143 @@
+diff --git a/mobile/android/geckoview_example/build.gradle b/mobile/android/geckoview_example/build.gradle
+index 7945ffeb74..48cbaea9ac 100644
+--- a/mobile/android/geckoview_example/build.gradle
++++ b/mobile/android/geckoview_example/build.gradle
+@@ -11,13 +11,18 @@ android {
+     }
+ 
+     defaultConfig {
++        // Ghostfox: explicit version for on-device identification.
++        // Bump the tag on every Android iteration so the phone can tell
++        // builds apart (Settings -> Apps -> Ghostfox -> version).
++        versionName "0.9.2.4"
+         targetSdk project.ext.targetSdkVersion
+         minSdk project.ext.minSdkVersion
+         manifestPlaceholders = project.ext.manifestPlaceholders
+ 
+         applicationId "org.mozilla.geckoview_example"
+         versionCode project.ext.versionCode
+-        versionName project.ext.versionName
++        // Ghostfox: explicit on-device version (bump per Android iteration).
++        versionName "0.9.2.4"
+     }
+ 
+     buildTypes {
+diff --git a/mobile/android/geckoview_example/src/main/AndroidManifest.xml b/mobile/android/geckoview_example/src/main/AndroidManifest.xml
+index 2d3d1ffce1..bf3418ca8b 100644
+--- a/mobile/android/geckoview_example/src/main/AndroidManifest.xml
++++ b/mobile/android/geckoview_example/src/main/AndroidManifest.xml
+@@ -1,6 +1,8 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+ 
++    <uses-permission android:name="android.permission.INTERNET" />
++
+     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+         android:maxSdkVersion="32" />
+     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+@@ -30,7 +32,7 @@
+         <activity
+             android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize"
+                 android:name=".GeckoViewActivity"
+-                android:label="GeckoView Example"
++                android:label="Ghostfox"
+                 android:launchMode="singleTop"
+                 android:theme="@style/GeckoViewTheme"
+                 android:supportsPictureInPicture="true"
+@@ -58,7 +60,7 @@
+         </activity>
+         <activity
+                 android:name=".SessionActivity"
+-                android:label="GeckoView Example"
++                android:label="Ghostfox"
+                 android:theme="@style/GeckoViewTheme"
+                 android:exported="false">
+         </activity>
+diff --git a/mobile/android/geckoview_example/src/main/java/org/mozilla/geckoview_example/SettingsActivity.java b/mobile/android/geckoview_example/src/main/java/org/mozilla/geckoview_example/SettingsActivity.java
+index ef994e25af..ec553f5993 100644
+--- a/mobile/android/geckoview_example/src/main/java/org/mozilla/geckoview_example/SettingsActivity.java
++++ b/mobile/android/geckoview_example/src/main/java/org/mozilla/geckoview_example/SettingsActivity.java
+@@ -51,6 +51,36 @@ public class SettingsActivity extends AppCompatActivity {
+           edgeToEdge.setEnabled(false);
+         }
+       }
++
++      // Ghostfox Connect: dial OUT to the MCP gateway and bridge the
++      // pipe to the local juggler listener.
++      final Preference connect =
++          findPreference(getString(R.string.key_ghostfox_connect));
++      if (connect != null) {
++        connect.setOnPreferenceClickListener(
++            pref -> {
++              final String server =
++                  getPreferenceManager()
++                      .getSharedPreferences()
++                      .getString(getString(R.string.key_ghostfox_server), "SERVER_IP:9223");
++              final String token =
++                  getPreferenceManager()
++                      .getSharedPreferences()
++                      .getString(getString(R.string.key_ghostfox_token), "");
++              final Preference status =
++                  findPreference(getString(R.string.key_ghostfox_status));
++              GhostfoxConnect.connect(
++                  server,
++                  token,
++                  msg -> {
++                    if (status != null) {
++                      getActivity()
++                          .runOnUiThread(() -> status.setSummary(msg));
++                    }
++                  });
++              return true;
++            });
++      }
+     }
+   }
+ }
+diff --git a/mobile/android/geckoview_example/src/main/res/values/strings.xml b/mobile/android/geckoview_example/src/main/res/values/strings.xml
+index 0a6b1e4335..bac19576c0 100644
+--- a/mobile/android/geckoview_example/src/main/res/values/strings.xml
++++ b/mobile/android/geckoview_example/src/main/res/values/strings.xml
+@@ -1,5 +1,5 @@
+ <resources>
+-    <string name="app_name">GeckoView Example</string>
++    <string name="app_name">Ghostfox</string>
+     <string name="activity_label">GeckoView Example</string>
+     <string name="location_hint">Enter URL or search keywords...</string>
+     <string name="username">Username</string>
+@@ -181,4 +181,8 @@
+     <string name="folder_upload_title">Confirm Upload</string>
+     <string name="folder_upload_confirm_accept">Upload</string>
+     <string name="folder_upload_confirm_cancel">Cancel</string>
++    <string name="key_ghostfox_server" translatable="false">ghostfox_server</string>
++    <string name="key_ghostfox_token" translatable="false">ghostfox_token</string>
++    <string name="key_ghostfox_connect" translatable="false">ghostfox_connect</string>
++    <string name="key_ghostfox_status" translatable="false">ghostfox_status</string>
+ </resources>
+diff --git a/mobile/android/geckoview_example/src/main/res/xml/settings.xml b/mobile/android/geckoview_example/src/main/res/xml/settings.xml
+index 652bddb8d7..6ca90a3659 100644
+--- a/mobile/android/geckoview_example/src/main/res/xml/settings.xml
++++ b/mobile/android/geckoview_example/src/main/res/xml/settings.xml
+@@ -83,4 +83,22 @@
+         app:key="@string/key_edge_to_edge_enabled"
+         app:title="Enable Edge to Edge Mode"
+         app:defaultValue="@bool/edge_to_edge_enabled_default"/>
++    <PreferenceCategory app:title="👻 Ghostfox Connect">
++        <EditTextPreference
++            app:key="@string/key_ghostfox_server"
++            app:title="MCP gateway (host:port)"
++            app:defaultValue="SERVER_IP:9223"/>
++        <EditTextPreference
++            app:key="@string/key_ghostfox_token"
++            app:title="Token"
++            app:defaultValue="ghostfox"/>
++        <Preference
++            app:key="@string/key_ghostfox_connect"
++            app:title="Connect"
++            app:summary="Dial out to the gateway — no Termux needed"/>
++        <Preference
++            app:key="@string/key_ghostfox_status"
++            app:title="Status"
++            app:summary="Not connected"/>
++    </PreferenceCategory>
+ </PreferenceScreen>
