@@ -128,6 +128,8 @@ export class Juggler {
       dump(`Juggler: server init failed: ${e}\n`);
       return;
     }
+    // Hold a strong ref — a bare local would be GC'd and the socket closed.
+    this._androidServer = server;
     dump(`Juggler: Android TCP listener on 127.0.0.1:${this._androidPort}\n`);
     server.asyncListen({
       onSocketAccepted(sock, transport) {

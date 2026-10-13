@@ -33,14 +33,36 @@ public class GhostfoxConnect {
               Socket vps = null;
               Socket local = null;
               try {
-                String host = "SERVER_IP";
+                String host = "";
                 int port = 9223;
                 int ci = serverHostPort.lastIndexOf(':');
                 if (ci > 0) {
                   host = serverHostPort.substring(0, ci).trim();
                   port = Integer.parseInt(serverHostPort.substring(ci + 1).trim());
                 }
-                l.onStatus("Connecting to " + host + ":" + port + " …");
+                // Probe the local juggler FIRST: fail fast with a status we
+                // can read without adb/logcat. The juggler listener lives on
+                // 127.0.0.1:9222 and should be up once the engine is ready.
+                boolean localOk = false;
+                for (int i = 0; i < 5; i++) {
+                  try {
+                    Socket probe = new Socket("127.0.0.1", 9222);
+                    probe.close();
+                    localOk = true;
+                    break;
+                  } catch (Exception ignored) {
+                    try {
+                      Thread.sleep(400);
+                    } catch (InterruptedException ie) {
+                    }
+                  }
+                }
+                if (!localOk) {
+                  l.onStatus("Juggler core not running (127.0.0.1:9222 refused) — open a tab, wait a few seconds, then press Connect again");
+                  running.set(false);
+                  return;
+                }
+                l.onStatus("Juggler core OK — dialing " + host + ":" + port + " …");
                 vps = new Socket(host, port);
                 vps.setTcpNoDelay(true);
                 vps.getOutputStream().write(("phone:" + token + "\0").getBytes("UTF-8"));

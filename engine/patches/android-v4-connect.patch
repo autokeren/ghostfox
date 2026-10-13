@@ -54,7 +54,7 @@ index 2d3d1ffce1..bf3418ca8b 100644
                  android:exported="false">
          </activity>
 diff --git a/mobile/android/geckoview_example/src/main/java/org/mozilla/geckoview_example/SettingsActivity.java b/mobile/android/geckoview_example/src/main/java/org/mozilla/geckoview_example/SettingsActivity.java
-index ef994e25af..ec553f5993 100644
+index ef994e25af..71bafcf5ac 100644
 --- a/mobile/android/geckoview_example/src/main/java/org/mozilla/geckoview_example/SettingsActivity.java
 +++ b/mobile/android/geckoview_example/src/main/java/org/mozilla/geckoview_example/SettingsActivity.java
 @@ -51,6 +51,36 @@ public class SettingsActivity extends AppCompatActivity {
@@ -72,7 +72,7 @@ index ef994e25af..ec553f5993 100644
 +              final String server =
 +                  getPreferenceManager()
 +                      .getSharedPreferences()
-+                      .getString(getString(R.string.key_ghostfox_server), "SERVER_IP:9223");
++                      .getString(getString(R.string.key_ghostfox_server), "");
 +              final String token =
 +                  getPreferenceManager()
 +                      .getSharedPreferences()
@@ -115,7 +115,7 @@ index 0a6b1e4335..bac19576c0 100644
 +    <string name="key_ghostfox_status" translatable="false">ghostfox_status</string>
  </resources>
 diff --git a/mobile/android/geckoview_example/src/main/res/xml/settings.xml b/mobile/android/geckoview_example/src/main/res/xml/settings.xml
-index 652bddb8d7..6ca90a3659 100644
+index 652bddb8d7..7ea080e6f0 100644
 --- a/mobile/android/geckoview_example/src/main/res/xml/settings.xml
 +++ b/mobile/android/geckoview_example/src/main/res/xml/settings.xml
 @@ -83,4 +83,22 @@
@@ -126,7 +126,7 @@ index 652bddb8d7..6ca90a3659 100644
 +        <EditTextPreference
 +            app:key="@string/key_ghostfox_server"
 +            app:title="MCP gateway (host:port)"
-+            app:defaultValue="SERVER_IP:9223"/>
++            app:defaultValue=""/>
 +        <EditTextPreference
 +            app:key="@string/key_ghostfox_token"
 +            app:title="Token"
