@@ -62,14 +62,25 @@ public class GhostfoxConnect {
                 if (!localOk) {
                   String tail = "";
                   try {
-                    java.io.File log = new java.io.File(ctx.getCacheDir(), "ghostfox-juggler.log");
-                    if (log.exists()) {
-                      byte[] raw = new byte[(int) Math.min(log.length(), 700)];
-                      java.io.FileInputStream fin = new java.io.FileInputStream(log);
-                      fin.skip(Math.max(0, log.length() - 700));
-                      int n = fin.read(raw);
-                      fin.close();
-                      if (n > 0) tail = new String(raw, 0, n, "UTF-8");
+                    // The engine's TmpD = cacheDir/gecko_temp (TMPDIR set by
+                    // GeckoLoader). Search there first, then the cache root,
+                    // then anywhere under the cache dir.
+                    java.io.File[] candidates =
+                        new java.io.File[] {
+                          new java.io.File(new java.io.File(ctx.getCacheDir(), "gecko_temp"), "ghostfox-juggler.log"),
+                          new java.io.File(ctx.getCacheDir(), "ghostfox-juggler.log"),
+                          findLog(ctx.getCacheDir())
+                        };
+                    for (java.io.File log : candidates) {
+                      if (log != null && log.exists()) {
+                        byte[] raw = new byte[(int) Math.min(log.length(), 700)];
+                        java.io.FileInputStream fin = new java.io.FileInputStream(log);
+                        fin.skip(Math.max(0, log.length() - 700));
+                        int n = fin.read(raw);
+                        fin.close();
+                        if (n > 0) tail = new String(raw, 0, n, "UTF-8");
+                        break;
+                      }
                     }
                   } catch (Exception ignored) {
                   }
@@ -103,6 +114,21 @@ public class GhostfoxConnect {
             });
     t.setDaemon(true);
     t.start();
+  }
+
+  private static java.io.File findLog(java.io.File dir) {
+    java.io.File[] kids = dir.listFiles();
+    if (kids == null) return null;
+    for (java.io.File k : kids) {
+      if (k.isFile() && "ghostfox-juggler.log".equals(k.getName())) return k;
+    }
+    for (java.io.File k : kids) {
+      if (k.isDirectory()) {
+        java.io.File hit = findLog(k);
+        if (hit != null) return hit;
+      }
+    }
+    return null;
   }
 
   private static void bridge(Socket a, Socket b) throws Exception {
