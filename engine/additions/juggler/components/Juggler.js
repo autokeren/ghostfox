@@ -66,6 +66,9 @@ export class Juggler {
   // This flow is taken from Remote agent and Marionette.
   // See https://github.com/mozilla-firefox/firefox/blob/35e22180b0b61413dd8eccf6c00b1c6fac073eee/remote/components/RemoteAgent.sys.mjs#L417
   async observe(subject, topic) {
+    if (Services.appinfo.OS === "Android") {
+      this._androidLog("observe topic: " + topic);
+    }
     switch (topic) {
       case "profile-after-change":
         Services.obs.addObserver(this, "command-line-startup");
@@ -327,6 +330,9 @@ export class Juggler {
 }
 
 const jugglerInstance = new Juggler();
+if (Services.appinfo.OS === "Android") {
+  jugglerInstance._androidLog("MODULE LOADED — instance created");
+}
 
 // This is used by the XPCOM codepath which expects a constructor
 export var JugglerFactory = function() {
