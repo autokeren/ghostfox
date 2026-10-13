@@ -74,6 +74,7 @@ export class Juggler {
         // serve the juggler protocol over a loopback TCP socket instead.
         // The runtime reaches it through `adb forward tcp:<port> tcp:<port>`.
         if (Services.appinfo.OS === "Android") {
+          this._androidLog("observe profile-after-change: Android branch");
           this._androidPort = Services.prefs.getIntPref("ghostfox.juggler.port", 9222);
           Services.tm.dispatchToMainThread(() => this._androidInit());
         }
@@ -103,6 +104,20 @@ export class Juggler {
     }
   }
 
+  // Ghostfox Android telemetry: append status lines to <cache>/ghostfox-juggler.log
+  // so the app UI can display WHY the core failed — no adb/logcat needed.
+  _androidLog(msg) {
+    try {
+      const {IOUtils} = ChromeUtils.importESModule("resource://gre/modules/IOUtils.sys.mjs");
+      const file = Services.dirsvc.get("TmpD", Ci.nsIFile);
+      file.append("ghostfox-juggler.log");
+      const line = Date.now() + " " + msg + "\n";
+      IOUtils.writeUTF8(file.path, line, {mode: "append"}).catch(() => {
+        IOUtils.writeUTF8(file.path, line).catch(() => {});
+      });
+    } catch (e) {}
+  }
+
   // Ghostfox Android: no pipe — serve the juggler protocol over a loopback
   // TCP socket with the SAME \0 framing as Playwright's PipeTransport.
   _androidInit() {
@@ -110,11 +125,14 @@ export class Juggler {
       return;
     this._androidStarted = true;
 
+    this._androidLog("_androidInit: port " + this._androidPort);
     dump(`Juggler: android init, port ${this._androidPort}\n`);
     let connection;
     try {
       connection = this._startJuggler(true /* useTcp */);
+      this._androidLog("core started: " + (connection ? "ok" : "null"));
     } catch (e) {
+      this._androidLog("core FAILED: " + this._jugglerError);
       dump(`Juggler: _startJuggler failed: ${e}\n`);
       // The LISTENER comes up regardless — the port must exist so the
       // tunnel has something to connect to, and we can debug from afar.
@@ -125,12 +143,15 @@ export class Juggler {
       server = Cc["@mozilla.org/network/server-socket;1"].createInstance(Ci.nsIServerSocket);
       server.init(this._androidPort, true /* loopbackOnly */, -1);
     } catch (e) {
+      this._androidLog("server.init FAILED: " + e);
       dump(`Juggler: server init failed: ${e}\n`);
       return;
     }
     // Hold a strong ref — a bare local would be GC'd and the socket closed.
     this._androidServer = server;
+    this._androidLog("listener bound 127.0.0.1:" + this._androidPort);
     dump(`Juggler: Android TCP listener on 127.0.0.1:${this._androidPort}\n`);
+    this._androidLog("listener ready 127.0.0.1:" + this._androidPort);
     server.asyncListen({
       onSocketAccepted(sock, transport) {
         if (!connection) {

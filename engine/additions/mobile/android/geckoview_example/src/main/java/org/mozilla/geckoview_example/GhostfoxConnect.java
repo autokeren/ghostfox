@@ -4,6 +4,8 @@
 
 package org.mozilla.geckoview_example;
 
+import android.content.Context;
+
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.Socket;
@@ -22,7 +24,7 @@ public class GhostfoxConnect {
 
   private static final AtomicBoolean running = new AtomicBoolean(false);
 
-  public static void connect(String serverHostPort, String token, Listener l) {
+  public static void connect(String serverHostPort, String token, Context ctx, Listener l) {
     if (!running.compareAndSet(false, true)) {
       l.onStatus("Already connecting — one bridge at a time");
       return;
@@ -58,7 +60,20 @@ public class GhostfoxConnect {
                   }
                 }
                 if (!localOk) {
-                  l.onStatus("Juggler core not running (127.0.0.1:9222 refused) — open a tab, wait a few seconds, then press Connect again");
+                  String tail = "";
+                  try {
+                    java.io.File log = new java.io.File(ctx.getCacheDir(), "ghostfox-juggler.log");
+                    if (log.exists()) {
+                      byte[] raw = new byte[(int) Math.min(log.length(), 700)];
+                      java.io.FileInputStream fin = new java.io.FileInputStream(log);
+                      fin.skip(Math.max(0, log.length() - 700));
+                      int n = fin.read(raw);
+                      fin.close();
+                      if (n > 0) tail = new String(raw, 0, n, "UTF-8");
+                    }
+                  } catch (Exception ignored) {
+                  }
+                  l.onStatus("Juggler core NOT running. Log: " + tail);
                   running.set(false);
                   return;
                 }
