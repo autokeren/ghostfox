@@ -129,6 +129,33 @@ impl Recorder {
         Ok(path)
     }
 
+    /// Where page_download files land: <session>/downloads.
+    pub fn downloads_dir(&self, session_id: &str) -> PathBuf {
+        self.session_dir(session_id).join("downloads")
+    }
+
+    /// Log a completed page_download (the file itself is written by the
+    /// engine on the machine running it).
+    pub fn record_download(
+        &self,
+        session_id: &str,
+        page_id: Option<&str>,
+        url: &str,
+        file: &std::path::Path,
+        size: u64,
+    ) -> std::io::Result<()> {
+        self.record(
+            session_id,
+            "page_download",
+            page_id,
+            serde_json::json!({
+                "url": url,
+                "file": file.to_string_lossy(),
+                "bytes": size,
+            }),
+        )
+    }
+
     /// Save a screenshot PNG and log its file path.
     pub fn record_screenshot(
         &self,

@@ -470,6 +470,21 @@ struct PageScreenshotParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+struct PageDownloadParams {
+    session_id: String,
+    /// Optional page whose URL becomes the Referer header (natural
+    /// same-tab download behaviour — helps with hotlink protection).
+    #[serde(default)]
+    page_id: Option<String>,
+    /// The absolute media URL to fetch (image/video/audio/document).
+    url: String,
+    /// Optional output name; defaults to the URL's last segment
+    /// (sanitized). Saved under the session's downloads/ dir.
+    #[serde(default)]
+    filename: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct CaptchaSolveParams {
     session_id: String,
     /// Turnstile/hcaptcha-style: the site's sitekey.
@@ -3884,6 +3899,87 @@ impl GhostfoxServer {
     }
 
     #[tool(
+        description = "Download a URL THROUGH the browser engine — the request carries the session's cookie jar, TLS fingerprint, IP and referer, so login-gated or hotlink-protected media downloads exactly as if the page itself fetched it. Streams to <session>/downloads/ on the machine running the engine; returns {file, bytes, contentType, status}. This is the anti-detect way to harvest images/videos (shell curl breaks the coherent identity — use curl only for public CDN assets where the identity doesn't matter)."
+    )]
+    async fn page_download(
+        &self,
+        Parameters(PageDownloadParams {
+            session_id,
+            page_id,
+            url,
+            filename,
+        }): Parameters<PageDownloadParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let referer = if let Some(pid) = page_id.as_deref() {
+            session
+                .page(pid)
+                .await
+                .ok()
+                .and_then(|p| {
+                    let rt = tokio::runtime::Handle::try_current();
+                    rt.ok().map(|h| h.block_on(p.url()).unwrap_or_default())
+                })
+                .filter(|u| !u.is_empty())
+        } else {
+            None
+        };
+        let name = filename
+            .map(|f| sanitize_filename(&f))
+            .filter(|f| !f.is_empty())
+            .unwrap_or_else(|| {
+                let fallback = url
+                    .split(['?', '#'])
+                    .next()
+                    .unwrap_or("")
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+                let f = sanitize_filename(&fallback);
+                if f.is_empty() {
+                    "download.bin".to_string()
+                } else {
+                    f
+                }
+            });
+        let dir = self.recorder.downloads_dir(&session_id);
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let path = dir.join(&name);
+        let engine = session.engine().lock().await.clone();
+        let info = engine
+            .download(&url, &path.to_string_lossy(), referer.as_deref())
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+        let size = info
+            .get("size")
+            .and_then(|v| v.as_u64())
+            .or_else(|| std::fs::metadata(&path).ok().map(|m| m.len()))
+            .unwrap_or_default();
+        let _ = self.recorder.record_download(
+            &session_id,
+            page_id.as_deref(),
+            &url,
+            &path,
+            size,
+        );
+        Ok(text_result(
+            serde_json::to_string_pretty(&serde_json::json!({
+                "file": path.to_string_lossy(),
+                "bytes": size,
+                "contentType": info.get("contentType").and_then(|v| v.as_str()).unwrap_or(""),
+                "status": info.get("status").and_then(|v| v.as_u64()).unwrap_or(0),
+            }))
+            .unwrap_or_default(),
+        ))
+    }
+
+    #[tool(
         description = "Solve a CAPTCHA through the configured provider (env GHOSTFOX_CAPTCHA_PROVIDER=2captcha + GHOSTFOX_CAPTCHA_KEY). Turnstile/hcaptcha: pass sitekey + pageurl; image captchas: pass image_base64. Stealth-first: prefer not being challenged at all."
     )]
     async fn captcha_solve(
@@ -5008,3 +5104,24 @@ DEBUGGING: page_console/page_errors (what the page logged/threw), page_network_s
 SESSIONS: session_create -> page_open -> ... ; session_pages lists popups; session_evidence replays the run.
 
 This is the core surface. The complete 70-tool set (8 captcha families, pixels/vision tiers, network interception, WebSocket capture/inject/block, identity morph, chrome-mode, Android) is available when the server runs with GHOSTFOX_TOOLSET=full."#;
+
+fn sanitize_filename(s: &str) -> String {
+    let cleaned: String = s
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let cleaned = cleaned.trim_matches('_').to_string();
+    if cleaned.len() > 120 {
+        cleaned[..120].to_string()
+    } else if cleaned.is_empty() {
+        "download.bin".to_string()
+    } else {
+        cleaned
+    }
+}

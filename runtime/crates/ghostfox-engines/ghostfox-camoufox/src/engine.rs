@@ -421,6 +421,25 @@ impl CamoufoxEngine {
             .collect()
     }
 
+    /// v0.9.3: Download THROUGH the browser — the engine's privileged
+    /// Browser.download handler uses the profile cookie jar and the
+    /// session's network identity, streaming straight to disk.
+    pub async fn download(
+        &self,
+        url: &str,
+        path: &str,
+        referer: Option<&str>,
+    ) -> ghostfox_core::error::Result<serde_json::Value> {
+        let resp = self
+            .conn
+            .request(
+                "Browser.download",
+                serde_json::json!({ "url": url, "path": path, "referer": referer }),
+            )
+            .await?;
+        Ok(resp)
+    }
+
     /// v0.6.2: Attach to an EXISTING browser target (popup/tab opened by
     /// the site — OAuth windows, payment flows). Returns a fully live
     /// page handle using the recorded session + context.
@@ -1377,6 +1396,15 @@ impl Engine for CamoufoxEngine {
         target_id: &str,
     ) -> Result<Arc<dyn ghostfox_core::engine::PageHandle>> {
         CamoufoxEngine::attach_target(self, target_id).await
+    }
+
+    async fn download(
+        &self,
+        url: &str,
+        path: &str,
+        referer: Option<&str>,
+    ) -> Result<serde_json::Value> {
+        CamoufoxEngine::download(self, url, path, referer).await
     }
 
     async fn shutdown(&self) -> Result<()> {

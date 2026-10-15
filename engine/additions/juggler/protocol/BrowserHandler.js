@@ -27,6 +27,66 @@ export class BrowserHandler {
     this._startCompletePromise = startCompletePromise;
   }
 
+  async ['Browser.download']({url, path, referer}) {
+    // Ghostfox: download THROUGH the browser — same cookie jar, same TLS
+    // fingerprint, same IP as the session (curl from a shell would break
+    // the anti-detect story). Streams the response straight to disk, so
+    // large media never sits in memory.
+    const {NetUtil} = ChromeUtils.importESModule("resource://gre/modules/NetUtil.sys.mjs");
+    const {FileUtils} = ChromeUtils.import("resource://gre/modules/FileUtils.jsm");
+    return await new Promise((resolve, reject) => {
+      let channel = null;
+      try {
+        channel = NetUtil.newChannel({
+          uri: url,
+          loadingPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+          securityFlags: Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
+          contentPolicyType: Ci.nsIContentPolicy.TYPE_OTHER,
+        });
+        channel.setRequestHeader("Accept", "*/*", false);
+        if (referer)
+          channel.setRequestHeader("Referer", referer, false);
+      } catch (e) {
+        reject("channel: " + e);
+        return;
+      }
+      NetUtil.asyncFetch(channel, (inputStream, status) => {
+        try {
+          if (!Components.isSuccessCode(status)) {
+            reject("fetch failed: 0x" + status.toString(16));
+            return;
+          }
+          const http = channel.responseStatus;
+          if (http < 200 || http >= 300) {
+            reject("HTTP " + http);
+            return;
+          }
+          const file = new FileUtils.File(path);
+          try {
+            file.parent.create(Ci.nsIFile.DIRECTORY_TYPE, 0o755);
+          } catch (e) {}
+          const out = FileUtils.openFileOutputStream(
+            file,
+            FileUtils.MODE_WRONLY | FileUtils.MODE_CREATE | FileUtils.MODE_TRUNCATE);
+          NetUtil.asyncCopy(inputStream, out, (result) => {
+            if (!Components.isSuccessCode(result)) {
+              reject("copy failed: 0x" + result.toString(16));
+              return;
+            }
+            resolve({
+              path,
+              size: file.fileSize,
+              contentType: channel.contentType || "",
+              status: http,
+            });
+          });
+        } catch (e) {
+          reject(String(e));
+        }
+      });
+    });
+  }
+
   async ['Browser.setPersonaConfig']({config}) {
     // Ghostfox Android persona channel: store the identity's CAMOU_CONFIG
     // JSON in a pref (env vars cannot reach the GeckoView app). The gen

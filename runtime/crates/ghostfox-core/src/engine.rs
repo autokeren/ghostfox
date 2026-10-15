@@ -630,4 +630,20 @@ pub trait Engine: Send + Sync {
             "attach_target not supported by this engine".into(),
         ))
     }
+
+    /// v0.9.3: Download a URL THROUGH the browser (same cookie jar, TLS
+    /// fingerprint and IP as the session — curl would break the
+    /// anti-detect story). The engine streams the response to `path` on
+    /// the machine running the engine. Returns {path, size, contentType,
+    /// status}. Engines without this ability return an error.
+    async fn download(
+        &self,
+        _url: &str,
+        _path: &str,
+        _referer: Option<&str>,
+    ) -> Result<serde_json::Value> {
+        Err(crate::error::GhostError::PageOp(
+            "download not supported by this engine".into(),
+        ))
+    }
 }
