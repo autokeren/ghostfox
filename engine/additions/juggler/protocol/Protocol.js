@@ -274,6 +274,21 @@ const Browser = {
       },
       returns: {},
     },
+    // Ghostfox page_download: the runtime asks the engine to fetch a URL
+    // through the browser identity and stream it to disk.
+    'download': {
+      params: {
+        url: t.String,
+        path: t.String,
+        referer: t.Optional(t.String),
+      },
+      returns: {
+        path: t.String,
+        size: t.Number,
+        contentType: t.String,
+        status: t.Number,
+      },
+    },
     'createBrowserContext': {
       params: {
         removeOnDetach: t.Optional(t.Boolean),
