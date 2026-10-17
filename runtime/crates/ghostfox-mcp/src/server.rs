@@ -3961,13 +3961,9 @@ impl GhostfoxServer {
             .and_then(|v| v.as_u64())
             .or_else(|| std::fs::metadata(&path).ok().map(|m| m.len()))
             .unwrap_or_default();
-        let _ = self.recorder.record_download(
-            &session_id,
-            page_id.as_deref(),
-            &url,
-            &path,
-            size,
-        );
+        let _ = self
+            .recorder
+            .record_download(&session_id, page_id.as_deref(), &url, &path, size);
         Ok(text_result(
             serde_json::to_string_pretty(&serde_json::json!({
                 "file": path.to_string_lossy(),
