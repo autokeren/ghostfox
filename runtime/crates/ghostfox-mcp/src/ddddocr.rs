@@ -28,6 +28,9 @@ fn models_dir() -> PathBuf {
 }
 
 struct DdddOcr {
+    // Keeps the ort Environment alive for the lifetime of the process
+    // (rc.14 requires it for every Session::builder call).
+    _env: ort::environment::Environment,
     session: std::sync::Mutex<Session>,
     charset: Vec<char>,
 }
@@ -75,7 +78,13 @@ async fn engine() -> Result<&'static DdddOcr> {
         return Ok(e);
     }
     let (model_path, charset_path) = ensure_files().await?;
-    let session = Session::builder()
+    // ort 2.0.0-rc.14: one Environment per process; the session builder
+    // borrows it, so it must outlive every session (stored on DdddOcr).
+    let env = ort::init()
+        .with_name("ghostfox-ddddocr")
+        .build()
+        .context("initializing ort environment")?;
+    let session = Session::builder(&env)
         .context("creating ort session builder")?
         .commit_from_file(&model_path)
         .context("loading ddddocr common.onnx")?;
@@ -85,6 +94,7 @@ async fn engine() -> Result<&'static DdddOcr> {
         .map(|l| l.chars().next().unwrap_or(' '))
         .collect();
     Ok(ENGINE.get_or_init(|| DdddOcr {
+        _env: env,
         session: std::sync::Mutex::new(session),
         charset,
     }))
