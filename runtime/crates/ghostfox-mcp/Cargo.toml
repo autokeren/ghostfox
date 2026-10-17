@@ -37,6 +37,7 @@ base64.workspace = true
 ocrs.workspace = true
 rten.workspace = true
 rten-tensor = "0.26"
+[target.'cfg(not(target_os = "macos"))'.dependencies]
 ort = { version = "=2.0.0-rc.14", features = ["download-binaries", "ndarray"] }
 ndarray = "0.16"
 rten-imageproc.workspace = true
