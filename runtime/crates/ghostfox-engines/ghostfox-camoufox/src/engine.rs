@@ -577,7 +577,15 @@ fn autodetect_engine() -> Option<(PathBuf, &'static str)> {
             p.push("camoufox");
             p
         });
-    for bin in ["ghostfox-bin", "camoufox-bin"] {
+    // The Windows engine zip ships ghostfox.exe — probe .exe too, so
+    // Windows installs don't report "binary not found" next to a working
+    // engine (autodetect must match what the installer lays down).
+    for bin in [
+        "ghostfox-bin",
+        "ghostfox.exe",
+        "camoufox-bin",
+        "camoufox.exe",
+    ] {
         if home.join(bin).exists() {
             return Some((home, bin));
         }

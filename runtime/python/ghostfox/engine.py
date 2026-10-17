@@ -21,7 +21,16 @@ REPO = "autokeren/ghostfox"
 
 
 def _latest_release() -> dict:
-    url = f"https://api.github.com/repos/{REPO}//releases/latest"
+    url = f"https://api.github.com/repos/{REPO}/releases/latest"
+    req = urllib.request.Request(url, headers={"User-Agent": "ghostfox-py"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.load(r)
+
+
+def _releases() -> list[dict]:
+    """Release list (newest first) — the runtime asset may live on an older
+    tag than the latest engine release."""
+    url = f"https://api.github.com/repos/{REPO}/releases?per_page=20"
     req = urllib.request.Request(url, headers={"User-Agent": "ghostfox-py"})
     with urllib.request.urlopen(req, timeout=30) as r:
         return json.load(r)
@@ -72,10 +81,15 @@ def _linux_assets() -> tuple[str, str]:
     )
 
 
+def _engine_binary_name() -> str:
+    """The engine launcher binary name for this platform."""
+    return "ghostfox.exe" if platform.system() == "Windows" else "ghostfox-bin"
+
+
 def install_engine(dest: Path | None = None, quiet: bool = False) -> Path:
     """Download and unpack the latest prebuilt engine. Returns its path."""
     dest = dest or engine_home()
-    if (dest / "ghostfox-bin").exists():
+    if (dest / _engine_binary_name()).exists():
         if not quiet:
             print(f"engine already installed at {dest}", file=sys.stderr)
         return dest
@@ -120,15 +134,15 @@ def install_engine(dest: Path | None = None, quiet: bool = False) -> Path:
 
 def install_runtime(dest: Path | None = None, quiet: bool = False) -> Path:
     """Download the prebuilt ``ghostfox-mcp`` runtime binary (Linux x86_64/arm64, Windows x64, macOS)."""
-    dest = dest or engine_home().parent / "mcp" / "ghostfox-mcp"
-    if dest.exists():
-        return dest
     if platform.system() == "Windows":
         _, runtime_asset = _win_assets()
     elif platform.system() == "Darwin":
         _, runtime_asset = _macos_assets()
     else:
         _, runtime_asset = _linux_assets()
+    dest = dest or engine_home().parent / "mcp" / runtime_asset
+    if dest.exists():
+        return dest
     url = None
     for rel in _releases():
         hit = next(
@@ -149,6 +163,15 @@ def install_runtime(dest: Path | None = None, quiet: bool = False) -> Path:
     return dest
 
 
+def install_all(engine_dest: Path | None = None, quiet: bool = False) -> tuple[Path, Path]:
+    """One command: install the engine AND the runtime."""
+    engine = install_engine(engine_dest, quiet=quiet)
+    runtime = install_runtime(quiet=quiet)
+    if not quiet:
+        print(f"ready: engine={engine} runtime={runtime}", file=sys.stderr)
+    return engine, runtime
+
+
 def default_runtime() -> Path:
     """Find a runtime: $GHOSTFOX_MCP, the installed copy, or one on PATH."""
     if v := os.environ.get("GHOSTFOX_MCP"):
@@ -156,10 +179,13 @@ def default_runtime() -> Path:
         if p.exists():
             return p
     installed = engine_home().parent / "mcp" / "ghostfox-mcp"
+    if not installed.exists() and platform.system() == "Windows":
+        installed = engine_home().parent / "mcp" / "ghostfox-mcp.exe"
     if installed.exists():
         return installed
-    if shutil.which("ghostfox-mcp"):
-        return Path(shutil.which("ghostfox-mcp"))
+    for name in ("ghostfox-mcp", "ghostfox-mcp.exe"):
+        if shutil.which(name):
+            return Path(shutil.which(name))
     raise RuntimeError(
         "runtime not found: set GHOSTFOX_MCP, or call ghostfox.install_runtime()"
     )

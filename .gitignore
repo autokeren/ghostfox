@@ -10,3 +10,5 @@ engine/private/
 # rust
 runtime/target/
 **/target/
+__pycache__/
+*.pyc
