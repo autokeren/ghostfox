@@ -53,6 +53,10 @@ jobs:
 
       - name: Build on macOS (native cargo)
         if: matrix.container == 'macos'
+        env:
+          # ort 2.0.0-rc.14 ships object files built for macOS 13.4 —
+          # the default 11.0 deployment target can't link them.
+          MACOSX_DEPLOYMENT_TARGET: "13.4"
         run: |
           rustup default stable
           cd runtime
