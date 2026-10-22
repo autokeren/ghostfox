@@ -237,16 +237,21 @@ impl CamoufoxEngine {
                     // the runtime is SIGKILLed or crashes. PDEATHSIG fires
                     // on parent(-thread) death; the getppid check closes
                     // the race where the parent died before prctl ran.
-                    if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) < 0 {
-                        return Err(std::io::Error::last_os_error());
-                    }
-                    if libc::getppid() == 1 {
-                        // Parent already gone — the death signal will
-                        // never arrive. Exit now instead of lingering.
-                        return Err(std::io::Error::new(
-                            std::io::ErrorKind::BrokenPipe,
-                            "runtime exited before engine start",
-                        ));
+                    // Linux only — macOS has no prctl (the process-group
+                    // kill + reaper cover it there).
+                    #[cfg(target_os = "linux")]
+                    {
+                        if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) < 0 {
+                            return Err(std::io::Error::last_os_error());
+                        }
+                        if libc::getppid() == 1 {
+                            // Parent already gone — the death signal will
+                            // never arrive. Exit now instead of lingering.
+                            return Err(std::io::Error::new(
+                                std::io::ErrorKind::BrokenPipe,
+                                "runtime exited before engine start",
+                            ));
+                        }
                     }
                     // dup the pipe ends onto the juggler fds...
                     if libc::dup2(cmd_rx_fd, 3) < 0 {
@@ -3665,7 +3670,9 @@ pub async fn self_test() -> String {
         unsafe {
             cmd.pre_exec(move || {
                 libc::setsid();
-                // No lingering engines in self-test spawns either.
+                // No lingering engines in self-test spawns either
+                // (Linux only — macOS has no prctl).
+                #[cfg(target_os = "linux")]
                 let _ = libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL);
                 if libc::dup2(cmd_rx_fd, 3) < 0 {
                     return Err(std::io::Error::last_os_error());
