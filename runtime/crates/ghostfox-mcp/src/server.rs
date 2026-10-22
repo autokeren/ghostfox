@@ -3915,15 +3915,10 @@ impl GhostfoxServer {
             .await
             .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
         let referer = if let Some(pid) = page_id.as_deref() {
-            session
-                .page(pid)
-                .await
-                .ok()
-                .and_then(|p| {
-                    let rt = tokio::runtime::Handle::try_current();
-                    rt.ok().map(|h| h.block_on(p.url()).unwrap_or_default())
-                })
-                .filter(|u| !u.is_empty())
+            match session.page(pid).await {
+                Ok(page) => page.url().await.ok().filter(|u| !u.is_empty()),
+                Err(_) => None,
+            }
         } else {
             None
         };

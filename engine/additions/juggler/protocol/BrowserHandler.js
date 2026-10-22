@@ -32,8 +32,12 @@ export class BrowserHandler {
     // fingerprint, same IP as the session (curl from a shell would break
     // the anti-detect story). Streams the response straight to disk, so
     // large media never sits in memory.
+    // Ghostfox: download THROUGH the browser — same cookie jar, same TLS
+    // fingerprint, same IP as the session (curl from a shell would break
+    // the anti-detect story). Streams the response straight to disk, so
+    // large media never sits in memory.
     const {NetUtil} = ChromeUtils.importESModule("resource://gre/modules/NetUtil.sys.mjs");
-    const {FileUtils} = ChromeUtils.import("resource://gre/modules/FileUtils.jsm");
+    const {FileUtils} = ChromeUtils.importESModule("resource://gre/modules/FileUtils.sys.mjs");
     return await new Promise((resolve, reject) => {
       let channel = null;
       try {
@@ -43,22 +47,23 @@ export class BrowserHandler {
           securityFlags: Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
           contentPolicyType: Ci.nsIContentPolicy.TYPE_OTHER,
         });
-        channel.setRequestHeader("Accept", "*/*", false);
+        const http = channel.QueryInterface(Components.interfaces.nsIHttpChannel);
+        http.setRequestHeader("Accept", "*/*", false);
         if (referer)
-          channel.setRequestHeader("Referer", referer, false);
+          http.setRequestHeader("Referer", referer, false);
       } catch (e) {
-        reject("channel: " + e);
+        reject(new Error("channel: " + e));
         return;
       }
       NetUtil.asyncFetch(channel, (inputStream, status) => {
         try {
           if (!Components.isSuccessCode(status)) {
-            reject("fetch failed: 0x" + status.toString(16));
+            reject(new Error("fetch failed: 0x" + status.toString(16)));
             return;
           }
           const http = channel.responseStatus;
           if (http < 200 || http >= 300) {
-            reject("HTTP " + http);
+            reject(new Error("HTTP " + http));
             return;
           }
           const file = new FileUtils.File(path);
@@ -70,7 +75,7 @@ export class BrowserHandler {
             FileUtils.MODE_WRONLY | FileUtils.MODE_CREATE | FileUtils.MODE_TRUNCATE);
           NetUtil.asyncCopy(inputStream, out, (result) => {
             if (!Components.isSuccessCode(result)) {
-              reject("copy failed: 0x" + result.toString(16));
+              reject(new Error("copy failed: 0x" + result.toString(16)));
               return;
             }
             resolve({
@@ -81,7 +86,7 @@ export class BrowserHandler {
             });
           });
         } catch (e) {
-          reject(String(e));
+          reject(new Error(String(e)));
         }
       });
     });
