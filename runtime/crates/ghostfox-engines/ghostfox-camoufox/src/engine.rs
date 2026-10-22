@@ -3627,10 +3627,16 @@ pub async fn self_test() -> String {
             use windows_sys::Win32::Foundation::{SetHandleInformation, HANDLE_FLAG_INHERIT};
             let read_handle = cmd_rx.as_raw_handle();
             let write_handle = resp_tx.as_raw_handle();
-            let _ = SetHandleInformation(read_handle, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
-            let _ = SetHandleInformation(write_handle, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
-            cmd.env("GHOSTFOX_PIPE_READ", read_handle.to_string());
-            cmd.env("GHOSTFOX_PIPE_WRITE", write_handle.to_string());
+            if SetHandleInformation(read_handle, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT) == 0
+                || SetHandleInformation(write_handle, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT) == 0
+            {
+                line("[2] FAIL: pipe handles cannot be inherited");
+                return out;
+            }
+            cmd.env("PW_PIPE_READ", format!("{}", read_handle as isize));
+            cmd.env("PW_PIPE_WRITE", format!("{}", write_handle as isize));
+            std::mem::forget(cmd_rx);
+            std::mem::forget(resp_tx);
         }
     }
 
