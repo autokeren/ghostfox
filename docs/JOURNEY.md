@@ -533,3 +533,39 @@ upfront (internal).
 - God-tools that "do anything" — small primitives on solid natives
 - De-prioritize anti-detect (it's the moat — two legs: reliability +
   survival)
+
+## v0.9.2 → v0.9.3: Windows install path + page_download + self-test (Oct 2026)
+
+**Windows report round** — the PyPI package broke out-of-the-box installs:
+double-slash releases URL (404), `_releases()` referenced but never defined
+(install_runtime NameError), `install_runtime`/`install_all` not exported,
+`__version__` stuck at 0.8.3. All fixed + published as 0.9.3 (PyPI + npm),
+plus a PowerShell one-command installer (`install.ps1`) and a Rust probe
+that accepts `ghostfox.exe`/`camoufox.exe` (the Windows engine zip ships
+.exe — autodetect reported "binary not found" next to a working install).
+
+**page_download (Harvest)** — media through the browser identity: the
+engine fetches with the session's cookie jar/TLS/referer and streams to
+`<session>/downloads/`. Three layered bugs surfaced in E2E: a runtime
+deadlock (`block_on` inside the async tool handler), `ChromeUtils.import`
+unavailable in the ES-module BrowserHandler, and the channel needing a
+`QueryInterface(nsIHttpChannel)` before `setRequestHeader`. E2E verified:
+200, 758KB jpeg on disk.
+
+**`--self-test`** — one-command engine diagnostics (detection → spawn →
+juggler handshake → `Browser.enable` + stderr tail). Built for the
+Windows `Browser.enable` timeout report; verified green on Linux.
+
+**Android dial-out (gateway)** — the app's Connect button dials OUT to
+`GHOSTFOX_ANDROID_GATEWAY`; the runtime greets with a shared token and
+pairs with the queued phone. No Termux, no adb, dynamic wifi IPs
+irrelevant. Juggler-on-GeckoView core startup remains the tracked open
+item (the telemetry log reader is in the app).
+
+**TikTok showcase** — 60s 9:16 promo: local Remotion composition
+(`absurd-engine/src/graphics/GhostfoxTiktok.tsx`) mixing GitHub scroll
+pans + count-up stat cards + ElevenLabs v4 VO. Lessons: `backgroundClip:
+'text'` renders transparent in headless Chrome; Sequence-local frames must
+never be re-subtracted by props; giant single images crash the renderer —
+segment them; VO sequences must last the real wav length or the audio
+clips mid-word. Gemini QA: PASS.

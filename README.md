@@ -161,6 +161,8 @@ npm install -g ghostfox        # or: npx ghostfox install
 docker run -i --rm ghcr.io/autokeren/ghostfox:v0.7.2
 # or one-line install of the binary stack:
 curl -fsSL https://raw.githubusercontent.com/autokeren/ghostfox/main/install.sh | bash
+# Windows (PowerShell):
+powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/autokeren/ghostfox/main/install.ps1 | iex"
 ```
 
 Also listed on the official
@@ -218,6 +220,7 @@ The server also publishes **instructions** (a decision tree agents read before c
 | **Debug** | `page_console` · `page_errors` · `page_network_start` · `page_network_read` (per-request DNS/TLS/TTFB timing) · `page_network_body` · `page_frame_stats` (M3.5: jank detector — frame-cadence stats) · `page_timing_report` (M3.5: nav-timing + paint) · `page_ws_frames` (M3: the WebSocket stream — sockets + frames both directions) · `page_ws_send` (M3: WS injection — client→server message) · `page_ws_block` (M3: WS blocking — drop frames both directions) · `page_ui_audit` (M5: visual QA of the rendered UI) |
 | **Vision** | `page_vision` · `page_ocr` · `page_match_image` · `page_pixels` (compositor pixels — region/semantic/ref, no toDataURL) · `page_contrast` |
 | **Inspect** | `page_eval` · `page_open` · `page_comment` |
+| **Harvest** | `page_download` (media through the browser identity — cookies, TLS fingerprint, referer; streams to `<session>/downloads/`) |
 | **Identity** | `identity_generate` · `identity_audit` · `identity_morph` (stop→relaunch→swap identity without losing the session) |
 | **Body sense** | `page_proprio` (M4: honest body state — focus, selection/caret, scrollers) · `page_cookie_events` (M4: cookie/session heartbeat — auth-cookie deletion = earliest session-death signal) · `session_vitals` (M4.5: per-process CPU/memory) |
 | **Recipes** | `recipe_record` · `recipe_save` · `recipe_list` · `recipe_replay` (deterministic replay, semantic anchors, strict/lenient escalation) |
@@ -231,6 +234,11 @@ humans want to watch the agent work.
 **Every run records evidence.** Each session writes an append-only event log
 (`events.jsonl`), full page snapshots and the identity it used under
 `~/.ghostfox/recordings/` — fetch it any time with `session_evidence`.
+
+**Engine diagnostics.** `ghostfox-mcp --self-test` walks the engine
+pipeline (detection → spawn → juggler handshake → `Browser.enable`) and
+prints a step-by-step report plus the engine's stderr tail on failure —
+paste the output into an issue when a platform misbehaves.
 
 ## E2E without emulators: Flutter web + any web app
 
