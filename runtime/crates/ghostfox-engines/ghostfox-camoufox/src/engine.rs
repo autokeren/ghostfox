@@ -3519,3 +3519,167 @@ impl Drop for CamoufoxEngine {
         self.conn.kill_now();
     }
 }
+
+// ---------------------------------------------------------------------------
+// --self-test: walk the desktop engine pipeline step-by-step and report
+// exactly where it breaks. For Windows users (no gdb/adb) the report is
+// the whole diagnostic: engine detection → spawn → juggler handshake →
+// Browser.enable, plus the engine's stderr tail on failure.
+// ---------------------------------------------------------------------------
+pub async fn self_test() -> String {
+    let mut out = String::new();
+    let mut line = |s: &str| {
+        out.push_str(s);
+        out.push('\n');
+    };
+    line(&format!(
+        "ghostfox-mcp self-test — OS: {} arch: {}",
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    ));
+
+    // 1. engine detection
+    let (home, bin_name) = match autodetect_engine() {
+        Some(v) => {
+            line(&format!(
+                "[1] engine detected: {} (binary {})",
+                v.0.display(),
+                v.1
+            ));
+            v
+        }
+        None => {
+            line("[1] FAIL: no ghostfox-bin/camoufox-bin/.exe under GHOSTFOX_HOME");
+            line("    (set GHOSTFOX_HOME to the extracted engine zip dir)");
+            return out;
+        }
+    };
+
+    // 2. spawn the engine with the juggler pipes (fd 3/4), stderr to a file
+    let base = std::env::temp_dir().join(format!("ghostfox-selftest-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&base);
+    let profile = base.join("profile");
+    let _ = std::fs::create_dir_all(&profile);
+    let stderr_path = base.join("engine-stderr.log");
+
+    let mut cmd = std::process::Command::new(home.join(bin_name));
+    cmd.arg("--juggler-pipe")
+        .arg("-silent")
+        .arg("-profile")
+        .arg(&profile)
+        .arg("-no-remote")
+        .current_dir(&home);
+    let stderr_file = std::fs::File::create(&stderr_path).ok();
+    if let Some(f) = stderr_file {
+        cmd.stderr(std::process::Stdio::from(f));
+    } else {
+        cmd.stderr(std::process::Stdio::null());
+    }
+
+    let (cmd_rx, cmd_tx) = match os_pipe::pipe() {
+        Ok(v) => v,
+        Err(e) => {
+            line(&format!("[2] FAIL: os_pipe: {e}"));
+            return out;
+        }
+    };
+    let (resp_rx, resp_tx) = match os_pipe::pipe() {
+        Ok(v) => v,
+        Err(e) => {
+            line(&format!("[2] FAIL: os_pipe: {e}"));
+            return out;
+        }
+    };
+
+    #[cfg(unix)]
+    {
+        use std::os::fd::AsRawFd;
+        use std::os::unix::process::CommandExt;
+        let cmd_rx_fd = cmd_rx.as_raw_fd();
+        let resp_tx_fd = resp_tx.as_raw_fd();
+        std::mem::forget(cmd_rx);
+        std::mem::forget(resp_tx);
+        unsafe {
+            cmd.pre_exec(move || {
+                libc::setsid();
+                if libc::dup2(cmd_rx_fd, 3) < 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                if libc::dup2(resp_tx_fd, 4) < 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                let flags = libc::fcntl(3, libc::F_GETFD);
+                if flags >= 0 {
+                    libc::fcntl(3, libc::F_SETFD, flags & !libc::FD_CLOEXEC);
+                }
+                let flags4 = libc::fcntl(4, libc::F_GETFD);
+                if flags4 >= 0 {
+                    libc::fcntl(4, libc::F_SETFD, flags4 & !libc::FD_CLOEXEC);
+                }
+                Ok(())
+            });
+        }
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsRawHandle;
+        unsafe {
+            use windows_sys::Win32::Foundation::{SetHandleInformation, HANDLE_FLAG_INHERIT};
+            let read_handle = cmd_rx.as_raw_handle();
+            let write_handle = resp_tx.as_raw_handle();
+            let _ = SetHandleInformation(read_handle, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
+            let _ = SetHandleInformation(write_handle, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
+            cmd.env("GHOSTFOX_PIPE_READ", read_handle.to_string());
+            cmd.env("GHOSTFOX_PIPE_WRITE", write_handle.to_string());
+        }
+    }
+
+    let child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            line(&format!("[2] FAIL: spawn: {e}"));
+            return out;
+        }
+    };
+    let pid = child.id();
+    line(&format!("[2] engine spawned (pid {pid})"));
+
+    // 3. wrap the juggler connection
+    let conn = match JugglerConnection::spawn_std(child, pid, cmd_tx, resp_rx) {
+        Ok(c) => c,
+        Err(e) => {
+            line(&format!("[3] FAIL: juggler connection: {e}"));
+            return out;
+        }
+    };
+    line("[3] juggler connection ready");
+
+    // 4. Browser.enable — the step that hangs on broken pipe/handle setups
+    match conn
+        .request_long(
+            "Browser.enable",
+            serde_json::json!({"attachToDefaultContext": true, "userPrefs": []}),
+            std::time::Duration::from_secs(60),
+        )
+        .await
+    {
+        Ok(v) => line(&format!("[4] Browser.enable OK: {v}")),
+        Err(e) => {
+            line(&format!("[4] FAIL: Browser.enable: {e}"));
+            let tail = std::fs::read_to_string(&stderr_path).unwrap_or_default();
+            let tail: String = tail
+                .chars()
+                .rev()
+                .take(3000)
+                .collect::<String>()
+                .chars()
+                .rev()
+                .collect();
+            line("--- engine stderr (tail) ---");
+            line(&tail);
+        }
+    }
+
+    let _ = conn.kill().await;
+    out
+}

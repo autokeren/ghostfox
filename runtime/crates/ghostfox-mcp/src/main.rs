@@ -95,6 +95,14 @@ async fn main() -> anyhow::Result<()> {
         .with_writer(std::io::stderr)
         .init();
 
+    // --self-test: walk the engine pipeline and print a step-by-step
+    // report (Windows diagnostics without a debugger). Exits after.
+    if std::env::args().any(|a| a == "--self-test") {
+        let report = ghostfox_camoufox::engine::self_test().await;
+        println!("{report}");
+        return Ok(());
+    }
+
     if let Ok(port) = std::env::var("GHOSTFOX_HTTP_PORT") {
         serve_http(&port).await?;
         return Ok(());
