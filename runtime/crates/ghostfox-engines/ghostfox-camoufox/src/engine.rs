@@ -233,6 +233,21 @@ impl CamoufoxEngine {
                 cmd.pre_exec(move || {
                     // Own process group: contentprocs must die with the parent.
                     libc::setsid();
+                    // No lingering engines: die with the runtime, even when
+                    // the runtime is SIGKILLed or crashes. PDEATHSIG fires
+                    // on parent(-thread) death; the getppid check closes
+                    // the race where the parent died before prctl ran.
+                    if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) < 0 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    if libc::getppid() == 1 {
+                        // Parent already gone — the death signal will
+                        // never arrive. Exit now instead of lingering.
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::BrokenPipe,
+                            "runtime exited before engine start",
+                        ));
+                    }
                     // dup the pipe ends onto the juggler fds...
                     if libc::dup2(cmd_rx_fd, 3) < 0 {
                         return Err(std::io::Error::last_os_error());
@@ -327,7 +342,16 @@ impl CamoufoxEngine {
             .spawn()
             .map_err(|e| GhostError::Protocol(format!("camoufox spawn: {e}")))?;
         let pid = child.id();
+        // Windows: put the engine in a kill-on-close Job Object BEFORE
+        // handing the child to the connection. If the runtime dies for
+        // any reason (SIGKILL, crash, terminal closed), the OS closes
+        // our handle and the WHOLE engine tree — browser and every
+        // content process — dies with it. No more lingering firefox.
+        #[cfg(windows)]
+        let job = unsafe { assign_kill_on_close_job(&child) };
         let conn = JugglerConnection::spawn_std(child, pid, cmd_tx, resp_rx)?;
+        #[cfg(windows)]
+        conn.set_job(job);
 
         // Mobile personas: enable the engine's touch override for the default
         // context — (pointer: coarse) media queries + touch event dispatch,
@@ -3520,6 +3544,45 @@ impl Drop for CamoufoxEngine {
     }
 }
 
+// Windows: create a Job Object that kills every process in it when the
+// last handle closes, then park the freshly-spawned engine inside. The
+// runtime holds the only handle; its death (however it happens) takes
+// the whole engine tree down. Returns 0 when the Win32 call path fails
+// — graceful shutdown still works, we just lose the orphan guarantee.
+#[cfg(windows)]
+unsafe fn assign_kill_on_close_job(child: &std::process::Child) -> usize {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows_sys::Win32::System::JobObjects::{
+        AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+        SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    };
+
+    let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+    if job.is_null() {
+        return 0;
+    }
+    let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+    info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    let ok = SetInformationJobObject(
+        job,
+        JobObjectExtendedLimitInformation,
+        &info as *const _ as *const core::ffi::c_void,
+        std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+    );
+    if ok == 0 {
+        CloseHandle(job);
+        return 0;
+    }
+    let proc = child.as_raw_handle();
+    if proc.is_null() || AssignProcessToJobObject(job, proc as HANDLE) == 0 {
+        CloseHandle(job);
+        return 0;
+    }
+    job as usize
+}
+
 // ---------------------------------------------------------------------------
 // --self-test: walk the desktop engine pipeline step-by-step and report
 // exactly where it breaks. For Windows users (no gdb/adb) the report is
@@ -3602,6 +3665,8 @@ pub async fn self_test() -> String {
         unsafe {
             cmd.pre_exec(move || {
                 libc::setsid();
+                // No lingering engines in self-test spawns either.
+                let _ = libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL);
                 if libc::dup2(cmd_rx_fd, 3) < 0 {
                     return Err(std::io::Error::last_os_error());
                 }
