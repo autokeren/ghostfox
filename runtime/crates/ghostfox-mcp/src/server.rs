@@ -275,6 +275,18 @@ struct NetBodyParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+struct NetDumpParams {
+    session_id: String,
+    page_id: String,
+    /// Optional URL substring filter (e.g., "graphql"). Only matching requests get bodies fetched.
+    #[serde(default)]
+    filter: Option<String>,
+    /// Max number of bodies to read (default 5). Each body is a protocol round-trip.
+    #[serde(default)]
+    max_bodies: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct MatchImageParams {
     session_id: String,
     page_id: String,
@@ -716,6 +728,7 @@ const CORE_TOOLS: &[&str] = &[
     "page_network_start",
     "page_network_read",
     "page_network_body",
+    "page_network_dump",
     "captcha_solve",
     "page_eval",
     "page_dismiss_modal",
@@ -2085,6 +2098,107 @@ impl GhostfoxServer {
             .await
             .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
         Ok(text_result(body))
+    }
+
+    #[tool(
+        description = "DUMP captured network responses WITH BODIES in one call. Filters by URL substring, reads bodies internally (no separate page_network_body calls needed). Returns [{url, requestId, status, body}]. PERFECT for capturing X GraphQL API responses — the structured JSON data layer."
+    )]
+    async fn page_network_dump(
+        &self,
+        Parameters(NetDumpParams {
+            session_id,
+            page_id,
+            filter,
+            max_bodies,
+        }): Parameters<NetDumpParams>,
+    ) -> Result<CallToolResult, rmcp::model::ErrorData> {
+        let session = self
+            .session(&session_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+        let page = session
+            .page(&page_id)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::invalid_params(e.to_string(), None))?;
+
+        // Read all captured requests (clear the buffer)
+        let entries = page
+            .net_read(true)
+            .await
+            .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
+
+        // Filter by URL substring
+        let filter_str = filter.unwrap_or_default();
+        let matching: Vec<&serde_json::Value> = entries
+            .iter()
+            .filter(|e| {
+                if filter_str.is_empty() {
+                    true
+                } else {
+                    let url = e.get("url").and_then(|v| v.as_str()).unwrap_or("");
+                    url.contains(filter_str.as_str())
+                }
+            })
+            .collect();
+
+        // Read bodies for matching entries (up to max_bodies)
+        let max = max_bodies.unwrap_or(5);
+        let mut results: Vec<serde_json::Value> = Vec::new();
+        let mut errors: Vec<String> = Vec::new();
+
+        for entry in matching.iter().take(max) {
+            let request_id = entry
+                .get("requestId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let url = entry
+                .get("url")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            if request_id.is_empty() {
+                continue;
+            }
+
+            // Per-body timeout: X.com GraphQL responses are large and body reads can
+            // hang indefinitely (streaming / protocol stalls). 10s per body, then skip.
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(10),
+                page.net_get_body(request_id),
+            )
+            .await
+            {
+                Ok(Ok(body)) => {
+                    results.push(serde_json::json!({
+                        "url": url,
+                        "requestId": request_id,
+                        "status": entry.get("status").cloned().unwrap_or(serde_json::json!(null)),
+                        "done": entry.get("done").cloned().unwrap_or(serde_json::json!(null)),
+                        "body": body,
+                    }));
+                }
+                Ok(Err(e)) => {
+                    errors.push(format!("{}: {}", url, e));
+                }
+                Err(_) => {
+                    errors.push(format!("{}: body read timed out after 10s (large/streaming response)", url));
+                }
+            }
+        }
+
+        let mut out = serde_json::json!({
+            "responses": results,
+            "total_captured": entries.len(),
+            "total_matching": matching.len(),
+        });
+        if !errors.is_empty() {
+            out["body_errors"] = serde_json::json!(errors);
+        }
+
+        Ok(text_result(
+            serde_json::to_string_pretty(&out).unwrap_or_default(),
+        ))
     }
 
     #[tool(
