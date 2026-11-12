@@ -133,18 +133,36 @@ impl CamoufoxEngine {
         // it per-launch — for app E2E, not for general stealth.
         if std::env::var("GHOSTFOX_WEBGL").as_deref() == Ok("1") {
             let user_js = profile.join("user.js");
-            if !user_js.exists() {
-                std::fs::write(
-                    &user_js,
-                    concat!(
-                        "user_pref(\"webgl.disabled\", false);\n",
-                        "user_pref(\"webgl.force-enabled\", true);\n",
-                        "user_pref(\"webgl.enable-webgl2\", true);\n",
-                        "user_pref(\"webgl.allow-windows-native-gl\", true);\n",
-                        "user_pref(\"webgl.msaa-force\", false);\n",
-                        "user_pref(\"privacy.resistFingerprinting\", false);\n",
-                    ),
-                )?;
+            // v0.9.4: ALWAYS write the hardening prefs — a pre-existing
+            // user.js (e.g. battery prefs from an older session) must not
+            // silently leave privacy.resistFingerprinting at its default
+            // (true), which spoofs navigator.buildID to the 2018 constant
+            // and randomizes canvas/timing — an instant challenge flag.
+            // Merge-preserving: append our prefs; duplicate user_pref lines
+            // are idempotent in Gecko (last one wins).
+            let hardening_prefs = concat!(
+                "user_pref(\"webgl.disabled\", false);\n",
+                "user_pref(\"webgl.force-enabled\", true);\n",
+                "user_pref(\"webgl.enable-webgl2\", true);\n",
+                "user_pref(\"webgl.allow-windows-native-gl\", true);\n",
+                "user_pref(\"webgl.msaa-force\", false);\n",
+                "user_pref(\"privacy.resistFingerprinting\", false);\n",
+            );
+            let existing = std::fs::read_to_string(&user_js).unwrap_or_default();
+            let needed: Vec<&str> = hardening_prefs
+                .lines()
+                .filter(|l| !existing.contains(l))
+                .collect();
+            if !needed.is_empty() {
+                let mut out = existing;
+                if !out.is_empty() && !out.ends_with('\n') {
+                    out.push('\n');
+                }
+                for l in needed {
+                    out.push_str(l);
+                    out.push('\n');
+                }
+                std::fs::write(&user_js, out)?;
             }
         }
 
@@ -318,6 +336,21 @@ impl CamoufoxEngine {
             // engines on a NoMachine host.
             cmd.env_remove("DISPLAY");
             cmd.env_remove("WAYLAND_DISPLAY");
+        } else {
+            // HEADED (headful) WINDOW COHERENCE — anti-detection fix.
+            // On a real desktop the OS window manager sizes the browser
+            // window normally; on bare Xvfb/KWin the window can spawn
+            // degenerate (observed: 10x10) — window.outerWidth/outerHeight
+            // then report impossible geometry vs the claimed screen
+            // persona, an instant bot tell for challenge JS (Cloudflare
+            // managed challenges check it). Size the window from the
+            // identity's screen, leaving room for browser chrome so
+            // outerHeight < screen.height always holds.
+            let screen = &identity.screen;
+            let win_w = screen.width.min(1600);
+            let win_h = screen.height.saturating_sub(200).clamp(600, 1000);
+            cmd.arg("--width").arg(win_w.to_string());
+            cmd.arg("--height").arg(win_h.to_string());
         }
         if let Some(proxy) = &opts.proxy {
             // Firefox-style: each proxy type is its own flag on the command

@@ -27,6 +27,20 @@ pub fn identity_to_config(identity: &Identity) -> BTreeMap<String, serde_json::V
         firefox_ua(identity)
     };
     set(&mut cfg, "navigator.userAgent", ua.clone());
+    // v0.9.4 BUILD-ID COHERENCE — anti-detection fix. The engine C++
+    // layer defaults navigator.buildID to the legacy RFP constant
+    // "20181001000000" (Firefox 63, Oct 2018), which paired with a
+    // Firefox-150+ UA is an impossible combination that challenge JS
+    // (Cloudflare Turnstile) trivially flags. A real Firefox buildID is
+    // a plausible YYYYMMDDHHMMSS stamp near the UA version's release
+    // year — synthesize one from the engine major so buildID and
+    // UA/oscPU tell the same story.
+    {
+        let ff_ver = firefox_major(identity);
+        // Rough release-centre heuristic for the FF major → buildID year.
+        let year = 2024 + (ff_ver.saturating_sub(115) / 13);
+        set(&mut cfg, "navigator.buildID", format!("{year}0615120000"));
+    }
     set(&mut cfg, "navigator.appVersion", app_version(&ua));
     set(
         &mut cfg,

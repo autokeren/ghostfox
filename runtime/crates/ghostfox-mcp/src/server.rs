@@ -940,7 +940,65 @@ impl GhostfoxServer {
             webrtc: None,
             chrome_mode,
         };
-        let identity = ghostfox_fingerprint::generate(&gen_opts);
+
+        // Persona continuity: a persistent profile keeps its cookies between
+        // sessions, so it must also keep its FINGERPRINT. Reusing the
+        // profile's saved identity.toml is the anti-detection feature — a
+        // returning cookie behind a brand-new device is the classic bot
+        // signal. Only generate a fresh persona when the caller explicitly
+        // requests one (platform/chrome_mode overrides = intentional morph)
+        // or when the profile has no identity yet.
+        let explicit_persona = platform.is_some() || chrome_mode.is_some();
+        let profile_identity_path = profile_dir.as_ref().map(|dir| {
+            std::path::PathBuf::from(dir).join("identity.toml")
+        });
+        let identity = if !explicit_persona {
+            match &profile_identity_path {
+                Some(path) if path.exists() => {
+                    match ghostfox_fingerprint::Identity::load_toml(path) {
+                        Ok(id) => id,
+                        // Corrupted/legacy file: fall through to generate.
+                        Err(_) => ghostfox_fingerprint::generate(&gen_opts),
+                    }
+                }
+                _ => ghostfox_fingerprint::generate(&gen_opts),
+            }
+        } else {
+            ghostfox_fingerprint::generate(&gen_opts)
+        };
+
+        // v0.9.4 DISPLAY COHERENCE — anti-detection fix for headful X11.
+        // A spoofed screen that contradicts the REAL X display is a hard
+        // bot tell: window.outerWidth/outerHeight and the actual rendering
+        // scale come from the OS window manager, so a persona claiming
+        // dpr=2.0 or screen 1512x948 on a 1920x1080@1 X display produces
+        // impossible geometry and pixel-analysis mismatches that challenge
+        // JS (Cloudflare managed challenges) trivially detects. For headful
+        // desktop launches we pin the identity's screen to the REAL X
+        // display geometry (probed via xrandr/xdpyinfo) with dpr=1 — the
+        // rest of the persona (UA, platform, fonts, geo) stays intact.
+        let mut identity = identity;
+        if headful.unwrap_or(false) {
+            if let Some((w, h)) = probe_x_display_size() {
+                // Only clamp when the persona's screen is materially
+                // different from reality — a 1920x1080 persona on a
+                // 1920x1080 display is already coherent.
+                let sw = identity.screen.width;
+                let sh = identity.screen.height;
+                if (sw as i32 - w as i32).abs() > 8
+                    || (sh as i32 - h as i32).abs() > 8
+                    || identity.screen.dpr != 1.0
+                {
+                    identity.screen.width = w;
+                    identity.screen.height = h;
+                    identity.screen.dpr = 1.0;
+                    tracing::info!(
+                        "display coherence: screen pinned to real X display {}x{}@1 (persona had {}x{}@{})",
+                        w, h, sw, sh, identity.screen.dpr
+                    );
+                }
+            }
+        }
 
         let launch = ghostfox_core::engine::LaunchOptions {
             profile_dir,
@@ -951,21 +1009,17 @@ impl GhostfoxServer {
             ..Default::default()
         };
 
-        // Camoufox is the primary engine: patched-Firefox spoofing at the
-        // C++ level. Identity is injected via CAMOU_CONFIG env at launch,
-        // so generate-then-launch isn't a race — launch reads the identity
-        // it finds in the (optional) profile dir or generates its own.
-        //
-        // Write identity.toml only when it doesn't exist yet: overwriting
-        // it on every session_create would re-randomize the fingerprint of
-        // a persistent profile, leaving cookies from device A behind a
-        // fingerprint from device B — an incoherent identity.
+        // Persist the persona that this launch actually uses. First launch
+        // of a fresh profile: write it. Explicit morph (platform/chrome_mode):
+        // the new persona replaces the old one — cookies carry over, and the
+        // fingerprint switch is the caller's intent. Implicit launches never
+        // rewrite the file (load path above guarantees they match anyway).
         if let Some(dir) = &launch.profile_dir {
             let dir = std::path::PathBuf::from(dir);
             std::fs::create_dir_all(&dir)
                 .map_err(|e| rmcp::model::ErrorData::internal_error(e.to_string(), None))?;
             let identity_file = dir.join("identity.toml");
-            if !identity_file.exists() {
+            if !identity_file.exists() || explicit_persona {
                 let _ = identity
                     .to_toml()
                     .map(|t| std::fs::write(&identity_file, t));
@@ -2927,7 +2981,7 @@ impl GhostfoxServer {
   var f = null;
   document.querySelectorAll('iframe').forEach(function(i) {
     var b = i.getBoundingClientRect();
-    if (b.width > 400 && b.y > -100 && !f) f = i;
+    if (b.width > 280 && b.height > 200 && b.y > -100 && !f) f = i;
   });
   if (!f) return 'NO';
   var b = f.getBoundingClientRect();
@@ -5229,4 +5283,57 @@ fn sanitize_filename(s: &str) -> String {
     } else {
         cleaned
     }
+}
+
+/// v0.9.4: probe the real X display geometry for headful display-coherence.
+/// Returns (width, height) when the server can see an X display with a
+/// definite size; None otherwise (headless hosts, no DISPLAY, probe
+/// failures — coherence pinning is skipped and the persona is used as-is).
+fn probe_x_display_size() -> Option<(u32, u32)> {
+    let display = std::env::var("DISPLAY").ok()?;
+    // xrandr: "   1920x1080     59.96*+" — the * marks the active mode.
+    let out = std::process::Command::new("xrandr")
+        .env("DISPLAY", &display)
+        .arg("--current")
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        // Fallback: xdpyinfo "dimensions:    1920x1080 pixels"
+        let out2 = std::process::Command::new("xdpyinfo")
+            .env("DISPLAY", &display)
+            .output()
+            .ok()?;
+        if !out2.status.success() {
+            return None;
+        }
+        let text = String::from_utf8_lossy(&out2.stdout);
+        for line in text.lines() {
+            if let Some(rest) = line.strip_prefix("  dimensions:") {
+                if let Some(dims) = rest.trim().split_whitespace().next() {
+                    let mut parts = dims.split('x');
+                    if let (Some(w), Some(h)) = (parts.next(), parts.next()) {
+                        if let (Ok(w), Ok(h)) = (w.parse::<u32>(), h.parse::<u32>()) {
+                            return Some((w, h));
+                        }
+                    }
+                }
+            }
+        }
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    for line in text.lines() {
+        // Active mode line: "<width>x<height>  <rate>* ..." — the asterisk
+        // marks the current mode; without it we cannot tell which is live.
+        let active = line.contains('*');
+        if !active {
+            continue;
+        }
+        let before_rate = line.split_whitespace().next()?;
+        let mut parts = before_rate.split('x');
+        let w = parts.next()?.parse::<u32>().ok()?;
+        let h = parts.next()?.parse::<u32>().ok()?;
+        return Some((w, h));
+    }
+    None
 }
