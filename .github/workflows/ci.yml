@@ -19,7 +19,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-14, windows-2022]
+        # macos-14 (arm64, 10x minute multiplier) pulled until the Actions
+        # minute quota resets Dec 1 — the $0 budget cancels it instantly.
+        # macOS remains a supported platform (rust code is portable; the
+        # engine binary ships separately); re-add after the reset.
+        os: [ubuntu-24.04, windows-2022]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
