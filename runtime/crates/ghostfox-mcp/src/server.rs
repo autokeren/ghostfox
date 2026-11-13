@@ -949,9 +949,9 @@ impl GhostfoxServer {
         // requests one (platform/chrome_mode overrides = intentional morph)
         // or when the profile has no identity yet.
         let explicit_persona = platform.is_some() || chrome_mode.is_some();
-        let profile_identity_path = profile_dir.as_ref().map(|dir| {
-            std::path::PathBuf::from(dir).join("identity.toml")
-        });
+        let profile_identity_path = profile_dir
+            .as_ref()
+            .map(|dir| std::path::PathBuf::from(dir).join("identity.toml"));
         let identity = if !explicit_persona {
             match &profile_identity_path {
                 Some(path) if path.exists() => {
@@ -2236,7 +2236,10 @@ impl GhostfoxServer {
                     errors.push(format!("{}: {}", url, e));
                 }
                 Err(_) => {
-                    errors.push(format!("{}: body read timed out after 10s (large/streaming response)", url));
+                    errors.push(format!(
+                        "{}: body read timed out after 10s (large/streaming response)",
+                        url
+                    ));
                 }
             }
         }
