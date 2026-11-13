@@ -119,10 +119,11 @@ fn mcp_stdio_contract_lists_and_calls_identity_tools() {
         "page_network_resume",
         "page_network_abort",
         "page_network_fulfill",
+        "page_network_dump",
     ] {
         assert!(names.contains(&expected), "missing tool {expected}");
     }
-    assert_eq!(names.len(), 71, "tools: {names:?}");
+    assert_eq!(names.len(), 72, "tools: {names:?}");
 
     let generated = request(
         &mut child,
