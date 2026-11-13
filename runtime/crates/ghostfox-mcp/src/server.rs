@@ -5312,7 +5312,7 @@ fn probe_x_display_size() -> Option<(u32, u32)> {
         let text = String::from_utf8_lossy(&out2.stdout);
         for line in text.lines() {
             if let Some(rest) = line.strip_prefix("  dimensions:") {
-                if let Some(dims) = rest.trim().split_whitespace().next() {
+                if let Some(dims) = rest.split_whitespace().next() {
                     let mut parts = dims.split('x');
                     if let (Some(w), Some(h)) = (parts.next(), parts.next()) {
                         if let (Ok(w), Ok(h)) = (w.parse::<u32>(), h.parse::<u32>()) {
